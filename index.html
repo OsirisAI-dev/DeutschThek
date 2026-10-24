@@ -1508,7 +1508,8 @@
     if (!isTrustedFrameMessage(e)) return;
     if (e.data && e.data.type === 'OPEN_SWARM_MODAL') {
       if (window.EduHybridShare && typeof window.EduHybridShare.openSwarmModal === 'function') {
-        window.EduHybridShare.openSwarmModal();
+        var targetTab = (e.data.payload && e.data.payload.tab) || e.data.tab || 'remote';
+        window.EduHybridShare.openSwarmModal(targetTab);
       }
       return;
     }

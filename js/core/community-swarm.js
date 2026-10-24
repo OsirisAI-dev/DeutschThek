@@ -424,9 +424,8 @@
 
         // When sharing via P2P Swarm from popup
         if (platform === 'swarm') {
-            const isShared = isDocShared(safeDoc.id);
-            await toggleShareDocToSwarm(safeDoc.id, !isShared);
-            openSwarmModal();
+            await toggleShareDocToSwarm(safeDoc.id, true, safeDoc);
+            await openSwarmModal('local');
             return;
         }
 
@@ -659,6 +658,13 @@
             combined = combined.concat(items);
         }
 
+        // Preserve any in-memory items in localCatalog that are still marked as shared
+        const existingShared = (localCatalog || []).filter(doc => {
+            const cleanId = Number(doc && doc.id);
+            if (!cleanId) return false;
+            return isDocShared(cleanId) && !combined.some(c => Number(c.id) === cleanId);
+        });
+        combined = combined.concat(existingShared);
         localCatalog = combined.slice(0, MAX_CATALOG_ITEMS_PER_PEER);
     }
 
@@ -1245,17 +1251,43 @@
         }, peerId);
     }
 
-    async function toggleShareDocToSwarm(docId, shouldShare) {
+    async function toggleShareDocToSwarm(docId, shouldShare, docData) {
         const cleanId = Number(docId);
         if (!cleanId) return;
 
-        let sharedIds = loadSharedDocsConfig(currentConfig.dbName);
+        let targetDb = (docData && docData.sourceDb) || currentConfig.dbName || 'DokumentationDB';
+        let sharedIds = loadSharedDocsConfig(targetDb);
         if (shouldShare) {
             if (!sharedIds.includes(cleanId)) sharedIds.push(cleanId);
+            saveSharedDocsConfig(sharedIds, targetDb);
+            if (currentConfig.dbName && currentConfig.dbName !== targetDb) {
+                let currIds = loadSharedDocsConfig(currentConfig.dbName);
+                if (!currIds.includes(cleanId)) {
+                    currIds.push(cleanId);
+                    saveSharedDocsConfig(currIds, currentConfig.dbName);
+                }
+            }
+            if (docData) {
+                const sanitized = sanitizeDocRecord(Object.assign({}, docData, { id: cleanId, sourceDb: targetDb }));
+                if (sanitized) {
+                    const exists = localCatalog.some(d => Number(d.id) === cleanId);
+                    if (!exists) {
+                        localCatalog.unshift(sanitized);
+                    }
+                }
+            }
         } else {
             sharedIds = sharedIds.filter(id => id !== cleanId);
+            saveSharedDocsConfig(sharedIds, targetDb);
+            ['DokumentationDB', 'TestBankDB', currentConfig.dbName].forEach(db => {
+                if (!db) return;
+                let ids = loadSharedDocsConfig(db);
+                if (ids.includes(cleanId)) {
+                    saveSharedDocsConfig(ids.filter(id => id !== cleanId), db);
+                }
+            });
+            localCatalog = localCatalog.filter(d => Number(d.id) !== cleanId);
         }
-        saveSharedDocsConfig(sharedIds, currentConfig.dbName);
 
         await refreshLocalCatalog();
         broadcastPresence();
@@ -1264,10 +1296,13 @@
     }
 
     function isDocShared(docId) {
-        const sharedCurrent = loadSharedDocsConfig(currentConfig.dbName);
-        if (sharedCurrent.includes(Number(docId))) return true;
-        const otherDb = currentConfig.dbName === 'DokumentationDB' ? 'TestBankDB' : 'DokumentationDB';
-        return loadSharedDocsConfig(otherDb).includes(Number(docId));
+        const cleanId = Number(docId);
+        if (!cleanId) return false;
+        const dbs = ['DokumentationDB', 'TestBankDB', currentConfig.dbName];
+        for (const db of dbs) {
+            if (db && loadSharedDocsConfig(db).includes(cleanId)) return true;
+        }
+        return localCatalog.some(d => Number(d.id) === cleanId);
     }
 
     // =========================================================================
@@ -1302,14 +1337,16 @@
         }
     }
 
-    function openSwarmModal() {
+    async function openSwarmModal(tab) {
+        if (tab) currentSwarmTab = tab === 'local' ? 'local' : 'remote';
+        await refreshLocalCatalog();
         let modal = document.getElementById('swarm-modal');
         if (!modal) {
             createSwarmModalDom();
             modal = document.getElementById('swarm-modal');
         }
         modal.style.display = 'flex';
-        renderSwarmModalContent();
+        switchSwarmTab(currentSwarmTab);
     }
 
     function closeSwarmModal() {

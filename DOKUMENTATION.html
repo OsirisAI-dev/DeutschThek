@@ -850,7 +850,8 @@
         if (window.parent && e.source && e.source !== window.parent && e.source !== window) return;
         const msg = e.data || {};
         if (msg.type === 'OPEN_SWARM_MODAL') {
-            if (window.EduHybridShare) window.EduHybridShare.openSwarmModal();
+            var targetTab = (msg.payload && msg.payload.tab) || msg.tab || 'remote';
+            if (window.EduHybridShare) window.EduHybridShare.openSwarmModal(targetTab);
         } else if (msg.type === 'SET_FONT' && msg.payload && msg.payload.font) {
             const safeFont = window.OsirisSecurity && window.OsirisSecurity.sanitizeFontFamily
                 ? window.OsirisSecurity.sanitizeFontFamily(msg.payload.font)
@@ -972,24 +973,31 @@
         };
     }
 
-    function openSwarmDirect(event) {
+    function openSwarmDirect(event, tab) {
         if (event) event.stopPropagation();
+        var targetTab = tab || 'remote';
         if (window.parent && window.parent !== window && window.parent.EduHybridShare && typeof window.parent.EduHybridShare.openSwarmModal === 'function') {
-            window.parent.EduHybridShare.openSwarmModal();
+            window.parent.EduHybridShare.openSwarmModal(targetTab);
         } else if (window.EduHybridShare && typeof window.EduHybridShare.openSwarmModal === 'function') {
-            window.EduHybridShare.openSwarmModal();
+            window.EduHybridShare.openSwarmModal(targetTab);
         } else if (window.parent && window.parent !== window) {
-            window.parent.postMessage({ type: 'OPEN_SWARM_MODAL' }, '*');
+            window.parent.postMessage({ type: 'OPEN_SWARM_MODAL', tab: targetTab }, '*');
         }
     }
 
-    function toggleCurrentDocSwarmShare(e) {
+    async function toggleCurrentDocSwarmShare(e) {
         if (e) e.stopPropagation();
-        if (!window._currentModalDoc || !window.EduHybridShare) return;
-        const docId = window._currentModalDoc.id;
-        const isShared = EduHybridShare.isDocShared(docId);
-        EduHybridShare.toggleShareDocToSwarm(docId, !isShared);
-        updateSwarmShareButtonState(!isShared);
+        if (!window._currentModalDoc) return;
+        const doc = window._currentModalDoc;
+        const docId = Number(doc.id);
+        if (!docId) return;
+        if (window.EduHybridShare) {
+            await window.EduHybridShare.toggleShareDocToSwarm(docId, true, doc);
+        }
+        if (window.parent && window.parent !== window && window.parent.EduHybridShare) {
+            await window.parent.EduHybridShare.toggleShareDocToSwarm(docId, true, doc);
+        }
+        updateSwarmShareButtonState(true);
     }
 
     function updateSwarmShareButtonState(isShared) {
@@ -3513,15 +3521,17 @@ function saveEntry() {
         }
     }
 
-    function shareVia(platform, event) {
+    async function shareVia(platform, event) {
         if (event) event.stopPropagation();
         if (platform === 'swarm') {
-            if (typeof toggleCurrentDocSwarmShare === 'function') toggleCurrentDocSwarmShare(event);
-            if (window.parent && window.parent !== window && window.parent.EduHybridShare && typeof window.parent.EduHybridShare.openSwarmModal === 'function') {
-                window.parent.EduHybridShare.openSwarmModal();
-            } else if (window.EduHybridShare && typeof window.EduHybridShare.openSwarmModal === 'function') {
-                window.EduHybridShare.openSwarmModal();
+            const popup = document.getElementById('share-popup');
+            if (popup) popup.classList.remove('visible');
+            if (window.shareAutoHideTimer) clearTimeout(window.shareAutoHideTimer);
+
+            if (typeof toggleCurrentDocSwarmShare === 'function') {
+                await toggleCurrentDocSwarmShare(event);
             }
+            openSwarmDirect(event, 'local');
             return;
         }
         const popup = document.getElementById('share-popup');
