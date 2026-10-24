@@ -382,7 +382,8 @@
             fileSize: Math.min(Math.max(0, Number(raw.fileSize) || 0), MAX_FILE_BYTES),
             fileHash: clampString(raw.fileHash || '', 64).replace(/[^a-f0-9]/gi, '').toLowerCase(),
             fileData: cleanDataUrl,
-            date: clampString(raw.date || new Date().toLocaleDateString(), 40)
+            date: clampString(raw.date || new Date().toLocaleDateString(), 40),
+            sourceDb: clampString(raw.sourceDb || '', 60)
         };
     }
 
@@ -1142,7 +1143,7 @@
                                 sender: myPeerId,
                                 target: targetPeerId,
                                 requestToken: requestToken,
-                                payload: sanitizeDocRecord(item)
+                                payload: sanitizeDocRecord(Object.assign({}, item, { sourceDb: dbName }))
                             }, targetPeerId);
                         } else {
                             tryDb(idx + 1);

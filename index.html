@@ -16,7 +16,7 @@
 </script>
 <meta name="theme-color" content="#007aff">
 
-<script src="js/core/community-swarm.js?v=2.7"></script>
+<script src="js/core/community-swarm.js?v=2.8"></script>
 
 <script>
   (function () {
@@ -1506,6 +1506,12 @@
   // Real-time Swarm pill badge synchronization across subpages & BroadcastChannel
   window.addEventListener('message', function (e) {
     if (!isTrustedFrameMessage(e)) return;
+    if (e.data && e.data.type === 'OPEN_SWARM_MODAL') {
+      if (window.EduHybridShare && typeof window.EduHybridShare.openSwarmModal === 'function') {
+        window.EduHybridShare.openSwarmModal();
+      }
+      return;
+    }
     if (e.data && e.data.type === 'SWARM_BADGE_UPDATE') {
       var badge = document.getElementById('headerSwarmBadge');
       if (badge) {
