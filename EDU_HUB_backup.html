@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Edu Hub</title>
+
+<script>
+  /* Pre-paint restore: set lang/font before first paint, same pattern as
+     MEIN_BIBLIOTHEK_HUB.html, so there's no flash of default chrome on reload. */
+  (function () {
+    try {
+      var saved = JSON.parse(localStorage.getItem('osiris_hub_prefs') || '{}');
+      document.documentElement.setAttribute('lang', (saved.lang || 'FR').toLowerCase());
+      if (saved.font) document.documentElement.style.setProperty('--hub-font-family', saved.font);
+    } catch (e) {}
+  })();
+</script>
+
+<style>
+  * { box-sizing: border-box; }
+
+  :root {
+    --hub-font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    --hub-bg:          #f4f5f7;
+    --hub-surface:     #ffffff;
+    --hub-text:        #1c1e21;
+    --hub-text-dim:    rgba(28, 30, 33, 0.62);
+    --hub-accent:      #2f6fed;
+    --hub-accent-grad: linear-gradient(90deg, #2f6fed, #6aa8ff);
+    --hub-border:      rgba(28, 30, 33, 0.14);
+  }
+
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--hub-bg);
+    color: var(--hub-text);
+  }
+
+  /* ---------- Header ---------- */
+  #header-container {
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    background: var(--hub-surface);
+    border-bottom: 2px solid var(--hub-accent);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+  #header-container.collapsed .subbar,
+  #header-container.collapsed .controls-row {
+    display: none;
+  }
+  header {
+    padding: 8px 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    cursor: pointer;
+  }
+  .header-toggle-hint {
+    display: inline-block;
+    font-size: 0.6em;
+    color: var(--hub-text-dim);
+    transition: transform 0.2s ease;
+    transform: rotate(-90deg);
+  }
+  #header-container:not(.collapsed) .header-toggle-hint { transform: rotate(0deg); }
+
+  .title-group { display: flex; flex-direction: column; }
+  .app-title-main {
+    font-family: var(--hub-font-family);
+    font-size: 1.4em;
+    line-height: 1;
+    margin: 0;
+    color: var(--hub-accent);
+  }
+  .app-title-sub { font-size: 0.7em; margin: 2px 0 0; color: var(--hub-text-dim); font-weight: normal; }
+
+  .toolbar { display: flex; align-items: center; gap: 10px; }
+  .conn-dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: #999; flex: none; transition: background-color 0.2s ease;
+  }
+  .conn-dot.is-online { background: #2f8f6f; }
+  .conn-dot.is-offline { background: #a33b46; }
+
+  .hub-btn {
+    background: var(--hub-bg);
+    color: var(--hub-text);
+    border: 1px solid var(--hub-border);
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85em;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .hub-btn:hover { border-color: var(--hub-accent); }
+
+  .subbar {
+    display: flex;
+    gap: 4px;
+    padding: 0 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+    border-top: 1px solid var(--hub-border);
+    overflow-x: auto;
+  }
+  .subbar-tab {
+    padding: 9px 14px;
+    cursor: pointer;
+    font-size: 0.85em;
+    font-weight: 600;
+    color: var(--hub-text-dim);
+    border-bottom: 3px solid transparent;
+    white-space: nowrap;
+  }
+  .subbar-tab:hover { color: var(--hub-text); }
+  .subbar-tab.active { color: var(--hub-accent); border-bottom-color: var(--hub-accent); }
+
+  .controls-row {
+    display: flex;
+    justify-content: flex-end;
+    padding: 6px 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  /* ---------- IA Vault dropdown (adapted from Bibliothek Hub's Vault panel) ---------- */
+  .dropdown-wrap { position: relative; }
+  .dropdown-panel {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: 110%;
+    width: 300px;
+    background: var(--hub-surface);
+    border: 1px solid var(--hub-border);
+    border-radius: 8px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+    padding: 12px;
+    z-index: 1100;
+  }
+  .dropdown-panel.open { display: block; }
+  .dropdown-panel h4 { margin: 0 0 8px; font-size: 0.9em; }
+  .dropdown-divider { border: none; border-top: 1px solid var(--hub-border); margin: 10px 0; }
+  .hub-select {
+    width: 100%; padding: 6px; border-radius: 5px;
+    border: 1px solid var(--hub-border); background: var(--hub-bg); color: var(--hub-text);
+    font-size: 0.85em; margin-bottom: 6px;
+  }
+  .manual-key-field { position: relative; margin-bottom: 6px; }
+  .manual-key-field input {
+    width: 100%; padding: 6px 30px 6px 8px; border-radius: 5px;
+    border: 1px solid var(--hub-border); background: var(--hub-bg); color: var(--hub-text);
+    font-size: 0.85em;
+  }
+  .manual-key-field input.key-invalid { border-color: #a33b46; }
+  .manual-key-field input.key-valid { border-color: #2f8f6f; }
+  .manual-key-field input.key-warning { border-color: #d4a72c; }
+  .manual-key-toggle {
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; cursor: pointer; color: var(--hub-text-dim);
+  }
+  .manual-key-msg { font-size: 0.72em; margin: 2px 0 6px; line-height: 1.4; display: none; }
+  .manual-key-msg.show-invalid { display: block; color: #a33b46; }
+  .manual-key-msg.show-valid { display: block; color: #2f8f6f; }
+  .manual-key-msg.show-warning { display: block; color: #d4a72c; }
+  .manual-hint { font-size: 0.72em; color: var(--hub-text-dim); line-height: 1.4; margin-bottom: 6px; }
+  .manual-clear-btn {
+    width: 100%; padding: 7px; border-radius: 5px; cursor: pointer;
+    background: var(--hub-bg); color: var(--hub-text); border: 1px solid var(--hub-border);
+    font-size: 0.8em;
+  }
+  .vault-status-line { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; font-size: 0.8em; }
+  .vault-status-dot { width: 8px; height: 8px; border-radius: 50%; background: #999; flex: none; }
+  .vault-status-dot.locked { background: #d4a72c; }
+  .vault-status-dot.unavailable { background: #a33b46; }
+  .vault-status-dot.ready { background: #2f8f6f; }
+
+  /* ---------- Tool viewport ---------- */
+  #tool-frame-wrap { flex: 1; display: flex; }
+  #tool-frame { flex: 1; width: 100%; border: 0; display: block; background: #fff; }
+</style>
+</head>
+<body>
+
+<div id="header-container" class="collapsed">
+  <header id="headerBar" title="Cliquer pour afficher/masquer les onglets et le Vault">
+    <div class="title-group">
+      <h2 class="app-title-main">EDU HUB <span class="header-toggle-hint" id="headerToggleHint" aria-hidden="true">▾</span></h2>
+      <h3 class="app-title-sub">By Osiris Inc.</h3>
+    </div>
+    <div class="toolbar">
+      <span class="conn-dot" id="connDot" title="—" aria-hidden="false"></span>
+      <button class="hub-btn" id="fontBtn" title="Changer la police (aléatoire)">
+        🔤 <span id="fontBtnLabel">Aa</span>
+      </button>
+      <button class="hub-btn" id="langBtn" title="Changer de langue">
+        🌍 <span id="langBtnLabel">FR</span>
+      </button>
+    </div>
+  </header>
+
+  <nav class="subbar" id="toolTabs" aria-label="Choisir un outil">
+    <div class="subbar-tab" data-tool-key="bank" data-i18n="tabBank">Testbank</div>
+    <div class="subbar-tab" data-tool-key="wiki" data-i18n="tabWiki">Offline Wiki</div>
+    <div class="subbar-tab" data-tool-key="testgen" data-i18n="tabTextgen">Test Generator</div>
+  </nav>
+
+  <div class="controls-row">
+    <div class="dropdown-wrap">
+      <button class="hub-btn" id="vaultBtn">🔑 <span id="vaultBtnLabel">IA Vault</span> ▾</button>
+      <div class="dropdown-panel" id="vaultPanel">
+        <h4 id="vaultPanelTitle">IA Vault</h4>
+        <div class="vault-status-line">
+          <span class="vault-status-dot" id="vaultStatusDot"></span>
+          <span id="vaultStatusText">—</span>
+        </div>
+        <select class="hub-select" id="manualProviderSel"></select>
+        <div class="manual-key-field">
+          <input type="password" id="manualApiKeyInp" placeholder="Clé API" autocomplete="off">
+          <button type="button" class="manual-key-toggle" id="manualKeyToggle" title="Afficher/masquer">👁</button>
+        </div>
+        <div class="manual-key-msg" id="manualApiKeyMsg"></div>
+        <select class="hub-select" id="manualModelSel"></select>
+        <div class="manual-hint" id="manualKeyLink"></div>
+        <div class="manual-hint" id="manualStorageHint">Les clés sont stockées localement dans ce navigateur et ne le quittent jamais.</div>
+        <button type="button" class="manual-clear-btn" id="manualClearBtn">Effacer toutes les clés</button>
+
+        <hr class="dropdown-divider">
+        <div class="manual-hint" id="activeSelectionHint">—</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="tool-frame-wrap">
+  <iframe id="tool-frame" title="Outil actif" src=""></iframe>
+</div>
+
+<script src="osiris-educore.js"></script>
+<script>
+(function () {
+  var core = window.OsirisCore;
+
+  /* ------------------------------------------------------------------
+     Tool registry — update the `file` paths here if you rename the
+     underlying tool files. Same pattern as SHELVES in
+     MEIN_BIBLIOTHEK_HUB.html.
+     ------------------------------------------------------------------ */
+  var TOOLS = {
+    bank:   { file: 'TEST_BANK.html' },
+    wiki:   { file: 'OFFLINE_WIKI.html' },
+    testgen: { file: 'KI_TEST_GENERATOR.html' } // merged AI Text Gen + Klassenarbeit — only tool with AI
+  };
+
+  var I18N = {
+    FR: {
+      headerToggleTitle: 'Cliquer pour afficher/masquer les onglets et le Vault',
+      fontTitle: 'Changer la police (aléatoire)',
+      langBtnTitle: 'Changer de langue',
+      toolNavLabel: 'Choisir un outil',
+      toolFrameTitle: 'Outil actif',
+      tabBank: 'Testbank', tabWiki: 'Offline Wiki', tabTextgen: 'Ki Test Generator',
+      vaultBtnLabel: 'IA Vault', vaultPanelTitle: 'IA Vault',
+      activeSelectionPrefix: 'Actif : ', activeSelectionNone: 'Aucun modèle sélectionné.',
+      manualClearBtn: 'Effacer toutes les clés',
+      manualStorageHint: 'Les clés sont stockées localement dans ce navigateur et ne le quittent jamais.',
+      manualClearConfirm: 'Effacer toutes les clés API enregistrées ?',
+      manualKeyToggleShow: 'Afficher la clé', manualKeyToggleHide: 'Masquer la clé',
+      connOnline: 'En ligne', connOffline: 'Hors ligne',
+      vaultReady: 'Clé configurée', vaultLocked: 'Aucune clé pour ce fournisseur', vaultUnavailable: 'Indisponible'
+    },
+    DE: {
+      headerToggleTitle: 'Klicken, um Tabs und Vault ein-/auszublenden',
+      fontTitle: 'Schriftart wechseln (zufällig)',
+      langBtnTitle: 'Sprache wechseln',
+      toolNavLabel: 'Werkzeug wählen',
+      toolFrameTitle: 'Aktives Werkzeug',
+      tabBank: 'Testbank', tabWiki: 'Offline Wiki', tabTextgen: 'Testgenerator',
+      vaultBtnLabel: 'KI-Vault', vaultPanelTitle: 'KI-Vault',
+      activeSelectionPrefix: 'Aktiv: ', activeSelectionNone: 'Kein Modell ausgewählt.',
+      manualClearBtn: 'Alle Schlüssel löschen',
+      manualStorageHint: 'Schlüssel werden lokal in diesem Browser gespeichert und verlassen ihn nie.',
+      manualClearConfirm: 'Alle gespeicherten API-Schlüssel löschen?',
+      manualKeyToggleShow: 'Schlüssel anzeigen', manualKeyToggleHide: 'Schlüssel verbergen',
+      connOnline: 'Online', connOffline: 'Offline',
+      vaultReady: 'Schlüssel konfiguriert', vaultLocked: 'Kein Schlüssel für diesen Anbieter', vaultUnavailable: 'Nicht verfügbar'
+    }
+  };
+
+  var FONT_POOL = [
+    "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+    "Georgia, 'Times New Roman', serif",
+    "'Courier New', Courier, monospace",
+    "'Trebuchet MS', Verdana, sans-serif",
+    "'Palatino Linotype', 'Book Antiqua', Palatino, serif"
+  ];
+
+  function loadPrefs() {
+    var defaults = { tool: 'bank', font: FONT_POOL[0], lang: 'FR' };
+    try {
+      var saved = JSON.parse(localStorage.getItem('osiris_hub_prefs') || '{}');
+      return Object.assign(defaults, saved);
+    } catch (e) { return defaults; }
+  }
+  function savePrefs() { localStorage.setItem('osiris_hub_prefs', JSON.stringify(appState)); }
+
+  var appState = loadPrefs();
+  // Defensive: a preference saved before this pass could still say
+  // 'klassenarbeit' or point at the old separate 'textgen' tool — both
+  // keys are gone now (merged into 'testgen'), and switchTool() already
+  // silently no-ops on an unknown key, which would otherwise leave the
+  // iframe blank with no active tab highlighted on a returning user's
+  // first load.
+  if (!TOOLS[appState.tool]) appState.tool = 'bank';
+
+  // Shared postMessage helper to the currently-embedded tool's iframe —
+  // setActiveModelId() below already did this inline for SET_MODEL;
+  // toggleLang()/randomFont() need the same thing for SET_LANG/SET_FONT,
+  // which they never actually sent before (only the pre-paint
+  // osiris_hub_prefs read on the iframe's *next* full reload picked
+  // these up — toggling lang/font while a tool was already open silently
+  // did nothing until you switched away and back).
+  function pushToFrame(type, payload) {
+    var frame = document.getElementById('tool-frame');
+    if (frame && frame.contentWindow) {
+      frame.contentWindow.postMessage({ type: type, payload: payload }, '*');
+    }
+  }
+
+  function switchTool(key) {
+    if (!TOOLS[key]) return;
+    appState.tool = key;
+    document.querySelectorAll('.subbar-tab').forEach(function (tab) {
+      tab.classList.toggle('active', tab.dataset.toolKey === key);
+    });
+    document.getElementById('tool-frame').src = TOOLS[key].file;
+    savePrefs();
+  }
+
+  function randomFont() {
+    var pool = FONT_POOL.filter(function (f) { return f !== appState.font; });
+    appState.font = pool[Math.floor(Math.random() * pool.length)];
+    document.documentElement.style.setProperty('--hub-font-family', appState.font);
+    savePrefs();
+    pushToFrame('SET_FONT', { font: appState.font });
+  }
+
+  function toggleLang() {
+    appState.lang = appState.lang === 'FR' ? 'DE' : 'FR';
+    applyLang();
+    savePrefs();
+    pushToFrame('SET_LANG', { lang: appState.lang });
+  }
+
+  function updateConnDot() {
+    var dot = document.getElementById('connDot');
+    var t = I18N[appState.lang];
+    var online = navigator.onLine;
+    dot.classList.toggle('is-online', online);
+    dot.classList.toggle('is-offline', !online);
+    dot.title = online ? t.connOnline : t.connOffline;
+  }
+  window.addEventListener('online', updateConnDot);
+  window.addEventListener('offline', updateConnDot);
+
+  function applyLang() {
+    var t = I18N[appState.lang];
+    document.documentElement.lang = appState.lang.toLowerCase();
+    document.getElementById('langBtnLabel').textContent = appState.lang;
+    document.getElementById('langBtn').title = t.langBtnTitle;
+    document.getElementById('fontBtn').title = t.fontTitle;
+    document.getElementById('headerBar').title = t.headerToggleTitle;
+    document.getElementById('toolTabs').setAttribute('aria-label', t.toolNavLabel);
+    document.getElementById('tool-frame').title = t.toolFrameTitle;
+    document.getElementById('vaultBtnLabel').textContent = t.vaultBtnLabel;
+    document.getElementById('vaultPanelTitle').textContent = t.vaultPanelTitle;
+    document.getElementById('manualClearBtn').textContent = t.manualClearBtn;
+    document.getElementById('manualStorageHint').textContent = t.manualStorageHint;
+    document.querySelectorAll('#toolTabs [data-i18n]').forEach(function (el) {
+      el.textContent = t[el.getAttribute('data-i18n')];
+    });
+    updateConnDot();
+    refreshManualProviderUI();
+    pushSelectedModel(); // updates #activeSelectionHint text, which is language-dependent
+  }
+
+  /* ---------- AI Model Management (for Text/Test Generator) ---------- */
+  // Auto model switching: uses core.pickActiveModel() rather than
+  // requiring the provider currently showing in the Vault dropdown to
+  // have a key — if it doesn't, but some OTHER provider does, that one
+  // gets pushed/used instead. This is what actually fixes the "choisir
+  // un modèle dans le Vault" prompt: it no longer requires the exact
+  // provider you're looking at to be the configured one, just that SOME
+  // provider is. The Vault dropdown itself is left alone (still shows
+  // whatever the user is browsing) — #activeSelectionHint is what
+  // reflects what's actually in use, which can differ from it.
+  function pushSelectedModel() {
+    core.pickActiveModel(manualState.provider).then(function (picked) {
+      var hint = document.getElementById('activeSelectionHint');
+      var t = I18N[appState.lang];
+      if (!picked) {
+        localStorage.setItem('ai_selected_provider', '');
+        localStorage.setItem('ai_selected_model_id', '');
+        pushToFrame('SET_MODEL', { provider: '', id: '', name: '' });
+        if (hint) hint.textContent = t.activeSelectionNone || 'Aucun modèle sélectionné.';
+        return;
+      }
+      localStorage.setItem('ai_selected_provider', picked.provider);
+      localStorage.setItem('ai_selected_model_id', picked.id);
+      pushToFrame('SET_MODEL', picked);
+      if (hint) {
+        hint.textContent = (t.activeSelectionPrefix || 'Actif : ') + picked.name + ' (' + picked.provider + ')';
+      }
+    });
+  }
+
+  /* ---------- IA Vault (reuses osiris-core.js's provider-agnostic manual-key store) ---------- */
+  var manualState = { provider: core.PROVIDERS[0].id, keys: {}, models: {} };
+
+  function initVault() {
+    core.loadManualKeys().then(function (keys) {
+      manualState.keys = keys || {};
+      manualState.models = core.loadManualModels() || {};
+      var sel = document.getElementById('manualProviderSel');
+      sel.innerHTML = '';
+      core.PROVIDERS.forEach(function (p) {
+        var opt = document.createElement('option');
+        opt.value = p.id; opt.textContent = p.label;
+        sel.appendChild(opt);
+      });
+      refreshManualProviderUI();
+      pushSelectedModel();
+    });
+  }
+
+  function refreshManualProviderUI() {
+    var t = I18N[appState.lang];
+    var provider = manualState.provider;
+    var els = {
+      providerSel: document.getElementById('manualProviderSel'),
+      keyInp: document.getElementById('manualApiKeyInp'),
+      modelSel: document.getElementById('manualModelSel'),
+      keyLink: document.getElementById('manualKeyLink'),
+      dot: document.getElementById('vaultStatusDot'),
+      statusText: document.getElementById('vaultStatusText')
+    };
+    els.providerSel.value = provider;
+    els.keyInp.value = manualState.keys[provider] || '';
+
+    els.modelSel.innerHTML = '';
+    (core.FREE_MODELS[provider] || []).forEach(function (m) {
+      var opt = document.createElement('option');
+      opt.value = m.id; opt.textContent = m.label;
+      if (manualState.models[provider] === m.id) opt.selected = true;
+      els.modelSel.appendChild(opt);
+    });
+
+    var link = core.FREE_KEY_LINKS[provider];
+    els.keyLink.innerHTML = link ? ('<a href="' + link + '" target="_blank" rel="noopener">' + link + '</a>') : '';
+
+    refreshManualKeyValidation();
+
+    var hasKey = !!(manualState.keys[provider] || '').trim();
+    els.dot.className = 'vault-status-dot ' + (hasKey ? 'ready' : 'locked');
+    els.statusText.textContent = hasKey ? t.vaultReady : t.vaultLocked;
+  }
+
+  function refreshManualKeyValidation() {
+    var t = I18N[appState.lang];
+    var els = {
+      keyInp: document.getElementById('manualApiKeyInp'),
+      msg: document.getElementById('manualApiKeyMsg')
+    };
+    var result = core.validateApiKey(manualState.provider, els.keyInp.value);
+    els.keyInp.classList.remove('key-invalid', 'key-valid', 'key-warning');
+    els.msg.classList.remove('show-invalid', 'show-valid', 'show-warning');
+    if (result.status === 'invalid') { els.keyInp.classList.add('key-invalid'); els.msg.classList.add('show-invalid'); els.msg.textContent = result.message; }
+    else if (result.status === 'valid') { els.keyInp.classList.add('key-valid'); els.msg.classList.add('show-valid'); els.msg.textContent = result.message; }
+    else if (result.status === 'warning') { els.keyInp.classList.add('key-warning'); els.msg.classList.add('show-warning'); els.msg.textContent = result.message; }
+  }
+
+  function wireVault() {
+    var providerSel = document.getElementById('manualProviderSel');
+    var keyInp = document.getElementById('manualApiKeyInp');
+    var modelSel = document.getElementById('manualModelSel');
+    var toggleBtn = document.getElementById('manualKeyToggle');
+    var clearBtn = document.getElementById('manualClearBtn');
+
+    providerSel.addEventListener('change', function () {
+      manualState.provider = providerSel.value;
+      refreshManualProviderUI();
+      pushSelectedModel();
+    });
+    keyInp.addEventListener('input', function () {
+      manualState.keys[manualState.provider] = keyInp.value;
+      refreshManualKeyValidation();
+      core.saveManualKeys(manualState.keys);
+    });
+    keyInp.addEventListener('blur', function () {
+      var trimmed = keyInp.value.trim();
+      if (trimmed !== keyInp.value) {
+        keyInp.value = trimmed;
+        manualState.keys[manualState.provider] = trimmed;
+        core.saveManualKeys(manualState.keys);
+      }
+      refreshManualKeyValidation();
+      // Status dot/text can change on blur (empty -> locked, filled -> ready)
+      var t = I18N[appState.lang];
+      var hasKey = !!trimmed;
+      document.getElementById('vaultStatusDot').className = 'vault-status-dot ' + (hasKey ? 'ready' : 'locked');
+      document.getElementById('vaultStatusText').textContent = hasKey ? t.vaultReady : t.vaultLocked;
+    });
+    modelSel.addEventListener('change', function () {
+      manualState.models[manualState.provider] = modelSel.value;
+      core.saveManualModels(manualState.models);
+      pushSelectedModel();
+    });
+    toggleBtn.addEventListener('click', function () {
+      var t = I18N[appState.lang];
+      var isHidden = keyInp.type === 'password';
+      keyInp.type = isHidden ? 'text' : 'password';
+      toggleBtn.title = isHidden ? t.manualKeyToggleHide : t.manualKeyToggleShow;
+    });
+    clearBtn.addEventListener('click', function () {
+      var t = I18N[appState.lang];
+      if (!confirm(t.manualClearConfirm)) return;
+      manualState.keys = {};
+      core.clearManualKeys();
+      refreshManualProviderUI();
+      pushSelectedModel();
+    });
+
+    document.getElementById('vaultBtn').addEventListener('click', function (e) {
+      e.stopPropagation();
+      document.getElementById('vaultPanel').classList.toggle('open');
+    });
+    document.addEventListener('click', function (e) {
+      var panel = document.getElementById('vaultPanel');
+      if (!panel.contains(e.target) && e.target.id !== 'vaultBtn') panel.classList.remove('open');
+    });
+  }
+
+  /* ---------- Wiring ---------- */
+  document.getElementById('fontBtn').addEventListener('click', function (e) { e.stopPropagation(); randomFont(); });
+  document.getElementById('langBtn').addEventListener('click', function (e) { e.stopPropagation(); toggleLang(); });
+  document.querySelectorAll('.subbar-tab').forEach(function (tab) {
+    tab.addEventListener('click', function () { switchTool(tab.dataset.toolKey); });
+  });
+  document.getElementById('headerBar').addEventListener('click', function () {
+    document.getElementById('header-container').classList.toggle('collapsed');
+  });
+
+  if (appState.font) document.documentElement.style.setProperty('--hub-font-family', appState.font);
+  applyLang();
+  wireVault();
+  initVault();
+  switchTool(appState.tool);
+})();
+</script>
+</body>
+</html>

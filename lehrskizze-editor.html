@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <link rel="manifest" href="../manifest.json">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editeur de Fiche de Cours Pro</title>
+    
+    <script>
+      function osirisLoadWithFallback(localSrc, cdnSrc, testGlobal) {
+        return new Promise((resolve) => {
+          if (testGlobal && window[testGlobal]) { resolve(true); return; }
+          const local = document.createElement('script');
+          local.src = localSrc;
+          local.onload = () => resolve(true);
+          local.onerror = () => {
+            console.warn('[Osiris] lokale Datei fehlt/fehlgeschlagen, versuche CDN:', localSrc);
+            const cdn = document.createElement('script');
+            cdn.src = cdnSrc;
+            cdn.onload = () => resolve(true);
+            cdn.onerror = () => {
+              console.error('[Osiris] CDN-Fallback ebenfalls fehlgeschlagen:', cdnSrc);
+              resolve(false);
+            };
+            document.head.appendChild(cdn);
+          };
+          document.head.appendChild(local);
+        });
+      }
+
+      window.OSIRIS_LIBS_READY = Promise.all([
+        osirisLoadWithFallback('../lib/htmldocx/v1/html-docx.js', 'https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.js', 'htmlDocx')
+      ]);
+    </script>
+    <script>
+      (function () {
+        try {
+          var p = JSON.parse(localStorage.getItem('osiris_hub_prefs') || '{}');
+          if (p.font) document.documentElement.style.setProperty('--lehrskizze-font-family', p.font);
+          window.__lehrskizzeLang = (p.lang === 'DE' || p.lang === 'FR') ? p.lang : 'FR';
+        } catch (e) { window.__lehrskizzeLang = 'FR'; }
+      })();
+    </script>
+
+    <style>
+        :root {
+            --bg-color: #f4f4f9; --container-bg: #ffffff; --text-color: #333333;
+            --border-color: #cccccc; --primary: #4CAF50; --primary-hover: #45a049;
+            --danger: #f44336; --action-bg: #f9f9f9;
+        }
+        [data-theme="dark"] {
+            --bg-color: #1a1a1a; --container-bg: #2d2d2d; --text-color: #f0f0f0;
+            --border-color: #555555; --primary: #66bb6a; --action-bg: #3d3d3d;
+        }
+        /* New Theme 1: Ocean */
+        [data-theme="ocean"] {
+            --bg-color: #e0f7fa; --container-bg: #ffffff; --text-color: #004d40;
+            --border-color: #b2ebf2; --primary: #00838f; --primary-hover: #006064;
+            --danger: #e53935; --action-bg: #e0f2f1;
+        }
+        /* New Theme 2: Sunset */
+        [data-theme="sunset"] {
+            --bg-color: #fbe9e7; --container-bg: #ffffff; --text-color: #3e2723;
+            --border-color: #ffccbc; --primary: #d84315; --primary-hover: #bf360c;
+            --danger: #d32f2f; --action-bg: #f9ecec;
+        }
+        
+        body { font-family: var(--lehrskizze-font-family, 'Segoe UI', Arial, sans-serif); background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 10px; transition: 0.3s; }
+        
+        /* Cursive Title Styling */
+        .app-title-main {
+            font-family: var(--lehrskizze-font-family, 'Brush Script MT', 'Segoe Print', 'Comic Sans MS', cursive);
+            text-align: center;
+            font-size: 2.5em;
+            margin: 15px 0 0 0; /* No bottom margin */
+            color: var(--primary);
+            line-height: 1;
+        }
+
+        .app-title-sub {
+            font-family: var(--lehrskizze-font-family, 'Brush Script MT', 'Segoe Print', 'Comic Sans MS', cursive);
+            text-align: center;
+            font-size: 1.2em;
+            margin: 0 0 20px 80px; /* No top margin, pushed 80px to the right */
+            color: var(--text-color);
+            opacity: 0.8;
+            font-style: italic;
+        }
+
+        .toolbar { 
+            display: flex; 
+            gap: 8px; 
+            margin-bottom: 20px; 
+            background: var(--container-bg); 
+            padding: 10px; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1); 
+            align-items: center; 
+            position: sticky; 
+            top: 5px; 
+            z-index: 100; 
+            flex-wrap: wrap; 
+            justify-content: flex-start;
+        }
+
+        .globe-menu { margin-left: auto; position: relative; display: flex; gap: 8px; flex-wrap: wrap; }
+        
+        .container { background: var(--container-bg); padding: 15px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 1200px; margin: auto; overflow-x: auto; }
+        
+        .section-header { display: flex; align-items: center; border-bottom: 2px solid var(--primary); margin: 25px 0 10px 0; padding-bottom: 5px; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+        .editable-title { font-size: 1.2em; font-weight: bold; cursor: text; outline: none; flex-grow: 1; min-width: 100px; }
+        
+        table { width: 100%; border-collapse: collapse; margin-bottom: 15px; min-width: 600px; }
+        th, td { border: 1px solid var(--border-color); padding: 8px; text-align: left; position: relative; vertical-align: top; }
+        th { background: rgba(0,0,0,0.03); font-weight: bold; }
+        .label-cell { background: rgba(0,0,0,0.02); width: 30%; font-weight: bold; }
+        
+        input, textarea { width: 100%; border: 1px solid transparent; background: transparent; color: inherit; font-family: inherit; font-size: 14px; padding: 4px; box-sizing: border-box; }
+        input:focus, textarea:focus { border-bottom: 1px solid var(--primary); outline: none; background: rgba(0,0,0,0.02); }
+        textarea { resize: none; overflow: hidden; min-height: 28px; line-height: 1.4; }
+        
+        ::placeholder { 
+            color: var(--text-color); 
+            opacity: 1;
+            font-style: normal; 
+        }
+
+        .auto-center table th, .auto-center table td { text-align: center; }
+        .auto-center input, .auto-center textarea { text-align: center; }
+
+        .action-cell { width: 70px; text-align: center; background: var(--action-bg); white-space: nowrap; vertical-align: middle; }
+        button { padding: 6px 10px; cursor: pointer; border: none; border-radius: 4px; background: var(--primary); color: white; font-weight: bold; font-size: 13px; transition: background 0.2s; }
+        button:hover { background: var(--primary-hover); }
+        .btn-mini { padding: 2px 6px; font-size: 11px; margin: 0 1px; }
+        .btn-danger { background: var(--danger); }
+        .btn-col-del { background: var(--danger); position: absolute; top: 0; right: 0; padding: 1px 4px; font-size: 9px; border-radius: 0 0 0 4px; }
+
+        #lang-dropdown { display:none; position:absolute; right:0; background:var(--container-bg); border:1px solid var(--border-color); border-radius:4px; margin-top:5px; box-shadow: 0 2px 10px rgba(0,0,0,0.2); min-width: 100px; z-index: 200;}
+        #lang-dropdown button { display:block; width:100%; background:none; color:inherit; text-align: left; padding: 8px 12px; border-radius: 0; }
+        #lang-dropdown button:hover { background: var(--action-bg); }
+
+        @media print {
+            .no-print, .action-cell, .btn-mini, .btn-col-del { display: none !important; }
+            body { padding: 0; background: white; }
+            .container { box-shadow: none; border: none; width: 100%; max-width: 100%; padding: 0; }
+        }
+        
+        /* Fixed mobile media queries */
+        @media (max-width: 600px) {
+            .app-title { font-size: 1.8em; margin-bottom: 10px; }
+            .toolbar { gap: 6px; padding: 8px; justify-content: center; }
+            .toolbar button { flex: 1 1 auto; font-size: 11px; padding: 8px; text-align: center; }
+            .globe-menu { margin-left: 0; width: 100%; justify-content: center; }
+            .globe-menu button { flex: 1 1 auto; }
+            .container { padding: 10px; }
+            table { font-size: 12px; }
+            input, textarea { font-size: 12px; }
+            .action-cell { width: 50px; }
+            .no-print-flex { flex-wrap: wrap; justify-content: center; border-left: none !important; padding-left: 0 !important; width: 100%; margin-top: 5px;}
+        }
+    </style>
+</head>
+<body onclick="handleGlobalClick(event)">
+
+<datalist id="school-list">
+    <option value="LYCEE MODERNE.....">
+</datalist>
+
+    <div class="no-print">
+        <h2 class="app-title-main">LEHRSKIZZE EDITOR</h2>
+        <h3 class="app-title-sub">By Osiris Inc.</h3>
+    </div>
+
+<div class="toolbar no-print">
+    <button onclick="toggleCenter()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><polyline points="18 8 22 12 18 16"></polyline><polyline points="6 8 2 12 6 16"></polyline><line x1="2" y1="12" x2="22" y2="12"></line></svg><span data-i18n="center">Centrer</span></button>
+    <button onclick="exportJSON()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg><span data-i18n="save">Exporter</span></button>
+    
+    <div class="no-print no-print-flex" style="display: flex; align-items: center; gap: 2px; padding: 0 2px; flex-wrap: nowrap;">
+        <label style="font-size: 11px; display: flex; align-items: center; gap: 2px; color: var(--text-color); cursor: pointer; flex-shrink: 0; margin: 0;">
+            <input type="checkbox" id="auto-backup-check" onchange="toggleBackupTimer()" style="width: auto; padding: 0; margin: 0;"> 
+            <span data-i18n="auto-backup">Auto-Backup</span>
+        </label>
+        <select id="backup-interval" style="font-size: 11px; background: var(--container-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; flex-shrink: 0; padding: 1px 2px;" onchange="toggleBackupTimer()">
+            <option value="900000">15m</option>
+            <option value="1800000">30m</option>
+            <option value="3600000">60m</option>
+        </select>
+    </div>
+
+    <button onclick="document.getElementById('importFile').click()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg><span data-i18n="load">Importer</span></button>
+    <button onclick="clearAutofill()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg><span data-i18n="clear-autofill">Effacer</span></button>
+    <input type="file" id="importFile" style="display:none" onchange="importJSON(this)">
+    
+    <div class="globe-menu">
+        <button onclick="window.print()" style="background:#f44336; color:white;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>PDF</button>
+        <button onclick="exportWord()" style="background:#2b579a; color:white;">📝 DOCX</button>
+        <button onclick="toggleLangMenu(event)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg><span id="current-lang">FR</span> ▾</button>
+        <div id="lang-dropdown">
+            <button onclick="setLanguage('fr')">Français</button>
+            <button onclick="setLanguage('en')">English</button>
+            <button onclick="setLanguage('de')">Deutsch</button>
+            <button onclick="setLanguage('es')">Español</button>
+        </div>
+    </div>
+</div>
+
+<div class="container" id="export-content">
+    <h1 style="text-align: center; outline: none;" contenteditable="true" data-i18n="main-title">FICHE DE COURS</h1>
+
+    <div class="section-header">
+        <div class="editable-title" contenteditable="true" id="title-sec1" data-i18n="title-sec1">1- PAGE DE GARDE</div>
+    </div>
+<table id="meta-table">
+        <tbody id="meta-body">
+            <tr class="fixed-row">
+                <td class="label-cell"><textarea rows="1" placeholder="ANNEE SCOLAIRE" data-i18n-val="year" oninput="autoResize(this)">ANNEE SCOLAIRE</textarea></td>
+                <td><textarea rows="1" placeholder="Ex: 2023-2024" oninput="autoResize(this)">2023-2024</textarea></td>
+                <td class="action-cell no-print"><button class="btn-mini" onclick="addMetaRow(this)">+</button></td>
+            </tr>
+            <tr>
+                <td class="label-cell"><textarea rows="1" placeholder="DATE" data-i18n-val="date" oninput="autoResize(this)">DATE</textarea></td>
+                <td><input type="date"></td> <td class="action-cell no-print">
+                    <button class="btn-mini" onclick="addMetaRow(this)">+</button>
+                </td>
+            </tr>
+            <tr>
+                <td class="label-cell"><textarea rows="1" placeholder="ETABLISSEMENT" data-i18n-val="school" oninput="autoResize(this)">ETABLISSEMENT</textarea></td>
+                <td><textarea rows="1" placeholder="Nom de l'établissement" oninput="autoResize(this)" onchange="registerSchool(this)">LYCEE MODERNE.....</textarea></td>
+                <td class="action-cell no-print">
+                    <button class="btn-mini" onclick="addMetaRow(this)">+</button>
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="section-header">
+        <div class="editable-title" contenteditable="true" id="title-sec2" data-i18n="title-sec2">2- TABLEAU DE SPÉCIFICATIONS</div>
+        <button class="btn-mini no-print" onclick="addColumn('skills-table')" data-i18n="add-col">+ Col</button>
+    </div>
+    <table id="skills-table">
+        <thead>
+            <tr id="skills-head-row">
+                <th><textarea rows="1" placeholder="HABILETES" data-i18n-val="h-skills">HABILETES</textarea><button class="btn-col-del no-print" onclick="deleteColumn(this)">X</button></th>
+                <th><textarea rows="1" placeholder="CONTENUS" data-i18n-val="h-content">CONTENUS</textarea><button class="btn-col-del no-print" onclick="deleteColumn(this)">X</button></th>
+                <th class="action-cell no-print"><button class="btn-mini" onclick="addStandardRow(this, true)">+</button></th>
+            </tr>
+        </thead>
+        <tbody id="skills-body">
+            <tr>
+                <td><textarea rows="1" placeholder="..."></textarea></td>
+                <td><textarea rows="1" placeholder="..."></textarea></td>
+                <td class="action-cell no-print">
+                    <button class="btn-mini" onclick="addStandardRow(this)">+</button>
+                    <button class="btn-mini btn-danger" onclick="deleteRow(this)">X</button>
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="section-header">
+        <div class="editable-title" contenteditable="true" id="title-sec3" data-i18n="title-sec3">3- DÉROULEMENT DU COURS</div>
+        <button class="btn-mini no-print" onclick="addColumn('main-table')" data-i18n="add-col">+ Col</button>
+    </div>
+    <table id="main-table">
+        <thead>
+            <tr id="main-head-row">
+                <th><textarea rows="1" placeholder="Phases" data-i18n-val="h-moments">Phases</textarea><button class="btn-col-del no-print" onclick="deleteColumn(this)">X</button></th>
+                <th><textarea rows="1" placeholder="Activités" data-i18n-val="h-teacher">Activités</textarea><button class="btn-col-del no-print" onclick="deleteColumn(this)">X</button></th>
+                <th class="action-cell no-print"><button class="btn-mini" onclick="addStandardRow(this, true)">+</button></th>
+            </tr>
+        </thead>
+        <tbody id="main-body">
+            <tr>
+                <td><textarea rows="1" placeholder="..."></textarea></td>
+                <td><textarea rows="1" placeholder="..."></textarea></td>
+                <td class="action-cell no-print">
+                    <button class="btn-mini" onclick="addStandardRow(this)">+</button>
+                    <button class="btn-mini btn-danger" onclick="deleteRow(this)">X</button>
+                </td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<script>
+    window.addEventListener('message', function (e) {
+        const msg = e.data || {};
+        if (msg.type === 'SET_FONT' && msg.payload && msg.payload.font) {
+            document.documentElement.style.setProperty('--lehrskizze-font-family', msg.payload.font);
+        } else if (msg.type === 'SET_LANG' && msg.payload && (msg.payload.lang === 'FR' || msg.payload.lang === 'DE')) {
+            window.__lehrskizzeLang = msg.payload.lang;
+            if (typeof setLanguage === 'function') {
+                setLanguage(msg.payload.lang.toLowerCase());
+            }
+        }
+    });
+
+const translations = {
+    fr: { 
+        center: "Centrer", "clear-autofill": "Effacer saisie", save: "Exporter", load: "Importer", 
+        "main-title": "FICHE DE COURS", 
+        "title-sec1": "1- PAGE DE GARDE", "title-sec2": "2- TABLEAU DE SPÉCIFICATIONS", "title-sec3": "3- DÉROULEMENT DU COURS",
+        "h-skills": "HABILETES", "h-content": "CONTENUS", "h-moments": "Phases", "h-teacher": "Activités", 
+        year: "ANNEE SCOLAIRE", date: "DATE", school: "ETABLISSEMENT", "add-col": "+Col", "new-col": "Nouvelle Colonne",
+        "confirm-clear": "Effacer les établissements enregistrés ?", "auto-backup": "Auto-Backup",
+        "backup-msg": "Voulez-vous sauvegarder (Exporter JSON) maintenant ?", "footer-copy": "Créé par Osiris Inc.",
+        "footer-tip": "Astuce : Utilisez le bouton 'Exporter' pour sauvegarder vos données de façon permanente et 'Importer' pour les restaurer."
+    },
+    en: { 
+        center: "Center", "clear-autofill": "Clear Input", save: "Export", load: "Import", 
+        "main-title": "LESSON PLAN", 
+        "title-sec1": "1- COVER PAGE", "title-sec2": "2- SPECIFICATION TABLE", "title-sec3": "3- LESSON FLOW",
+        "h-skills": "SKILLS", "h-content": "CONTENT", "h-moments": "Moments", "h-teacher": "Activities", 
+        year: "SCHOOL YEAR", date: "DATE", school: "SCHOOL", "add-col": "+Col", "new-col": "New Column",
+        "confirm-clear": "Clear saved schools?", "auto-backup": "Auto-Backup",
+        "backup-msg": "Would you like to backup (Export JSON) now?", "footer-copy": "Created by Osiris Inc.",
+        "footer-tip": "Tip: Use the 'Export' button to permanently save your data and 'Import' to restore them."
+    },
+    es: { 
+        center: "Centrar", "clear-autofill": "Borrar entrada", save: "Exportar", load: "Importar", 
+        "main-title": "FICHA DE CLASE", 
+        "title-sec1": "1- PORTADA", "title-sec2": "2- TABLA DE ESPECIFICACIONES", "title-sec3": "3- DESARROLLO DE LA CLASE",
+        "h-skills": "HABILIDADES", "h-content": "CONTENIDOS", "h-moments": "Fases", "h-teacher": "Actividades", 
+        year: "AÑO ESCOLAR", date: "FECHA", school: "ESTABLECIMIENTO", "add-col": "+Col", "new-col": "Nueva Columna",
+        "confirm-clear": "¿Borrar los establecimientos guardados?", "auto-backup": "Auto-Respaldo",
+        "backup-msg": "¿Desea realizar una copia de seguridad (Exportar JSON) ahora?", "footer-copy": "Creado por Osiris Inc.",
+        "footer-tip": "Consejo: Use el botón 'Exportar' para guardar sus datos permanentemente e 'Importar' para restaurarlos."
+    },
+    de: { 
+        center: "Zentrieren", "clear-autofill": "Eingabe löschen", save: "Export", load: "Importieren", 
+        "main-title": "UNTERRICHTSSKIZZE", 
+        "title-sec1": "1- DECKBLATT", "title-sec2": "2- SPEZIFIKATIONSTABELLE", "title-sec3": "3- UNTERRICHTSVERLAUF",
+        "h-skills": "FERTIGKEITEN", "h-content": "INHALTE", "h-moments": "Phasen", "h-teacher": "Aktivitäten", 
+        year: "SCHULJAHR", date: "DATUM", school: "SCHULE", "add-col": "+Sp.", "new-col": "Neue Spalte",
+        "confirm-clear": "Gespeicherte Schulen löschen?", "auto-backup": "Auto-Backup",
+        "backup-msg": "Möchten Sie jetzt eine Sicherungskopie (JSON-Export) erstellen?", "footer-copy": "Erstellt von Osiris Inc.",
+        "footer-tip": "Tipp: Verwenden Sie die Schaltfläche 'Export', um Ihre Daten dauerhaft zu speichern, und 'Importieren', um sie wiederherzustellen."
+    }
+};
+    
+    function handleGlobalClick(e) {
+        const dropdown = document.getElementById('lang-dropdown');
+        const globeBtn = document.querySelector('.globe-menu button[onclick*="toggleLangMenu"]');
+        if (dropdown && dropdown.style.display === 'block') {
+            if (!dropdown.contains(e.target) && e.target !== globeBtn) {
+                dropdown.style.display = 'none';
+            }
+        }
+    }
+
+    function saveAll() {
+        document.querySelectorAll('#export-content input').forEach(i => {
+            i.setAttribute('value', i.value);
+        });
+        
+        document.querySelectorAll('#export-content textarea').forEach(t => {
+            t.textContent = t.value; 
+        });
+
+        localStorage.setItem('fiche_pro_html_v4', document.getElementById('export-content').innerHTML);
+        localStorage.setItem('fiche_theme', document.documentElement.getAttribute('data-theme'));
+        localStorage.setItem('auto_backup_active', document.getElementById('auto-backup-check').checked);
+        localStorage.setItem('auto_backup_time', document.getElementById('backup-interval').value);
+    }
+
+    document.addEventListener('input', function(e) {
+        if (e.target.tagName.toLowerCase() === 'textarea') {
+            e.target.style.height = 'auto';
+            e.target.style.height = (e.target.scrollHeight) + 'px';
+        }
+        saveAll();
+    });
+
+    window.onload = () => {
+        const saved = localStorage.getItem('fiche_pro_html_v4');
+        
+        if (saved && saved.includes('type="date"')) {
+            document.getElementById('export-content').innerHTML = saved;
+            
+            setTimeout(() => {
+                document.querySelectorAll('textarea').forEach(t => {
+                    t.style.height = 'auto'; 
+                    t.style.height = t.scrollHeight + 'px';
+                });
+            }, 50);
+        } else {
+            console.log("New version detected or no save found. Loading default structure.");
+        }
+
+        document.querySelectorAll('button[onclick^="addColumn"]').forEach(b => b.setAttribute('data-i18n', 'add-col'));
+        document.querySelectorAll('textarea[placeholder="DATE"]').forEach(t => t.setAttribute('data-i18n-val', 'date'));
+        
+        document.documentElement.setAttribute('data-theme', localStorage.getItem('fiche_theme') || 'light');
+        document.getElementById('auto-backup-check').checked = localStorage.getItem('auto_backup_active') === 'true';
+
+        if (localStorage.getItem('auto_backup_time')) {
+            document.getElementById('backup-interval').value = localStorage.getItem('auto_backup_time');
+        } 
+        
+        if (window.__lehrskizzeLang) {
+            setLanguage(window.__lehrskizzeLang.toLowerCase());
+        } else if (localStorage.getItem('lang')) {
+            setLanguage(localStorage.getItem('lang'));
+        }
+        toggleBackupTimer();
+        loadSchools();
+    };
+
+    // Cycle through 4 themes
+    var _tt = document.getElementById('theme-toggle'); if (_tt) _tt.onclick = () => {
+        const themes = ['light', 'dark', 'ocean', 'sunset'];
+        const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+        const nextTheme = themes[(themes.indexOf(currentTheme) + 1) % themes.length];
+        
+        document.documentElement.setAttribute('data-theme', nextTheme);
+        saveAll();
+    };
+
+    function toggleCenter() {
+        document.getElementById('export-content').classList.toggle('auto-center');
+        saveAll();
+    }
+
+    function toggleLangMenu(e) { 
+        e.stopPropagation();
+        const d = document.getElementById('lang-dropdown'); 
+        d.style.display = d.style.display === 'block' ? 'none' : 'block'; 
+    }
+    
+    function setLanguage(l) {
+        localStorage.setItem('lang', l);
+        document.getElementById('current-lang').innerText = l.toUpperCase();
+        
+        document.querySelectorAll('[data-i18n]').forEach(e => {
+            if (translations[l][e.dataset.i18n]) {
+                e.innerText = translations[l][e.dataset.i18n];
+            }
+        });
+        
+        document.querySelectorAll('[data-i18n-val]').forEach(e => {
+            const translation = translations[l][e.dataset.i18nVal];
+            if (translation) {
+                e.value = translation;
+                if (e.tagName.toLowerCase() === 'textarea') e.textContent = translation;
+                e.setAttribute('placeholder', translation);
+            }
+        });
+        
+        document.getElementById('lang-dropdown').style.display = 'none';
+        saveAll();
+    }
+
+    function addMetaRow(b) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td class="label-cell"><textarea rows="1" placeholder="....."></textarea></td><td><textarea rows="1" placeholder="....."></textarea></td><td class="action-cell no-print"><button class="btn-mini" onclick="addMetaRow(this)">+</button><button class="btn-mini btn-danger" onclick="deleteRow(this)">X</button></td>`;
+        b.closest('tr').after(tr);
+        saveAll();
+    }
+
+    function addStandardRow(b, fromHeader = false) {
+        const table = b.closest('table');
+        const cols = table.querySelector('thead tr').cells.length - 1;
+        const tr = document.createElement('tr');
+        let h = '';
+        for(let i=0; i<cols; i++) h += `<td><textarea rows="1" placeholder="....."></textarea></td>`;
+        h += `<td class="action-cell no-print"><button class="btn-mini" onclick="addStandardRow(this)">+</button><button class="btn-mini btn-danger" onclick="deleteRow(this)">X</button></td>`;
+        tr.innerHTML = h;
+        
+        if (fromHeader) table.querySelector('tbody').appendChild(tr);
+        else b.closest('tr').after(tr);
+        saveAll();
+    }
+
+    function addColumn(id) {
+        const table = document.getElementById(id);
+        const lang = localStorage.getItem('lang') || 'fr';
+        const newColText = translations[lang]["new-col"]; 
+        
+        const head = table.querySelector('thead tr');
+        const th = document.createElement('th');
+        
+        th.innerHTML = `<textarea rows="1" placeholder="${newColText}" data-i18n-val="new-col">${newColText}</textarea><button class="btn-col-del no-print" onclick="deleteColumn(this)">X</button>`;
+        
+        head.insertBefore(th, head.querySelector('.action-cell'));
+        
+        table.querySelectorAll('tbody tr').forEach(r => {
+            const td = document.createElement('td');
+            td.innerHTML = `<textarea rows="1" placeholder="..."></textarea>`;
+            r.insertBefore(td, r.querySelector('.action-cell'));
+        });
+        saveAll();
+    }
+
+    let backupTimer;
+
+    function toggleBackupTimer() {
+        if (backupTimer) clearInterval(backupTimer);
+
+        const isChecked = document.getElementById('auto-backup-check').checked;
+        const interval = parseInt(document.getElementById('backup-interval').value);
+
+        if (isChecked) {
+            backupTimer = setInterval(() => {
+                const lang = localStorage.getItem('lang') || 'fr';
+                const msg = translations[lang]["backup-msg"];
+                
+                if (confirm(msg)) {
+                    exportJSON();
+                }
+            }, interval);
+        }
+        
+        saveAll();
+    }
+
+    function deleteColumn(b) {
+        const th = b.closest('th');
+        const idx = th.cellIndex;
+        const table = b.closest('table');
+        table.querySelectorAll('tr').forEach(r => r.cells[idx]?.remove());
+        saveAll();
+    }
+
+    function deleteRow(b) { b.closest('tr').remove(); saveAll(); }
+
+    function clearAutofill() {
+        const lang = localStorage.getItem('lang') || 'fr';
+        const confirmMsg = translations[lang]["confirm-clear"] || translations["fr"]["confirm-clear"];
+        
+        if(confirm(confirmMsg)) {
+            localStorage.removeItem('schools');           
+            localStorage.removeItem('fiche_pro_html_v4'); 
+            location.reload();                            
+        }
+    }
+
+    function registerSchool(i) {
+        let list = JSON.parse(localStorage.getItem('schools') || '["LYCEE MODERNE....."]');
+        if(i.value && !list.includes(i.value)) {
+            list.push(i.value);
+            localStorage.setItem('schools', JSON.stringify(list));
+            loadSchools();
+        }
+    }
+
+    function loadSchools() {
+        const list = JSON.parse(localStorage.getItem('schools') || '["LYCEE MODERNE....."]');
+        const datalist = document.getElementById('school-list');
+        if (datalist) datalist.innerHTML = list.map(s => `<option value="${s}">`).join('');
+    }
+
+    function exportJSON() {
+        const blob = new Blob([JSON.stringify({html: document.getElementById('export-content').innerHTML, theme: document.documentElement.getAttribute('data-theme')})], {type: 'application/json'});
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'Fiche_Backup.json'; a.click();
+    }
+
+    function importJSON(i) {
+        const r = new FileReader();
+        r.onload = (e) => {
+            const d = JSON.parse(e.target.result);
+            document.getElementById('export-content').innerHTML = d.html;
+            document.documentElement.setAttribute('data-theme', d.theme);
+            saveAll();
+            setTimeout(() => {
+                document.querySelectorAll('textarea').forEach(t => {
+                    t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px';
+                });
+            }, 50);
+        };
+        r.readAsText(i.files[0]);
+    }
+
+    function exportWord() {
+        exportJSON();
+
+        if (typeof htmlDocx === 'undefined') {
+            alert("Erreur: La librairie DOCX n'est pas chargée. (Le chargement a peut-être échoué).");
+            return;
+        }
+
+        const clone = document.getElementById('export-content').cloneNode(true);
+        const isCentered = clone.classList.contains('auto-center');
+
+        clone.querySelectorAll('.no-print').forEach(e => e.remove());
+        
+        clone.querySelectorAll('input, textarea').forEach(i => {
+            const s = document.createElement('span');
+            s.innerText = i.value;
+            s.style.whiteSpace = 'pre-wrap'; 
+            i.parentNode.replaceChild(s, i);
+        });
+
+        const alignStyle = isCentered ? "text-align: center;" : "text-align: left;";
+        
+        const contentHtml = `
+            <!DOCTYPE html>
+            <html>
+                <head>
+                    <meta charset="utf-8">
+                    <style>
+                        table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+                        th, td { border: 1px solid black; padding: 8px; vertical-align: top; ${alignStyle} }
+                        .label-cell { background-color: #f2f2f2; font-weight: bold; }
+                        h1 { text-align: center; }
+                    </style>
+                </head>
+                <body>
+                    ${clone.innerHTML}
+                </body>
+            </html>
+        `;
+
+        const converted = htmlDocx.asBlob(contentHtml);
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(converted);
+        a.download = 'Fiche_Cours.docx';
+        a.click();
+    } 
+
+
+
+</script>
+<footer class="no-print" style="margin-top: 40px; padding: 20px; border-top: 1px solid var(--border-color); text-align: center; font-size: 0.9em; opacity: 0.7;">
+    <p>© 2026 - <strong>Das Lehrer-Portfolio</strong> | <span data-i18n="footer-copy">Créé par Osiris Inc.</span></p>
+    <p><em data-i18n="footer-tip">Astuce : Utilisez le bouton "Exporter" pour sauvegarder vos données de façon permanente et "Importer" pour les restaurer.</em></p>
+</footer>
+</body>
+</html>
