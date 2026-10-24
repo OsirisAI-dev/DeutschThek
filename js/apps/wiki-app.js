@@ -321,20 +321,7 @@
         const progressBar = document.getElementById('idb-progress-bar');
         const statusText = document.getElementById('idb-status-text');
         
-        // Show loading simulation
-        progressContainer.style.display = 'block';
-        statusText.style.display = 'block';
-        let progress = 0;
-
-        const interval = setInterval(() => {
-            progress += 10;
-            progressBar.style.width = progress + '%';
-            
-            if (progress >= 100) {
-                clearInterval(interval);
-                executeIDBSave(entry, progressContainer, progressBar, statusText);
-            }
-        }, 100); 
+        executeIDBSave(entry, progressContainer, progressBar, statusText); 
     }
 
     function executeIDBSave(entry, container, bar, text) {
