@@ -13,33 +13,45 @@
          failed both attempts) — code that touches PDFLib/JSZip/mammoth/
          pdfjsLib awaits it first. -->
     <script>
-      function osirisLoadWithFallback(localSrc, cdnSrc, testGlobal) {
+      function osirisLoadWithFallback(localSources, cdnSrc, testGlobal) {
         return new Promise((resolve) => {
           if (testGlobal && window[testGlobal]) { resolve(true); return; }
-          const local = document.createElement('script');
-          local.src = localSrc;
-          local.onload = () => resolve(true);
-          local.onerror = () => {
-            console.warn('[Osiris] lokale Datei fehlt/fehlgeschlagen, versuche CDN:', localSrc);
-            const cdn = document.createElement('script');
-            cdn.src = cdnSrc;
-            cdn.onload = () => resolve(true);
-            cdn.onerror = () => {
-              console.error('[Osiris] CDN-Fallback ebenfalls fehlgeschlagen:', cdnSrc);
+          const sources = Array.isArray(localSources) ? [...localSources] : [localSources];
+          
+          function tryNext() {
+            if (testGlobal && window[testGlobal]) { resolve(true); return; }
+            if (sources.length > 0) {
+              const src = sources.shift();
+              const script = document.createElement('script');
+              script.src = src;
+              script.onload = () => resolve(true);
+              script.onerror = () => {
+                tryNext();
+              };
+              document.head.appendChild(script);
+            } else if (cdnSrc) {
+              const cdn = document.createElement('script');
+              cdn.src = cdnSrc;
+              cdn.onload = () => resolve(true);
+              cdn.onerror = () => {
+                console.warn('[Osiris] Weder lokale Offline-Pfade noch CDN erreichbar:', cdnSrc);
+                resolve(false);
+              };
+              document.head.appendChild(cdn);
+            } else {
               resolve(false);
-            };
-            document.head.appendChild(cdn);
-          };
-          document.head.appendChild(local);
+            }
+          }
+          tryNext();
         });
       }
 
       window.OSIRIS_LIBS_READY = Promise.all([
-        osirisLoadWithFallback('community-swarm.js', 'community-swarm.js', 'EduHybridShare'),
-        osirisLoadWithFallback('mammoth.browser.js', 'https://cdn.jsdelivr.net/npm/mammoth@1.7.2/mammoth.browser.min.js', 'mammoth'),
-        osirisLoadWithFallback('pdf.min.js', 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js', 'pdfjsLib'),
-        osirisLoadWithFallback('pdf-lib.min.js', 'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js', 'PDFLib'),
-        osirisLoadWithFallback('jszip.min.js', 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js', 'JSZip'),
+        osirisLoadWithFallback(['js/core/community-swarm.js', '../js/core/community-swarm.js', 'community-swarm.js'], null, 'EduHybridShare'),
+        osirisLoadWithFallback(['lib/mammoth/v1/mammoth.browser.js', 'lib/mammoth/mammoth.browser.js', '../lib/mammoth/v1/mammoth.browser.js', 'mammoth.browser.js'], 'https://cdn.jsdelivr.net/npm/mammoth@1.7.2/mammoth.browser.min.js', 'mammoth'),
+        osirisLoadWithFallback(['lib/pdf/v1/pdf.min.js', 'lib/pdf/pdf.min.js', '../lib/pdf/v1/pdf.min.js', 'pdf.min.js'], 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js', 'pdfjsLib'),
+        osirisLoadWithFallback(['lib/pdf/v1/pdf-lib.min.js', 'lib/pdf/pdf-lib.min.js', '../lib/pdf/v1/pdf-lib.min.js', 'pdf-lib.min.js'], 'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js', 'PDFLib'),
+        osirisLoadWithFallback(['lib/jszip/v1/jszip.min.js', 'lib/jszip/jszip.min.js', '../lib/jszip/v1/jszip.min.js', 'jszip.min.js'], 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js', 'JSZip'),
       ]);
     </script>
     <script>
@@ -116,10 +128,54 @@
         .app-title-sub { font-family: var(--bank-font-family, 'Brush Script MT', cursive); font-size: 0.62em; margin: -1px 0 0 22px; color: var(--text); opacity: 0.7; font-style: italic; }
 
         .toolbar { display: flex; align-items: center; gap: 8px; position: relative; }
-        .toolbar button { width: auto; margin-top: 0; padding: 6px 12px; font-size: 0.8rem; font-weight: bold; font-family: inherit; cursor: pointer; border-radius: 5px; border: 1px solid var(--border); background: var(--surface); color: var(--text); transition: 0.2s; display: inline-flex; align-items: center; gap: 6px; }
-        .toolbar button:hover { border-color: var(--accent); color: var(--accent); }
-        #import-toggle-btn { background: var(--accent); color: white; border: 1px solid var(--accent); }
-        #import-toggle-btn:hover { opacity: 0.88; color: white; }
+        .toolbar button {
+        width: auto;
+        margin-top: 0;
+        padding: 7px 14px;
+        font-size: 0.82rem;
+        font-weight: bold;
+        font-family: inherit;
+        cursor: pointer;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: var(--text);
+        transition: all 0.2s ease;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        white-space: nowrap;
+        user-select: none;
+        -webkit-tap-highlight-color: transparent;
+    }
+    .toolbar button:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+        transform: translateY(-1px);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .toolbar button:active {
+        transform: translateY(0);
+        box-shadow: none;
+    }
+    #import-toggle-btn {
+        background: var(--accent);
+        color: #ffffff;
+        border-color: var(--accent);
+    }
+    #import-toggle-btn:hover {
+        opacity: 0.92;
+        color: #ffffff;
+        box-shadow: 0 3px 10px rgba(0,0,0,0.18);
+    }
+    #links-toggle-btn svg {
+        flex-shrink: 0;
+        transition: transform 0.2s ease;
+    }
+    #links-toggle-btn:hover svg {
+        transform: rotate(-10deg) scale(1.08);
+    }
 
         #links-pop {
             display: none; position: absolute; top: 45px; right: 0; background: var(--surface); border: 1px solid var(--border); padding: 15px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 100; width: 250px;
@@ -195,10 +251,29 @@
         #btn-download:hover { transform: scale(1.05); }
 
         @media (max-width: 768px) {
-            .top-header { flex-direction: column; align-items: flex-start; gap: 10px; }
-            .toolbar { width: 100%; flex-wrap: wrap; }
-            .toolbar button { flex: 1 1 auto; }
-            #links-pop { position: fixed; top: auto; bottom: 10%; left: 50%; transform: translateX(-50%); width: 90%; max-width: 350px; z-index: 2000; }
+        .top-header { flex-direction: column; align-items: stretch; gap: 12px; padding: 10px 16px; }
+        .title-group { text-align: left; }
+        .toolbar { width: 100%; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+        .toolbar button {
+            flex: 1 1 calc(50% - 4px);
+            min-width: 130px;
+            min-height: 38px;
+            padding: 8px 10px;
+            font-size: 0.8rem;
+            justify-content: center;
+            text-align: center;
+        }
+        #links-pop {
+            position: fixed;
+            top: auto;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: calc(100vw - 32px);
+            max-width: 350px;
+            z-index: 2000;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+        }
 
             /* --- Mobile fixes --- */
 
@@ -286,6 +361,20 @@
         .share-option .share-icon { font-size: 1.25em; flex-shrink: 0; }
             #theme-toggle { display: none !important; }
 
+
+    @media (max-width: 420px) {
+        .top-header { padding: 8px 10px; gap: 10px; }
+        .app-title-main { font-size: 1.05em; }
+        .toolbar { gap: 6px; }
+        .toolbar button {
+            flex: 1 1 100%;
+            min-width: 100%;
+            min-height: 40px;
+            padding: 9px 12px;
+            font-size: 0.82rem;
+        }
+    }
+
 </style>
 </head>
 <body>
@@ -299,7 +388,7 @@
         <button id="import-toggle-btn" onclick="toggleImport(event)" style="display:inline-flex; align-items:center; justify-content:center; gap:6px;">
             <span data-i18n="newDoc">✚ NEUER PRÜFUNGSSTOFF</span>
         </button>
-        <button id="links-toggle-btn" onclick="toggleLinksPop(event)"><svg width="14px" height="14px" viewBox="0 0 24 24" id="meteor-icon-kit__solid-link" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M9.17197 18.3639C9.75776 17.7781 10.7075 17.7781 11.2933 18.3639C11.8791 18.9497 11.8791 19.8994 11.2933 20.4852L9.87908 21.8994C7.73119 24.0473 4.24879 24.0473 2.1009 21.8994C-0.0469807 19.7515 -0.0469807 16.2691 2.1009 14.1212L7.05065 9.17148C9.19853 7.0236 12.6809 7.0236 14.8288 9.17148C15.4146 9.75727 15.4146 10.707 14.8288 11.2928C14.243 11.8786 13.2933 11.8786 12.7075 11.2928C11.7312 10.3165 10.1483 10.3165 9.17197 11.2928L4.22222 16.2425C3.24591 17.2189 3.24591 18.8018 4.22222 19.7781C5.19853 20.7544 6.78145 20.7544 7.75776 19.7781L9.17197 18.3639ZM14.8288 5.63595C14.243 6.22174 13.2933 6.22174 12.7075 5.63595C12.1217 5.05016 12.1217 4.10041 12.7075 3.51463L14.1217 2.10041C16.2696 -0.047469 19.752 -0.047469 21.8999 2.10041C24.0478 4.2483 24.0478 7.73071 21.8999 9.87859L16.9501 14.8283C14.8023 16.9762 11.3199 16.9762 9.17197 14.8283C8.58618 14.2425 8.58618 13.2928 9.17197 12.707C9.75776 12.1212 10.7075 12.1212 11.2933 12.707C12.2696 13.6833 13.8525 13.6833 14.8288 12.707L19.7786 7.75727C20.7549 6.78096 20.7549 5.19805 19.7786 4.22174C18.8023 3.24542 17.2193 3.24542 16.243 4.22174L14.8288 5.63595Z" fill="#758CA3"/></svg> <span data-i18n="usefulLinks">NÜTZLICHE LINKS</span></button>
+        <button id="links-toggle-btn" onclick="toggleLinksPop(event)"><svg width="14px" height="14px" viewBox="0 0 24 24" id="meteor-icon-kit__solid-link" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M9.17197 18.3639C9.75776 17.7781 10.7075 17.7781 11.2933 18.3639C11.8791 18.9497 11.8791 19.8994 11.2933 20.4852L9.87908 21.8994C7.73119 24.0473 4.24879 24.0473 2.1009 21.8994C-0.0469807 19.7515 -0.0469807 16.2691 2.1009 14.1212L7.05065 9.17148C9.19853 7.0236 12.6809 7.0236 14.8288 9.17148C15.4146 9.75727 15.4146 10.707 14.8288 11.2928C14.243 11.8786 13.2933 11.8786 12.7075 11.2928C11.7312 10.3165 10.1483 10.3165 9.17197 11.2928L4.22222 16.2425C3.24591 17.2189 3.24591 18.8018 4.22222 19.7781C5.19853 20.7544 6.78145 20.7544 7.75776 19.7781L9.17197 18.3639ZM14.8288 5.63595C14.243 6.22174 13.2933 6.22174 12.7075 5.63595C12.1217 5.05016 12.1217 4.10041 12.7075 3.51463L14.1217 2.10041C16.2696 -0.047469 19.752 -0.047469 21.8999 2.10041C24.0478 4.2483 24.0478 7.73071 21.8999 9.87859L16.9501 14.8283C14.8023 16.9762 11.3199 16.9762 9.17197 14.8283C8.58618 14.2425 8.58618 13.2928 9.17197 12.707C9.75776 12.1212 10.7075 12.1212 11.2933 12.707C12.2696 13.6833 13.8525 13.6833 14.8288 12.707L19.7786 7.75727C20.7549 6.78096 20.7549 5.19805 19.7786 4.22174C18.8023 3.24542 17.2193 3.24542 16.243 4.22174L14.8288 5.63595Z" fill="currentColor" style="vertical-align: middle; flex-shrink: 0;"/></svg> <span data-i18n="usefulLinks">NÜTZLICHE LINKS</span></button>
 
         <div id="links-pop">
             <h4 id="pop-title" data-i18n="addLink" style="margin:0 0 10px 0; color:var(--primary);">Link hinzufügen</h4>
@@ -328,13 +417,9 @@
                     <option value="" disabled selected data-i18n="chooseBook">Lehrwerk wählen...</option>
                     <option value="HALLO ZUSAMMEN!">HALLO ZUSAMMEN!</option>
                     <option value="VORWÄRTS!">VORWÄRTS!</option>
-                    <option value="DEUTSCH? NA KLAR!">DEUTSCH? NA KLAR!</option>
-                    <option value="DEUTSCH? NA KLAR! 1">DEUTSCH? NA KLAR! 1</option>
-                    <option value="DEUTSCH? NA KLAR! 2">DEUTSCH? NA KLAR! 2</option>
-                    <option value="IHR UND WIR PLUS 1">IHR UND WIR PLUS 1</option>
-                    <option value="IHR UND WIR PLUS 2">IHR UND WIR PLUS 2</option>
-                    <option value="IHR UND WIR PLUS 3">IHR UND WIR PLUS 3</option>
-                    <option value="IHR UND WIR PLUS">IHR UND WIR PLUS</option>
+                    <option value="DEUTSCH? NA KLAR! 2de">DEUTSCH? NA KLAR! 2de</option>
+                    <option value="DEUTSCH? NA KLAR! 1re">DEUTSCH? NA KLAR! 1re</option>
+                    <option value="IHR UND WIR PLUS (Textbuch 3)">IHR UND WIR PLUS (Textbuch 3)</option>
                     <option value="UND JETZT WIR">UND JETZT WIR</option>
                     <option value="SONSTIGES">SONSTIGES (präzisieren)...</option>
                 </select>
@@ -346,7 +431,8 @@
         <div>
             <label data-i18n="klassenstufe">KLASSENSTUFE</label>
             <div style="display: flex; gap: 10px;">
-            <select id="inp-klassen" onchange="checkKlassen()" style="flex: 1;">
+            <select id="inp-klassen" onchange="checkKlassen()" required style="flex: 1;">
+                <option value="" disabled selected data-i18n="chooseKlassen">Klassenstufe wählen...</option>
                 <option value="12. Klasse">12. KLASSE (TERMINALE)</option>
                 <option value="11. Klasse">11. KLASSE (PREMIÈRE)</option>
                 <option value="10. Klasse">10. KLASSE (SECONDE)</option>
@@ -360,12 +446,26 @@
 
         <div>
             <label data-i18n="thema">THEMENBEREICH</label>
-            <input type="text" id="inp-thema" required list="dict-thema">
+            <div style="display: flex; gap: 10px;">
+                <select id="inp-thema" onchange="onThemaSelected()" required style="flex: 1;">
+                    <option value="" disabled selected data-i18n="chooseThema">Themenbereich wählen...</option>
+                    <option value="SONSTIGES">SONSTIGES (freies Thema)...</option>
+                </select>
+                <input type="text" id="inp-thema-other" list="dict-thema" data-i18n-ph="specifyThema" style="display:none; flex: 1;" placeholder="Thema spezifizieren...">
+                <datalist id="dict-thema"></datalist>
+            </div>
         </div>
 
         <div>
-            <label data-i18n="lektion">LEKTION / MODUL</label>
-            <input type="text" id="inp-lektion" required list="dict-lektion">
+            <label data-i18n="lektion">LEKTION / MODUL (OPTIONAL)</label>
+            <div style="display: flex; gap: 10px;">
+                <select id="inp-lektion" onchange="onLektionSelected()" style="flex: 1;">
+                    <option value="" selected data-i18n="chooseLektionOptional">(Optional / Keine Lektion)</option>
+                    <option value="SONSTIGES">SONSTIGES (freie Lektion)...</option>
+                </select>
+                <input type="text" id="inp-lektion-other" list="dict-lektion" data-i18n-ph="specifyLektion" style="display:none; flex: 1;" placeholder="Lektion spezifizieren...">
+                <datalist id="dict-lektion"></datalist>
+            </div>
         </div>
 
         <div>
@@ -377,7 +477,7 @@
             <label data-i18n="pruefungsart">PRÜFUNGSART</label>
             <div style="display: flex; gap: 10px;">
                 <select id="inp-typ" onchange="checkTyp()" required style="flex: 1;">
-                    <option value="" disabled selected>Bitte wählen...</option>
+                    <option value="" disabled selected data-i18n="choosePruefungsart">Prüfungsart wählen...</option>
                     <option value="KONTROLLE">LEISTUNGSKONTROLLE</option>
                     <option value="TEST">KURZTEST</option>
                     <option value="KLASSENARBEIT">KLASSENARBEIT</option>
@@ -458,13 +558,9 @@
                 <option value="">Filter: ALLE LEHRWERKE</option>
                 <option value="HALLO ZUSAMMEN!">HALLO ZUSAMMEN!</option>
                 <option value="VORWÄRTS!">VORWÄRTS!</option>
-                <option value="DEUTSCH? NA KLAR!">DEUTSCH? NA KLAR!</option>
-                <option value="DEUTSCH? NA KLAR! 1">DEUTSCH? NA KLAR! 1</option>
-                <option value="DEUTSCH? NA KLAR! 2">DEUTSCH? NA KLAR! 2</option>
-                <option value="IHR UND WIR PLUS 1">IHR UND WIR PLUS 1</option>
-                <option value="IHR UND WIR PLUS 2">IHR UND WIR PLUS 2</option>
-                <option value="IHR UND WIR PLUS 3">IHR UND WIR PLUS 3</option>
-                <option value="IHR UND WIR PLUS">IHR UND WIR PLUS</option>
+                <option value="DEUTSCH? NA KLAR! 2de">DEUTSCH? NA KLAR! 2de</option>
+                <option value="DEUTSCH? NA KLAR! 1re">DEUTSCH? NA KLAR! 1re</option>
+                <option value="IHR UND WIR PLUS (Textbuch 3)">IHR UND WIR PLUS (Textbuch 3)</option>
                 <option value="UND JETZT WIR">UND JETZT WIR</option>
             </select>
             <input type="number" id="filter-jahr" min="2000" placeholder="Filter: JAHR" oninput="renderResults()">
@@ -592,8 +688,8 @@
         DE: {
             appTitle: 'MEINE TESTBANK', newDoc: '✚ NEUER PRÜFUNGSSTOFF', design: 'DESIGN',
             usefulLinks: 'NÜTZLICHE LINKS', addLink: 'Link hinzufügen', name: 'Name', add: 'Hinzufügen',
-            addDocTitle: 'Prüfungsstoff hinzufügen', thema: 'THEMENBEREICH', lektion: 'LEKTION / MODUL',
-            lehrwerk: 'LEHRWERK', chooseBook: 'Lehrwerk wählen...', specifyBook: 'Lehrwerk spezifizieren...', klassenstufe: 'KLASSENSTUFE', jahr: 'JAHR', pruefungsart: 'PRÜFUNGSART',
+            addDocTitle: 'Prüfungsstoff hinzufügen', thema: 'THEMENBEREICH', lektion: 'LEKTION / MODUL (OPTIONAL)',
+            lehrwerk: 'LEHRWERK', chooseBook: 'Lehrwerk wählen...', specifyBook: 'Lehrwerk spezifizieren...', chooseThema: 'Themenbereich wählen...', chooseLektion: 'Lektion / Modul wählen...', chooseLektionOptional: '(Optional / Keine Lektion)', chooseKlassen: 'Klassenstufe wählen...', choosePruefungsart: 'Prüfungsart wählen...', specifyThema: 'Thema spezifizieren...', specifyLektion: 'Lektion spezifizieren...', klassenstufe: 'KLASSENSTUFE', jahr: 'JAHR', pruefungsart: 'PRÜFUNGSART',
             pleaseSpecify: 'Bitte spezifizieren...', specify: 'Spezifizieren...',
             uploadFile: 'DATEI HOCHLADEN (PDF, DOC, DOCX...)',
             deleteMode: 'Löschmodus aktivieren', editMode: 'Modifikationen aktivieren',
@@ -604,8 +700,8 @@
         FR: {
             appTitle: 'MA BANQUE DE TESTS', newDoc: '✚ NOUVEAU DOCUMENT', design: 'THÈME',
             usefulLinks: 'LIENS UTILES', addLink: 'Ajouter un lien', name: 'Nom', add: 'Ajouter',
-            addDocTitle: 'Ajouter un document', thema: 'THÈME', lektion: 'LEÇON / MODULE',
-            lehrwerk: 'MANUEL', chooseBook: 'Choisir un manuel...', specifyBook: 'Préciser le manuel...', klassenstufe: 'NIVEAU', jahr: 'ANNÉE', pruefungsart: "TYPE D'ÉVALUATION",
+            addDocTitle: 'Ajouter un document', thema: 'THÈME', lektion: 'LEÇON / MODULE (OPTIONNEL)',
+            lehrwerk: 'MANUEL', chooseBook: 'Choisir un manuel...', specifyBook: 'Préciser le manuel...', chooseThema: 'Choisir un thème...', chooseLektion: 'Choisir une leçon / module...', chooseLektionOptional: '(Optionnel / Aucune leçon)', chooseKlassen: 'Choisir un niveau...', choosePruefungsart: "Choisir le type d'évaluation...", specifyThema: 'Préciser le thème...', specifyLektion: 'Préciser la leçon...', klassenstufe: 'NIVEAU', jahr: 'ANNÉE', pruefungsart: "TYPE D'ÉVALUATION",
             pleaseSpecify: 'Veuillez préciser...', specify: 'Préciser...',
             uploadFile: 'IMPORTER UN FICHIER (PDF, DOC, DOCX...)',
             deleteMode: 'Activer le mode suppression', editMode: 'Activer les modifications',
@@ -821,8 +917,15 @@
         document.querySelector('#import-submenu h2').innerHTML = `<svg width="20" height="20" style="vertical-align: middle;" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg> Prüfungsstoff hinzufügen`;
         document.getElementById('save-entry-text').textContent = 'SPEICHERN';
 
-        document.getElementById('inp-thema').value = '';
-        document.getElementById('inp-lektion').value = '';
+        const _thSelect = document.getElementById('inp-thema');
+        if (_thSelect) _thSelect.selectedIndex = 0;
+        const _thOther = document.getElementById('inp-thema-other');
+        if (_thOther) { _thOther.value = ''; _thOther.style.display = 'none'; }
+
+        const _lekSelect = document.getElementById('inp-lektion');
+        if (_lekSelect) _lekSelect.selectedIndex = 0;
+        const _lekOther = document.getElementById('inp-lektion-other');
+        if (_lekOther) { _lekOther.value = ''; _lekOther.style.display = 'none'; }
         document.getElementById('inp-buch').selectedIndex = 0;
         const _bOther = document.getElementById('inp-buch-other');
         if (_bOther) { _bOther.value = ''; _bOther.style.display = 'none'; _bOther.required = false; }
@@ -859,7 +962,791 @@
         submenu.classList.toggle('open');
     }
 
-        function checkBuch() {
+    const CURRICULUM_DATA = {
+  "HALLO ZUSAMMEN!": {
+    "klasse": "8. Klasse",
+    "themes": [
+      {
+        "title": "BEGRÜßUNG UND VORSTELLUNG",
+        "fullTitle": "THEMA 1: BEGRÜßUNG UND VORSTELLUNG",
+        "lessons": [
+          "Lektion 1: Hallo Zusammen! Ich stelle mich vor.",
+          "Lektion 2: Franck und Nora"
+        ]
+      },
+      {
+        "title": "FAMILIE",
+        "fullTitle": "THEMA 2: FAMILIE",
+        "lessons": [
+          "Lektion 1: Familie Yapi",
+          "Lektion 2: Sonntags sind wir alle zu Hause"
+        ]
+      },
+      {
+        "title": "SCHULE",
+        "fullTitle": "THEMA 3: SCHULE",
+        "lessons": [
+          "Lektion 1: Hénock kauft Schulsachen.",
+          "Lektion 2: Die Schule von Petra und Klaus."
+        ]
+      },
+      {
+        "title": "GESUNDHEIT",
+        "fullTitle": "THEMA 4: GESUNDHEIT",
+        "lessons": [
+          "Lektion 1: Dr Soro untersucht Maïmouna",
+          "Lektion 2: Ich hoffe, es geht mir bald besser"
+        ]
+      },
+      {
+        "title": "FREIZEIT UND HOBBYS",
+        "fullTitle": "THEMA 5: FREIZEIT UND HOBBYS",
+        "lessons": [
+          "Lektion 1: Die Hobbys von Didi",
+          "Lektion 2: Jugendliche in Deutschland"
+        ]
+      }
+    ]
+  },
+  "VORWÄRTS!": {
+    "klasse": "9. Klasse",
+    "themes": [
+      {
+        "title": "Erstes Treffen",
+        "fullTitle": "THEMA 1: Erstes Treffen",
+        "lessons": [
+          "Lektion 1: Erster Kontakt",
+          "Lektion 2: Begrüßen"
+        ]
+      },
+      {
+        "title": "Ich kann zählen",
+        "fullTitle": "THEMA 2: Ich kann zählen",
+        "lessons": [
+          "Lektion 1: Auf dem Markt",
+          "Lektion 2: Eine Reise nach Man"
+        ]
+      },
+      {
+        "title": "In der Schule",
+        "fullTitle": "THEMA 3: In der Schule",
+        "lessons": [
+          "Lektion 1: Mein Lieblingsfach",
+          "Lektion 2: Juliana"
+        ]
+      },
+      {
+        "title": "Zu Hause",
+        "fullTitle": "THEMA 4: Zu Hause",
+        "lessons": [
+          "Lektion 1: Ich lade dich ein",
+          "Lektion 2: Mein Tageslauf"
+        ]
+      },
+      {
+        "title": "Kleidung",
+        "fullTitle": "THEMA 5: Kleidung",
+        "lessons": [
+          "Lektion 1: Trachtenfest in Waraniéné",
+          "Lektion 2: Wie kleidet man sich in der Schweiz an?"
+        ]
+      },
+      {
+        "title": "Arbeit und Berufe",
+        "fullTitle": "THEMA 6: Arbeit und Berufe",
+        "lessons": [
+          "Lektion 1: Ein junger Arbeiter",
+          "Lektion 2: Was mir an meiner Arbeit gefällt"
+        ]
+      }
+    ]
+  },
+    "DEUTSCH? NA KLAR! 2de": {
+    "klasse": "10. Klasse",
+    "themes": [
+      {
+        "title": "KONSUMVERHALTEN",
+        "fullTitle": "THEMA 1: KONSUMVERHALTEN",
+        "lessons": [
+          "Lektion 1: Im Restaurant",
+          "Lektion 2: Jugendliche und ihre Einnahmen"
+        ]
+      },
+      {
+        "title": "JUGEND",
+        "fullTitle": "THEMA 2: JUGEND",
+        "lessons": [
+          "Lektion 1: Mein Freund Facebook",
+          "Lektion 2: Werteerziehung in der heutigen Gesellschaft"
+        ]
+      },
+      {
+        "title": "FAMILIE UND HAUSHALT",
+        "fullTitle": "THEMA 3: FAMILIE UND HAUSHALT",
+        "lessons": [
+          "Lektion 1: Freizeitgestaltung",
+          "Lektion 2: Verwandtschaft, Familie und Haushalt in Afrika"
+        ]
+      }
+    ]
+  },
+  "DEUTSCH? NA KLAR! 1re": {
+    "klasse": "11. Klasse",
+    "themes": [
+      {
+        "title": "WOHLBEFINDEN",
+        "fullTitle": "THEMA 1: WOHLBEFINDEN",
+        "lessons": [
+          "Lektion 1: Wellness",
+          "Lektion 2: Eine Einleitung für mehr Wohlbefinden"
+        ]
+      },
+      {
+        "title": "MEDIEN UND KULTUR",
+        "fullTitle": "THEMA 2: MEDIEN UND KULTUR",
+        "lessons": [
+          "Lektion 1: Afrikas Bild in den Medien",
+          "Lektion 2: Ivorische Kulturen"
+        ]
+      },
+      {
+        "title": "SCHULE UND AUSBILDUNG",
+        "fullTitle": "THEMA 3: SCHULE UND AUSBILDUNG",
+        "lessons": [
+          "Lektion 1: Schule in Südafrika",
+          "Lektion 2: Man braucht in allen Bereichen eine Ausbildung"
+        ]
+      }
+    ]
+  },
+  "DEUTSCH? NA KLAR!": {
+    "klasse": "10. Klasse",
+    "themes": [
+      {
+        "title": "KONSUMVERHALTEN",
+        "fullTitle": "THEMA 1: KONSUMVERHALTEN",
+        "lessons": [
+          "Lektion 1: Im Restaurant",
+          "Lektion 2: Jugendliche und ihre Einnahmen"
+        ]
+      },
+      {
+        "title": "JUGEND",
+        "fullTitle": "THEMA 2: JUGEND",
+        "lessons": [
+          "Lektion 1: Mein Freund Facebook",
+          "Lektion 2: Werteerziehung in der heutigen Gesellschaft"
+        ]
+      },
+      {
+        "title": "FAMILIE UND HAUSHALT",
+        "fullTitle": "THEMA 3: FAMILIE UND HAUSHALT",
+        "lessons": [
+          "Lektion 1: Freizeitgestaltung",
+          "Lektion 2: Verwandtschaft, Familie und Haushalt in Afrika"
+        ]
+      }
+    ]
+  },
+  "Deutsch Na klar! 2de": {
+    "klasse": "10. Klasse",
+    "themes": [
+      {
+        "title": "KONSUMVERHALTEN",
+        "fullTitle": "THEMA 1: KONSUMVERHALTEN",
+        "lessons": [
+          "Lektion 1: Im Restaurant",
+          "Lektion 2: Jugendliche und ihre Einnahmen"
+        ]
+      },
+      {
+        "title": "JUGEND",
+        "fullTitle": "THEMA 2: JUGEND",
+        "lessons": [
+          "Lektion 1: Mein Freund Facebook",
+          "Lektion 2: Werteerziehung in der heutigen Gesellschaft"
+        ]
+      },
+      {
+        "title": "FAMILIE UND HAUSHALT",
+        "fullTitle": "THEMA 3: FAMILIE UND HAUSHALT",
+        "lessons": [
+          "Lektion 1: Freizeitgestaltung",
+          "Lektion 2: Verwandtschaft, Familie und Haushalt in Afrika"
+        ]
+      }
+    ]
+  },
+  "Deutsch Na klar! 1re": {
+    "klasse": "11. Klasse",
+    "themes": [
+      {
+        "title": "WOHLBEFINDEN",
+        "fullTitle": "THEMA 1: WOHLBEFINDEN",
+        "lessons": [
+          "Lektion 1: Wellness",
+          "Lektion 2: Eine Einleitung für mehr Wohlbefinden"
+        ]
+      },
+      {
+        "title": "MEDIEN UND KULTUR",
+        "fullTitle": "THEMA 2: MEDIEN UND KULTUR",
+        "lessons": [
+          "Lektion 1: Afrikas Bild in den Medien",
+          "Lektion 2: Ivorische Kulturen"
+        ]
+      },
+      {
+        "title": "SCHULE UND AUSBILDUNG",
+        "fullTitle": "THEMA 3: SCHULE UND AUSBILDUNG",
+        "lessons": [
+          "Lektion 1: Schule in Südafrika",
+          "Lektion 2: Man braucht in allen Bereichen eine Ausbildung"
+        ]
+      }
+    ]
+  },
+  "IHR UND WIR PLUS 3": {
+    "klasse": "12. Klasse",
+    "themes": [
+      {
+        "title": "Kontakte über Grenzen",
+        "fullTitle": "LEKTION 1: Kontakte über Grenzen",
+        "lessons": [
+          "Abschnitt A: Brieffreundschaften",
+          "Abschnitt B: Schüleraustausch",
+          "Abschnitt C: Was für ein Theater?!",
+          "Abschnitt D: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Du und Ich",
+        "fullTitle": "LEKTION 2: Du und Ich",
+        "lessons": [
+          "Abschnitt A: Beziehungen",
+          "Abschnitt B: Freundschaft",
+          "Abschnitt C: Liebe ohne Grenzen",
+          "Abschnitt D: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Fit bleiben",
+        "fullTitle": "LEKTION 3: Fit bleiben",
+        "lessons": [
+          "Abschnitt A: Sport und Gesundheit",
+          "Abschnitt B: Fertig? Los!",
+          "Abschnitt C: Sport verbindet",
+          "Abschnitt D: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Unter einem Dach",
+        "fullTitle": "LEKTION 4: Unter einem Dach",
+        "lessons": [
+          "Abschnitt A: Kinder und Eltern",
+          "Abschnitt B: Geschwister",
+          "Abschnitt C: Leben in einer WG",
+          "Abschnitt D: Beziehungs- und Familienprobleme",
+          "Abschnitt E: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Fürs Leben lernen",
+        "fullTitle": "LEKTION 5: Fürs Leben lernen",
+        "lessons": [
+          "Abschnitt A: Das deutsche Schulsystem",
+          "Abschnitt B: Besuch bei einem perfekten Lehrer",
+          "Abschnitt C: Schülerpresse",
+          "Abschnitt D: Schulen in Aktion",
+          "Abschnitt E: Projekte an einer Schule",
+          "Abschnitt F: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "(K)ein bisschen erwachsen",
+        "fullTitle": "LEKTION 6: (K)ein bisschen erwachsen",
+        "lessons": [
+          "Abschnitt A: Junge Leute in Deutschland",
+          "Abschnitt B: Erwachsen werden",
+          "Abschnitt C: Erste Berufserfahrungen",
+          "Abschnitt D: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Echt spannend!",
+        "fullTitle": "LEKTION 7: Echt spannend!",
+        "lessons": [
+          "Abschnitt A: Lesen",
+          "Abschnitt B: Jugendbücher",
+          "Abschnitt C: Kino, Kino!",
+          "Abschnitt D: Junge Filmemacher",
+          "Abschnitt E: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Mitmachen",
+        "fullTitle": "LEKTION 8: Mitmachen",
+        "lessons": [
+          "Abschnitt A: Globaler Klimawandel",
+          "Abschnitt B: Was tust du für die Umwelt?",
+          "Abschnitt C: Schüler für die Umwelt",
+          "Abschnitt D: Soziales Engagement",
+          "Abschnitt E: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Kein Problem?!",
+        "fullTitle": "LEKTION 9: Kein Problem?!",
+        "lessons": [
+          "Abschnitt A: Streitschlichtung",
+          "Abschnitt B: Einbahnstraße",
+          "Abschnitt C: Lauf um dein Leben",
+          "Abschnitt D: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Alles Illusion?",
+        "fullTitle": "LEKTION 10: Alles Illusion?",
+        "lessons": [
+          "Abschnitt A: Liebe",
+          "Abschnitt B: Von Beruf schön!?",
+          "Abschnitt C: Schönheitsideale",
+          "Abschnitt D: Werbung und Konsum",
+          "Abschnitt E: Kreativwerkstatt"
+        ]
+      }
+    ]
+  },
+  "IHR UND WIR PLUS (Textbuch 3)": {
+    "klasse": "12. Klasse",
+    "themes": [
+      {
+        "title": "Kontakte über Grenzen",
+        "fullTitle": "LEKTION 1: Kontakte über Grenzen",
+        "lessons": [
+          "Abschnitt A: Brieffreundschaften",
+          "Abschnitt B: Schüleraustausch",
+          "Abschnitt C: Was für ein Theater?!",
+          "Abschnitt D: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Du und Ich",
+        "fullTitle": "LEKTION 2: Du und Ich",
+        "lessons": [
+          "Abschnitt A: Beziehungen",
+          "Abschnitt B: Freundschaft",
+          "Abschnitt C: Liebe ohne Grenzen",
+          "Abschnitt D: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Fit bleiben",
+        "fullTitle": "LEKTION 3: Fit bleiben",
+        "lessons": [
+          "Abschnitt A: Sport und Gesundheit",
+          "Abschnitt B: Fertig? Los!",
+          "Abschnitt C: Sport verbindet",
+          "Abschnitt D: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Unter einem Dach",
+        "fullTitle": "LEKTION 4: Unter einem Dach",
+        "lessons": [
+          "Abschnitt A: Kinder und Eltern",
+          "Abschnitt B: Geschwister",
+          "Abschnitt C: Leben in einer WG",
+          "Abschnitt D: Beziehungs- und Familienprobleme",
+          "Abschnitt E: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Fürs Leben lernen",
+        "fullTitle": "LEKTION 5: Fürs Leben lernen",
+        "lessons": [
+          "Abschnitt A: Das deutsche Schulsystem",
+          "Abschnitt B: Besuch bei einem perfekten Lehrer",
+          "Abschnitt C: Schülerpresse",
+          "Abschnitt D: Schulen in Aktion",
+          "Abschnitt E: Projekte an einer Schule",
+          "Abschnitt F: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "(K)ein bisschen erwachsen",
+        "fullTitle": "LEKTION 6: (K)ein bisschen erwachsen",
+        "lessons": [
+          "Abschnitt A: Junge Leute in Deutschland",
+          "Abschnitt B: Erwachsen werden",
+          "Abschnitt C: Erste Berufserfahrungen",
+          "Abschnitt D: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Echt spannend!",
+        "fullTitle": "LEKTION 7: Echt spannend!",
+        "lessons": [
+          "Abschnitt A: Lesen",
+          "Abschnitt B: Jugendbücher",
+          "Abschnitt C: Kino, Kino!",
+          "Abschnitt D: Junge Filmemacher",
+          "Abschnitt E: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Mitmachen",
+        "fullTitle": "LEKTION 8: Mitmachen",
+        "lessons": [
+          "Abschnitt A: Globaler Klimawandel",
+          "Abschnitt B: Was tust du für die Umwelt?",
+          "Abschnitt C: Schüler für die Umwelt",
+          "Abschnitt D: Soziales Engagement",
+          "Abschnitt E: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Kein Problem?!",
+        "fullTitle": "LEKTION 9: Kein Problem?!",
+        "lessons": [
+          "Abschnitt A: Streitschlichtung",
+          "Abschnitt B: Einbahnstraße",
+          "Abschnitt C: Lauf um dein Leben",
+          "Abschnitt D: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Alles Illusion?",
+        "fullTitle": "LEKTION 10: Alles Illusion?",
+        "lessons": [
+          "Abschnitt A: Liebe",
+          "Abschnitt B: Von Beruf schön!?",
+          "Abschnitt C: Schönheitsideale",
+          "Abschnitt D: Werbung und Konsum",
+          "Abschnitt E: Kreativwerkstatt"
+        ]
+      }
+    ]
+  },
+  "IHR UND WIR PLUS Textbuch 3": {
+    "klasse": "12. Klasse",
+    "themes": [
+      {
+        "title": "Kontakte über Grenzen",
+        "fullTitle": "LEKTION 1: Kontakte über Grenzen",
+        "lessons": [
+          "Abschnitt A: Brieffreundschaften",
+          "Abschnitt B: Schüleraustausch",
+          "Abschnitt C: Was für ein Theater?!",
+          "Abschnitt D: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Du und Ich",
+        "fullTitle": "LEKTION 2: Du und Ich",
+        "lessons": [
+          "Abschnitt A: Beziehungen",
+          "Abschnitt B: Freundschaft",
+          "Abschnitt C: Liebe ohne Grenzen",
+          "Abschnitt D: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Fit bleiben",
+        "fullTitle": "LEKTION 3: Fit bleiben",
+        "lessons": [
+          "Abschnitt A: Sport und Gesundheit",
+          "Abschnitt B: Fertig? Los!",
+          "Abschnitt C: Sport verbindet",
+          "Abschnitt D: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Unter einem Dach",
+        "fullTitle": "LEKTION 4: Unter einem Dach",
+        "lessons": [
+          "Abschnitt A: Kinder und Eltern",
+          "Abschnitt B: Geschwister",
+          "Abschnitt C: Leben in einer WG",
+          "Abschnitt D: Beziehungs- und Familienprobleme",
+          "Abschnitt E: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Fürs Leben lernen",
+        "fullTitle": "LEKTION 5: Fürs Leben lernen",
+        "lessons": [
+          "Abschnitt A: Das deutsche Schulsystem",
+          "Abschnitt B: Besuch bei einem perfekten Lehrer",
+          "Abschnitt C: Schülerpresse",
+          "Abschnitt D: Schulen in Aktion",
+          "Abschnitt E: Projekte an einer Schule",
+          "Abschnitt F: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "(K)ein bisschen erwachsen",
+        "fullTitle": "LEKTION 6: (K)ein bisschen erwachsen",
+        "lessons": [
+          "Abschnitt A: Junge Leute in Deutschland",
+          "Abschnitt B: Erwachsen werden",
+          "Abschnitt C: Erste Berufserfahrungen",
+          "Abschnitt D: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Echt spannend!",
+        "fullTitle": "LEKTION 7: Echt spannend!",
+        "lessons": [
+          "Abschnitt A: Lesen",
+          "Abschnitt B: Jugendbücher",
+          "Abschnitt C: Kino, Kino!",
+          "Abschnitt D: Junge Filmemacher",
+          "Abschnitt E: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Mitmachen",
+        "fullTitle": "LEKTION 8: Mitmachen",
+        "lessons": [
+          "Abschnitt A: Globaler Klimawandel",
+          "Abschnitt B: Was tust du für die Umwelt?",
+          "Abschnitt C: Schüler für die Umwelt",
+          "Abschnitt D: Soziales Engagement",
+          "Abschnitt E: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Kein Problem?!",
+        "fullTitle": "LEKTION 9: Kein Problem?!",
+        "lessons": [
+          "Abschnitt A: Streitschlichtung",
+          "Abschnitt B: Einbahnstraße",
+          "Abschnitt C: Lauf um dein Leben",
+          "Abschnitt D: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Alles Illusion?",
+        "fullTitle": "LEKTION 10: Alles Illusion?",
+        "lessons": [
+          "Abschnitt A: Liebe",
+          "Abschnitt B: Von Beruf schön!?",
+          "Abschnitt C: Schönheitsideale",
+          "Abschnitt D: Werbung und Konsum",
+          "Abschnitt E: Kreativwerkstatt"
+        ]
+      }
+    ]
+  },
+  "IHR UND WIR PLUS": {
+    "klasse": "12. Klasse",
+    "themes": [
+      {
+        "title": "Kontakte über Grenzen",
+        "fullTitle": "LEKTION 1: Kontakte über Grenzen",
+        "lessons": [
+          "Abschnitt A: Brieffreundschaften",
+          "Abschnitt B: Schüleraustausch",
+          "Abschnitt C: Was für ein Theater?!",
+          "Abschnitt D: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Du und Ich",
+        "fullTitle": "LEKTION 2: Du und Ich",
+        "lessons": [
+          "Abschnitt A: Beziehungen",
+          "Abschnitt B: Freundschaft",
+          "Abschnitt C: Liebe ohne Grenzen",
+          "Abschnitt D: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Fit bleiben",
+        "fullTitle": "LEKTION 3: Fit bleiben",
+        "lessons": [
+          "Abschnitt A: Sport und Gesundheit",
+          "Abschnitt B: Fertig? Los!",
+          "Abschnitt C: Sport verbindet",
+          "Abschnitt D: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Unter einem Dach",
+        "fullTitle": "LEKTION 4: Unter einem Dach",
+        "lessons": [
+          "Abschnitt A: Kinder und Eltern",
+          "Abschnitt B: Geschwister",
+          "Abschnitt C: Leben in einer WG",
+          "Abschnitt D: Beziehungs- und Familienprobleme",
+          "Abschnitt E: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Fürs Leben lernen",
+        "fullTitle": "LEKTION 5: Fürs Leben lernen",
+        "lessons": [
+          "Abschnitt A: Das deutsche Schulsystem",
+          "Abschnitt B: Besuch bei einem perfekten Lehrer",
+          "Abschnitt C: Schülerpresse",
+          "Abschnitt D: Schulen in Aktion",
+          "Abschnitt E: Projekte an einer Schule",
+          "Abschnitt F: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "(K)ein bisschen erwachsen",
+        "fullTitle": "LEKTION 6: (K)ein bisschen erwachsen",
+        "lessons": [
+          "Abschnitt A: Junge Leute in Deutschland",
+          "Abschnitt B: Erwachsen werden",
+          "Abschnitt C: Erste Berufserfahrungen",
+          "Abschnitt D: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Echt spannend!",
+        "fullTitle": "LEKTION 7: Echt spannend!",
+        "lessons": [
+          "Abschnitt A: Lesen",
+          "Abschnitt B: Jugendbücher",
+          "Abschnitt C: Kino, Kino!",
+          "Abschnitt D: Junge Filmemacher",
+          "Abschnitt E: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Mitmachen",
+        "fullTitle": "LEKTION 8: Mitmachen",
+        "lessons": [
+          "Abschnitt A: Globaler Klimawandel",
+          "Abschnitt B: Was tust du für die Umwelt?",
+          "Abschnitt C: Schüler für die Umwelt",
+          "Abschnitt D: Soziales Engagement",
+          "Abschnitt E: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Kein Problem?!",
+        "fullTitle": "LEKTION 9: Kein Problem?!",
+        "lessons": [
+          "Abschnitt A: Streitschlichtung",
+          "Abschnitt B: Einbahnstraße",
+          "Abschnitt C: Lauf um dein Leben",
+          "Abschnitt D: Kreativwerkstatt"
+        ]
+      },
+      {
+        "title": "Alles Illusion?",
+        "fullTitle": "LEKTION 10: Alles Illusion?",
+        "lessons": [
+          "Abschnitt A: Liebe",
+          "Abschnitt B: Von Beruf schön!?",
+          "Abschnitt C: Schönheitsideale",
+          "Abschnitt D: Werbung und Konsum",
+          "Abschnitt E: Kreativwerkstatt"
+        ]
+      }
+    ]
+  }
+};
+
+    function onBuchSelected(buchName) {
+        const data = CURRICULUM_DATA[buchName];
+        const themaSelect = document.getElementById('inp-thema');
+        const lektionSelect = document.getElementById('inp-lektion');
+        const klassenSelect = document.getElementById('inp-klassen');
+        const themaOther = document.getElementById('inp-thema-other');
+        const lektionOther = document.getElementById('inp-lektion-other');
+
+        if (themaOther) { themaOther.style.display = 'none'; themaOther.value = ''; }
+        if (lektionOther) { lektionOther.style.display = 'none'; lektionOther.value = ''; }
+
+        // Auto-select corresponding Klassenstufe
+        if (data && data.klasse && klassenSelect) {
+            klassenSelect.value = data.klasse;
+            if (typeof checkKlassen === 'function') checkKlassen();
+        }
+
+        // Populate Themen
+        if (data && data.themes && data.themes.length > 0) {
+            let thHtml = `<option value="" disabled selected data-i18n="chooseThema">Themenbereich wählen...</option>`;
+            data.themes.forEach(t => {
+                thHtml += `<option value="${t.title.replace(/"/g, '&quot;')}">${t.fullTitle || t.title}</option>`;
+            });
+            thHtml += `<option value="SONSTIGES">SONSTIGES (freies Thema)...</option>`;
+            themaSelect.innerHTML = thHtml;
+
+            // Populate all lessons across the book initially (Optional by default)
+            let lHtml = `<option value="" selected data-i18n="chooseLektionOptional">(Optional / Keine Lektion)</option>`;
+            data.themes.forEach(t => {
+                if (t.lessons && t.lessons.length > 0) {
+                    lHtml += `<optgroup label="${(t.fullTitle || t.title).replace(/"/g, '&quot;')}">`;
+                    t.lessons.forEach(les => {
+                        lHtml += `<option value="${les.replace(/"/g, '&quot;')}">${les}</option>`;
+                    });
+                    lHtml += `</optgroup>`;
+                }
+            });
+            lHtml += `<option value="SONSTIGES">SONSTIGES (freie Lektion)...</option>`;
+            lektionSelect.innerHTML = lHtml;
+        } else {
+            themaSelect.innerHTML = `<option value="" disabled selected data-i18n="chooseThema">Themenbereich wählen...</option><option value="SONSTIGES" selected>SONSTIGES (freies Thema)...</option>`;
+            lektionSelect.innerHTML = `<option value="" selected data-i18n="chooseLektionOptional">(Optional / Keine Lektion)</option><option value="SONSTIGES">SONSTIGES (freie Lektion)...</option>`;
+            if (themaOther) { themaOther.style.display = 'block'; themaOther.required = true; }
+            if (lektionOther) { lektionOther.style.display = 'none'; lektionOther.required = false; }
+        }
+    }
+
+    function onThemaSelected() {
+        const buchSelect = document.getElementById('inp-buch');
+        const themaSelect = document.getElementById('inp-thema');
+        const lektionSelect = document.getElementById('inp-lektion');
+        const themaOther = document.getElementById('inp-thema-other');
+
+        if (themaSelect.value === 'SONSTIGES') {
+            if (themaOther) {
+                themaOther.style.display = 'block';
+                themaOther.required = true;
+                themaOther.focus();
+            }
+            return;
+        } else {
+            if (themaOther) {
+                themaOther.style.display = 'none';
+                themaOther.required = false;
+            }
+        }
+
+        const curBook = CURRICULUM_DATA[buchSelect.value];
+        if (!curBook || !curBook.themes) return;
+
+        const chosenTheme = curBook.themes.find(t => t.title === themaSelect.value || t.fullTitle === themaSelect.value);
+        if (chosenTheme && chosenTheme.lessons && chosenTheme.lessons.length > 0) {
+            let lHtml = `<option value="" selected data-i18n="chooseLektionOptional">(Optional / Keine Lektion)</option>`;
+            chosenTheme.lessons.forEach(les => {
+                lHtml += `<option value="${les.replace(/"/g, '&quot;')}">${les}</option>`;
+            });
+            lHtml += `<option value="SONSTIGES">SONSTIGES (freie Lektion)...</option>`;
+            lektionSelect.innerHTML = lHtml;
+        }
+    }
+
+    function onLektionSelected() {
+        const lektionSelect = document.getElementById('inp-lektion');
+        const lektionOther = document.getElementById('inp-lektion-other');
+        if (lektionSelect.value === 'SONSTIGES') {
+            if (lektionOther) {
+                lektionOther.style.display = 'block';
+                lektionOther.focus();
+            }
+        } else {
+            if (lektionOther) lektionOther.style.display = 'none';
+        }
+    }
+
+    function checkBuch() {
         const sel = document.getElementById('inp-buch');
         const other = document.getElementById('inp-buch-other');
         if (sel.value === 'SONSTIGES') {
@@ -872,6 +1759,7 @@
             other.style.opacity = '0';
             other.required = false;
         }
+        onBuchSelected(sel.value);
     }
 
     function checkKlassen() {
@@ -879,10 +1767,12 @@
         const otherInput = document.getElementById('inp-klassen-other');
         if (klassen === 'Sonstiges') {
             otherInput.style.display = 'block';
-            setTimeout(() => { otherInput.style.opacity = '1'; }, 10); // Smooth fade-in
+            otherInput.required = true;
+            setTimeout(() => { otherInput.style.opacity = '1'; otherInput.focus(); }, 10); // Smooth fade-in
         } else {
             otherInput.style.display = 'none';
             otherInput.style.opacity = '0';
+            otherInput.required = false;
         }
     }
 
@@ -891,6 +1781,9 @@
         const subMenuPruefung = document.getElementById('sub-pruefung');
         const subMenuKontrolle = document.getElementById('sub-kontrolle');
         const typOther = document.getElementById('inp-typ-other');
+        if (typOther) {
+            typOther.required = (typ === 'SONSTIGES');
+        }
         
         subMenuPruefung.style.display = 'none';
         subMenuKontrolle.style.display = 'none';
@@ -1143,7 +2036,7 @@
         const pdfjsLib = window['pdfjs-dist/build/pdf'] || window.pdfjsLib;
         if (!pdfjsLib) return null;
         const buffer = await file.arrayBuffer();
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdf.worker.min.js';
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'lib/pdf/v1/pdf.worker.min.js';
         const loadingTask = pdfjsLib.getDocument({ data: buffer });
         const pdf = await loadingTask.promise;
         const metadata = await pdf.getMetadata();
@@ -1311,13 +2204,21 @@
     document.getElementById('inp-file').addEventListener('change', handleFileSelect);
 
 function saveEntry() {
-        const thema = document.getElementById('inp-thema').value.trim();
-        const lektion = document.getElementById('inp-lektion').value.trim();
+        const rawThema = document.getElementById('inp-thema').value;
+        let thema = (rawThema === 'SONSTIGES') 
+            ? document.getElementById('inp-thema-other').value.trim() 
+            : (rawThema ? rawThema.trim() : '');
+
+        // LEKTION / MODUL is explicitly OPTIONAL
+        const rawLektion = document.getElementById('inp-lektion').value;
+        let lektion = (rawLektion === 'SONSTIGES') 
+            ? document.getElementById('inp-lektion-other').value.trim() 
+            : (rawLektion ? rawLektion.trim() : '');
+
         const rawBuch = document.getElementById('inp-buch').value;
-        let buch = rawBuch;
-        if (rawBuch === 'SONSTIGES') {
-            buch = document.getElementById('inp-buch-other').value.trim();
-        }
+        let buch = (rawBuch === 'SONSTIGES')
+            ? document.getElementById('inp-buch-other').value.trim()
+            : (rawBuch ? rawBuch.trim() : '');
         
         let klassen = document.getElementById('inp-klassen').value.trim();
         if (klassen === 'Sonstiges') {
@@ -1333,7 +2234,8 @@ function saveEntry() {
 
         const fileInput = document.getElementById('inp-file');
 
-        if (!thema || !lektion || !buch || !klassen || !jahr || !typ || (fileInput.files.length === 0 && !window.editingId)) {
+        // All fields obligatory EXCEPT lektion
+        if (!thema || !buch || !klassen || !jahr || !typ || (fileInput.files.length === 0 && !window.editingId)) {
             alert("Bitte füllen Sie alle erforderlichen Felder aus und wählen Sie ein Dokument!");
             return;
         }
@@ -1424,7 +2326,9 @@ function saveEntry() {
                     resetImportForm();
                     saveToDictionary('thema', thema);
                     saveToDictionary('lektion', lektion);
-                    if (rawBuch === 'SONSTIGES' && buch) saveToDictionary('buch', buch);
+                    if (rawThema === 'SONSTIGES' && thema) saveToDictionary('thema', thema);
+        if (rawLektion === 'SONSTIGES' && lektion) saveToDictionary('lektion', lektion);
+        if (rawBuch === 'SONSTIGES' && buch) saveToDictionary('buch', buch);
                     renderResults();
                 }, 300);
             };
@@ -1812,7 +2716,7 @@ function saveEntry() {
             
             // ---> THE FIX IS HERE <--- 
             // We ensure the worker file correctly points to the CDN, matching your <script src="...">
-            pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdf.worker.min.js';
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'lib/pdf/v1/pdf.worker.min.js';
 
             const loadingTask = pdfjsLib.getDocument({data: bytes});
             const pdf = await loadingTask.promise;
