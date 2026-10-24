@@ -767,7 +767,14 @@
     }
 
     async function triggerAutoSyncMissingDocs(peerId, remoteDocs) {
-        if (!isAutoSaveToDbEnabled() || !Array.isArray(remoteDocs) || !PEER_ID_REGEX.test(peerId)) return;
+        if (!isAutoSaveToDbEnabled() || !Array.isArray(remoteDocs) || !PEER_ID_REGEX.test(peerId) || peerId === myPeerId) return;
+
+        const localSharedHashes = new Set(
+            (localCatalog || []).map(d => d.fileHash ? String(d.fileHash).toLowerCase().trim() : '').filter(Boolean)
+        );
+        const localSharedKeys = new Set(
+            (localCatalog || []).map(d => `${(d.fileName || '').toLowerCase().trim()}_${d.fileSize || 0}`)
+        );
 
         for (const doc of remoteDocs) {
             if (!doc || !doc.id) continue;
@@ -1858,12 +1865,53 @@
 
         if (currentSwarmTab === 'remote') {
             const allRemoteDocs = [];
+            const seenRemoteKeys = new Set();
+
+            // Build lookup sets of documents currently in "Meine geteilten Dokumente" (localCatalog)
+            const localSharedHashes = new Set(
+                (localCatalog || [])
+                    .map(d => d && d.fileHash ? String(d.fileHash).toLowerCase().trim() : '')
+                    .filter(Boolean)
+            );
+            const localSharedKeys = new Set(
+                (localCatalog || [])
+                    .map(d => d ? `${(d.fileName || '').toLowerCase().trim()}_${d.fileSize || 0}` : '')
+                    .filter(Boolean)
+            );
+            const localSharedIds = new Set(
+                (localCatalog || [])
+                    .map(d => d ? Number(d.id) : 0)
+                    .filter(Boolean)
+            );
+
             remoteCatalog.forEach((peerData, peerId) => {
-                if (!PEER_ID_REGEX.test(peerId)) return;
+                if (!PEER_ID_REGEX.test(peerId) || peerId === myPeerId) return;
                 (peerData.docs || []).forEach(doc => {
+                    if (!doc) return;
+                    const docHash = doc.fileHash ? String(doc.fileHash).toLowerCase().trim() : '';
+                    const docKey = `${(doc.fileName || '').toLowerCase().trim()}_${doc.fileSize || 0}`;
+                    const docId = Number(doc.id);
+
+                    // 1. FILTER OUT: If this file is already in my shared documents (tabLocal), do NOT show it in available remote files
+                    if (docHash && localSharedHashes.has(docHash)) return;
+                    if (localSharedKeys.has(docKey)) return;
+                    if (docId > 0 && localSharedIds.has(docId)) return;
+                    if (isDocShared(docId)) return;
+
+                    // 2. DEDUPLICATE: If multiple peers offer the exact same document, show it once
+                    const dedupeKey = docHash || docKey || `${peerId}:${docId}`;
+                    if (seenRemoteKeys.has(dedupeKey)) return;
+                    seenRemoteKeys.add(dedupeKey);
+
                     allRemoteDocs.push({ peerId, doc });
                 });
             });
+
+                    // Update tab buttons with dynamic item counts
+        const btnRemoteTab = document.getElementById('swarm-tab-remote');
+        const btnLocalTab = document.getElementById('swarm-tab-local');
+        if (btnRemoteTab) btnRemoteTab.textContent = `${i18n.tabRemote} (${allRemoteDocs.length})`;
+        if (btnLocalTab) btnLocalTab.textContent = `${i18n.tabLocal} (${localCatalog.length})`;
 
             if (allRemoteDocs.length === 0) {
                 wrap.innerHTML = `
@@ -2020,6 +2068,7 @@
         toggleAutoSaveToDb: toggleAutoSaveToDb,
         checkDocExistsInDatabases: checkDocExistsInDatabases,
         showSwarmToast: showSwarmToast,
+        handleSwarmMessage: handleSwarmMessage,
         isAutoShareImportEnabled: isAutoShareImportEnabled,
         setAutoShareImport: setAutoShareImport,
         init: initSwarm,
