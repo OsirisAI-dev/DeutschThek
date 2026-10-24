@@ -1013,6 +1013,16 @@
         const doc = window._currentModalDoc;
         const docId = Number(doc.id);
         if (!docId) return;
+        const curDocSize = Number(doc.fileSize) || (doc.fileData ? Math.round(doc.fileData.length * 0.75) : 0);
+        if (curDocSize > 10 * 1024 * 1024) {
+            const sizeMb = (curDocSize / (1024 * 1024)).toFixed(1);
+            if (window.EduHybridShare && typeof window.EduHybridShare.showSwarmToast === 'function') {
+                window.EduHybridShare.showSwarmToast(`⚠️ P2P-Limit: Datei ist ${sizeMb} MB groß (maximal 10 MB erlaubt). Bitte per Bluetooth oder Social Media teilen.`, 'warning');
+            } else {
+                alert(`⚠️ P2P-Schwarm-Limit: Diese Datei ist ${sizeMb} MB groß (maximal 10 MB erlaubt).`);
+            }
+            return;
+        }
         if (window.EduHybridShare) {
             await window.EduHybridShare.toggleShareDocToSwarm(docId, true, doc);
         }
@@ -2374,6 +2384,11 @@
 
     async function autoShareToSwarm(docItem) {
         if (!docItem || !docItem.id) return;
+        const itemSize = Number(docItem.fileSize) || (docItem.fileData ? Math.round(docItem.fileData.length * 0.75) : 0);
+        if (itemSize > 10 * 1024 * 1024) {
+            console.log(`[P2P Limit] Datei „${docItem.thema}“ ist größer als 10 MB (${(itemSize / (1024*1024)).toFixed(1)} MB). Kein Auto-Share im P2P-Schwarm.`);
+            return;
+        }
         try {
             if (window.EduHybridShare && typeof window.EduHybridShare.toggleShareDocToSwarm === 'function') {
                 await window.EduHybridShare.toggleShareDocToSwarm(docItem.id, true, docItem);
@@ -3368,6 +3383,33 @@ function saveEntry() {
                 popup.style.bottom = (window.innerHeight - rect.top + 10) + 'px';
                 popup.style.right = Math.max(10, (window.innerWidth - rect.right)) + 'px';
             }
+            const doc = window._currentModalDoc;
+            const curSize = (doc && (Number(doc.fileSize) || (doc.fileData ? Math.round(doc.fileData.length * 0.75) : 0))) || 0;
+            const swarmBtn = document.getElementById('btn-share-swarm');
+            const swarmText = document.getElementById('swarm-share-text');
+            const limitBytes = 10 * 1024 * 1024; // 10 MB
+
+            if (swarmBtn) {
+                if (curSize > limitBytes) {
+                    const sizeMb = (curSize / (1024 * 1024)).toFixed(1);
+                    swarmBtn.disabled = true;
+                    swarmBtn.style.opacity = '0.45';
+                    swarmBtn.style.cursor = 'not-allowed';
+                    swarmBtn.title = `P2P-Schwarm-Limit: Maximal 10 MB erlaubt (aktuelle Datei: ${sizeMb} MB). Bitte per Bluetooth, E-Mail oder WhatsApp teilen.`;
+                    if (swarmText) {
+                        swarmText.innerHTML = `In Community-Schwarm teilen <span style="font-size:0.75rem; color:#dc2626; display:block; font-weight:normal;">(> 10 MB gesperrt · ${sizeMb} MB)</span>`;
+                    }
+                } else {
+                    swarmBtn.disabled = false;
+                    swarmBtn.style.opacity = '1';
+                    swarmBtn.style.cursor = 'pointer';
+                    swarmBtn.title = 'In Community-Schwarm teilen (P2P)';
+                    if (swarmText) {
+                        swarmText.textContent = 'In Community-Schwarm teilen';
+                    }
+                }
+            }
+
             popup.classList.add('visible');
             // Auto-close popup after 4 seconds
             if (window.shareAutoHideTimer) clearTimeout(window.shareAutoHideTimer);

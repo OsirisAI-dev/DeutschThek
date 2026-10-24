@@ -1276,6 +1276,11 @@
 
     async function autoShareToSwarm(docItem) {
         if (!docItem || !docItem.id) return;
+        const itemSize = Number(docItem.fileSize) || (docItem.fileData ? Math.round(docItem.fileData.length * 0.75) : 0);
+        if (itemSize > 10 * 1024 * 1024) {
+            console.log(`[P2P Limit] Datei „${docItem.thema}“ ist größer als 10 MB (${(itemSize / (1024*1024)).toFixed(1)} MB). Kein Auto-Share im P2P-Schwarm.`);
+            return;
+        }
         try {
             if (window.EduHybridShare && typeof window.EduHybridShare.toggleShareDocToSwarm === 'function') {
                 await window.EduHybridShare.toggleShareDocToSwarm(docItem.id, true, docItem);

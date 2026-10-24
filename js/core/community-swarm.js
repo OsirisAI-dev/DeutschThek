@@ -35,6 +35,7 @@
     const SWARM_CHANNEL_NAME = 'osiris_edu_swarm_v1';
     const SHARED_DOCS_KEY = 'osiris_shared_swarm_docs';
     const MAX_FILE_BYTES = 25 * 1024 * 1024; // 25 MB hard cap
+    const MAX_P2P_SHARE_BYTES = 10 * 1024 * 1024; // 10 MB strict limit for P2P Community Swarm
     const MAX_CATALOG_ITEMS_PER_PEER = 100;
     const MAX_TRACKED_PEERS = 50;
     const MAX_META_STRING_LEN = 200;
@@ -424,6 +425,12 @@
 
         // When sharing via P2P Swarm from popup
         if (platform === 'swarm') {
+            const curSize = Number(safeDoc.fileSize) || (safeDoc.fileData ? Math.round(safeDoc.fileData.length * 0.75) : 0);
+            if (curSize > MAX_P2P_SHARE_BYTES) {
+                const sizeMb = (curSize / (1024 * 1024)).toFixed(1);
+                showSwarmToast(`⚠️ P2P-Limit: Datei ist ${sizeMb} MB groß (maximal 10 MB im P2P-Schwarm erlaubt). Bitte per Bluetooth oder Social Media teilen.`, 'warning');
+                return;
+            }
             await toggleShareDocToSwarm(safeDoc.id, true, safeDoc);
             await openSwarmModal('local');
             return;
@@ -854,6 +861,9 @@
             if (!doc || !doc.id) continue;
             const docHash = doc.fileHash ? String(doc.fileHash).toLowerCase().trim() : '';
             const dedupeKey = docHash || (peerId + ':' + doc.id);
+
+            // Skip files exceeding 10 MB P2P limit
+            if (Number(doc.fileSize) > MAX_P2P_SHARE_BYTES) continue;
 
             if (inFlightSyncIds.has(dedupeKey)) continue;
 
@@ -1498,6 +1508,14 @@
             return;
         }
 
+        // 0. Strict 10 MB P2P Swarm Size Check
+        if (u8.length > MAX_P2P_SHARE_BYTES) {
+            const sizeMb = (u8.length / (1024 * 1024)).toFixed(1);
+            console.warn(`[Osiris Security] P2P-Dokument übersteigt 10 MB Limit (${sizeMb} MB). Abgewiesen.`);
+            if (!isAuto) showSwarmToast(`🛑 Datei übersteigt das 10 MB P2P-Schwarm-Limit (${sizeMb} MB) und wurde abgewiesen.`, 'warning');
+            return;
+        }
+
         // 1. Deep Magic-Byte & Active Content Inspection
         const check = validateMagicBytes(u8, docItem.fileName);
         if (!check.valid) {
@@ -1607,6 +1625,14 @@
     async function toggleShareDocToSwarm(docId, shouldShare, docData) {
         const cleanId = Number(docId);
         if (!cleanId) return;
+        if (shouldShare) {
+            const rawSize = (docData && (Number(docData.fileSize) || (docData.fileData ? Math.round(docData.fileData.length * 0.75) : 0))) || 0;
+            if (rawSize > MAX_P2P_SHARE_BYTES) {
+                const sizeMb = (rawSize / (1024 * 1024)).toFixed(1);
+                showSwarmToast(`⚠️ P2P-Limit: Datei ist ${sizeMb} MB groß (maximal 10 MB im P2P-Schwarm erlaubt). Bitte nutzen Sie Bluetooth oder Social Media.`, 'warning');
+                return;
+            }
+        }
 
         let targetDb = (docData && docData.sourceDb) || currentConfig.dbName || 'DokumentationDB';
         let sharedIds = loadSharedDocsConfig(targetDb);
@@ -2133,7 +2159,8 @@
         isTrustedOrigin: isTrustedOrigin,
         getTargetOrigin: getTargetOrigin,
         computeSHA256: computeSHA256,
-        MAX_FILE_BYTES: MAX_FILE_BYTES
+        MAX_FILE_BYTES: MAX_FILE_BYTES,
+        MAX_P2P_SHARE_BYTES: MAX_P2P_SHARE_BYTES
     });
 
     function isAutoShareImportEnabled() {
@@ -2151,6 +2178,7 @@
     }
 
     const eduHybridShareApi = Object.freeze({
+        MAX_P2P_SHARE_BYTES: MAX_P2P_SHARE_BYTES,
         getNewRemoteFiles: getNewRemoteFiles,
         syncAllAvailableDocs: syncAllAvailableDocs,
         updateSwarmBadge: updateSwarmBadge,
