@@ -880,7 +880,9 @@
         if (window.OsirisSecurity && window.OsirisSecurity.isTrustedOrigin && !window.OsirisSecurity.isTrustedOrigin(e)) return;
         if (window.parent && e.source && e.source !== window.parent && e.source !== window) return;
         const msg = e.data || {};
-        if (msg.type === 'OPEN_SWARM_MODAL') {
+        if (msg.type === 'SWARM_QUICK_SYNC') {
+            if (window.EduHybridShare && typeof window.EduHybridShare.syncAllAvailableDocs === 'function') window.EduHybridShare.syncAllAvailableDocs();
+        } else if (msg.type === 'OPEN_SWARM_MODAL') {
             var targetTab = (msg.payload && msg.payload.tab) || msg.tab || 'remote';
             if (window.EduHybridShare) window.EduHybridShare.openSwarmModal(targetTab);
         } else if (msg.type === 'SET_FONT' && msg.payload && msg.payload.font) {

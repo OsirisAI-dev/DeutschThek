@@ -597,6 +597,80 @@
         }
     }
 
+    
+    async function getNewRemoteFiles() {
+        const newFiles = [];
+        const seen = new Set();
+
+        const localSharedHashes = new Set(
+            (localCatalog || []).map(d => d && d.fileHash ? String(d.fileHash).toLowerCase().trim() : '').filter(Boolean)
+        );
+        const localSharedKeys = new Set(
+            (localCatalog || []).map(d => d ? `${(d.fileName || '').toLowerCase().trim()}_${d.fileSize || 0}` : '').filter(Boolean)
+        );
+        const localSharedIds = new Set(
+            (localCatalog || []).map(d => d ? Number(d.id) : 0).filter(Boolean)
+        );
+
+        const peers = Array.from(remoteCatalog.entries());
+        for (const [peerId, peerData] of peers) {
+            if (!PEER_ID_REGEX.test(peerId) || peerId === myPeerId) continue;
+            for (const doc of (peerData.docs || [])) {
+                if (!doc) continue;
+                const docHash = doc.fileHash ? String(doc.fileHash).toLowerCase().trim() : '';
+                const docKey = `${(doc.fileName || '').toLowerCase().trim()}_${doc.fileSize || 0}`;
+                const docId = Number(doc.id);
+
+                if (docHash && localSharedHashes.has(docHash)) continue;
+                if (localSharedKeys.has(docKey)) continue;
+                if (docId > 0 && localSharedIds.has(docId)) continue;
+                if (isDocShared(docId)) continue;
+
+                const dedupeKey = docHash || docKey || `${peerId}:${docId}`;
+                if (seen.has(dedupeKey)) continue;
+                seen.add(dedupeKey);
+
+                const exists = await checkDocExistsInDatabases(doc);
+                if (!exists) {
+                    newFiles.push({ peerId, doc });
+                }
+            }
+        }
+        return newFiles;
+    }
+
+    async function syncAllAvailableDocs() {
+        await refreshLocalCatalog();
+        const newFiles = await getNewRemoteFiles();
+        if (newFiles.length === 0) {
+            showSwarmToast('✓ Datenbank ist auf dem neuesten Stand. Keine neuen Dokumente im Schwarm.', 'info');
+            updateSwarmBadge();
+            return 0;
+        }
+
+        showSwarmToast(`🔄 Aktualisiere ${newFiles.length} neue(s) Dokument(e) aus dem Schwarm...`, 'info');
+
+        for (const item of newFiles) {
+            const doc = item.doc;
+            const peerId = item.peerId;
+            const docHash = doc.fileHash ? String(doc.fileHash).toLowerCase().trim() : '';
+            const dedupeKey = docHash || (peerId + ':' + doc.id);
+
+            if (!inFlightSyncIds.has(dedupeKey)) {
+                inFlightSyncIds.add(dedupeKey);
+                autoSyncQueue.push({
+                    peerId: peerId,
+                    docId: doc.id,
+                    title: doc.thema || doc.fileName,
+                    dedupeKey: dedupeKey
+                });
+            }
+        }
+
+        processAutoSyncQueue();
+        return newFiles.length;
+    }
+
     function setAutoSaveToDbEnabled(enabled) {
         try {
             localStorage.setItem('p2p_auto_save_to_db', enabled ? 'true' : 'false');
@@ -1588,29 +1662,43 @@
     // 4. UI: ZERO-TRUST SWARM MODAL RENDERING
     // =========================================================================
 
-    function updateSwarmBadge() {
+    async function updateSwarmBadge() {
         const activePeers = remoteCatalog.size;
         const totalShared = localCatalog.length;
 
+        let newFilesCount = 0;
+        try {
+            const newFiles = await getNewRemoteFiles();
+            newFilesCount = newFiles.length;
+        } catch (e) {}
+
         document.querySelectorAll('#swarm-status-badge, #headerSwarmBadge').forEach(badge => {
-            if (activePeers > 0) {
+            if (newFilesCount > 0) {
+                badge.className = 'swarm-pill is-active has-new';
+                badge.style.background = '#2563eb';
+                badge.textContent = `● Schwarm (+${newFilesCount} neu)`;
+                badge.title = `${newFilesCount} neue Dokumente im Schwarm (1 Klick: Aktualisieren / 3 Klicks: Menü)`;
+            } else if (activePeers > 0) {
                 badge.className = 'swarm-pill is-active';
                 badge.style.background = '#28a745';
-                badge.textContent = `● Schwarm aktiv (${activePeers})`;
+                badge.textContent = `● Schwarm aktuell (${activePeers})`;
+                badge.title = `P2P-Schwarm aktuell (1 Klick: Aktualisieren / 3 Klicks: Menü)`;
             } else {
                 badge.className = 'swarm-pill';
                 badge.style.background = '#505864';
                 badge.textContent = `● Schwarm (${totalShared} geteilt)`;
+                badge.title = `P2P-Schwarm bereit (1 Klick: Aktualisieren / 3 Klicks: Menü)`;
             }
         });
 
-        // Notify parent frame (EDU_HUB.html)
+        // Notify parent frame (index.html)
         if (window.parent && window.parent !== window) {
             try {
                 window.parent.postMessage({
                     type: 'SWARM_BADGE_UPDATE',
                     activePeers: activePeers,
-                    totalShared: totalShared
+                    totalShared: totalShared,
+                    newFilesCount: newFilesCount
                 }, getTargetOrigin());
             } catch (e) {}
         }
@@ -2063,6 +2151,9 @@
     }
 
     const eduHybridShareApi = Object.freeze({
+        getNewRemoteFiles: getNewRemoteFiles,
+        syncAllAvailableDocs: syncAllAvailableDocs,
+        updateSwarmBadge: updateSwarmBadge,
         isAutoSaveToDbEnabled: isAutoSaveToDbEnabled,
         setAutoSaveToDbEnabled: setAutoSaveToDbEnabled,
         toggleAutoSaveToDb: toggleAutoSaveToDb,

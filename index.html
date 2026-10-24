@@ -330,6 +330,14 @@
     white-space: nowrap;
     transition: background-color 0.25s ease;
   }
+  .swarm-pill.has-new {
+    background: #2563eb !important;
+    animation: pulseNewBadge 2.2s infinite ease-in-out;
+  }
+  @keyframes pulseNewBadge {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.65); }
+    50% { box-shadow: 0 0 0 6px rgba(37, 99, 235, 0); }
+  }
   .swarm-pill.is-active {
     background: #28a745 !important;
   }
@@ -1567,18 +1575,74 @@ function loadPrefs() {
     }
   } catch (e) {}
 
-  // Swarm button addresses all subpages
+    // Swarm button multi-tap detector: 1 click = Update/Sync, 3 clicks = Open Menu (Touch & Mouse compatible)
+  var swarmTapCount = 0;
+  var swarmTapTimer = null;
+
+  async function executeSwarmQuickUpdate() {
+    var badge = document.getElementById('headerSwarmBadge');
+    if (badge) {
+      badge.textContent = '● Aktualisiere...';
+      badge.style.background = '#3b82f6';
+    }
+
+    var updatedCount = 0;
+    if (window.EduHybridShare && typeof window.EduHybridShare.syncAllAvailableDocs === 'function') {
+      updatedCount = await window.EduHybridShare.syncAllAvailableDocs();
+    } else {
+      pushToFrame('SWARM_QUICK_SYNC');
+    }
+
+    pushToFrame('RELOAD_DATA');
+
+    setTimeout(function() {
+      if (window.EduHybridShare && typeof window.EduHybridShare.updateSwarmBadge === 'function') {
+        window.EduHybridShare.updateSwarmBadge();
+      }
+    }, 600);
+  }
+
+  function executeSwarmOpenMenu() {
+    if (navigator.vibrate) {
+      try { navigator.vibrate([30, 40, 30]); } catch(e) {}
+    }
+    if (window.EduHybridShare && typeof window.EduHybridShare.openSwarmModal === 'function') {
+      window.EduHybridShare.openSwarmModal('remote');
+      return;
+    }
+    if (appState.tool === 'wiki') {
+      switchTool('docs');
+    }
+    pushToFrame('OPEN_SWARM_MODAL');
+  }
+
   if (swarmBtnEl) {
+    swarmBtnEl.style.touchAction = 'manipulation';
+    swarmBtnEl.title = 'P2P-Schwarm (1 Klick: Aktualisieren / 3 Klicks: Menü öffnen)';
+
     swarmBtnEl.addEventListener('click', function(e) {
+      e.preventDefault();
       e.stopPropagation();
-      if (window.EduHybridShare) {
-        window.EduHybridShare.openSwarmModal();
-        return;
+
+      swarmTapCount++;
+
+      if (swarmTapCount === 1) {
+        swarmTapTimer = setTimeout(function() {
+          var finalCount = swarmTapCount;
+          swarmTapCount = 0;
+          swarmTapTimer = null;
+          if (finalCount < 3) {
+            executeSwarmQuickUpdate();
+          }
+        }, 360);
+      } else if (swarmTapCount >= 3) {
+        if (swarmTapTimer) {
+          clearTimeout(swarmTapTimer);
+          swarmTapTimer = null;
+        }
+        swarmTapCount = 0;
+        executeSwarmOpenMenu();
       }
-      if (appState.tool === 'wiki') {
-        switchTool('docs');
-      }
-      pushToFrame('OPEN_SWARM_MODAL');
     });
   }
 
@@ -1597,12 +1661,23 @@ function loadPrefs() {
       if (badge) {
         var activePeers = Math.max(0, Math.min(999, Number(e.data.activePeers) || 0));
         var totalShared = Math.max(0, Math.min(9999, Number(e.data.totalShared) || 0));
-        if (activePeers > 0) {
+        var newFilesCount = Math.max(0, Math.min(999, Number(e.data.newFilesCount) || 0));
+
+        if (newFilesCount > 0) {
+          badge.className = 'swarm-pill is-active has-new';
+          badge.style.background = '#2563eb';
+          badge.textContent = '● Schwarm (+' + newFilesCount + ' neu)';
+          badge.title = newFilesCount + ' neue Dokumente im Schwarm (1 Klick: Aktualisieren / 3 Klicks: Menü)';
+        } else if (activePeers > 0) {
           badge.className = 'swarm-pill is-active';
-          badge.textContent = '● Schwarm aktiv (' + activePeers + ')';
+          badge.style.background = '#28a745';
+          badge.textContent = '● Schwarm aktuell (' + activePeers + ')';
+          badge.title = 'P2P-Schwarm aktuell (1 Klick: Aktualisieren / 3 Klicks: Menü)';
         } else {
           badge.className = 'swarm-pill';
+          badge.style.background = '#505864';
           badge.textContent = '● Schwarm (' + totalShared + ' geteilt)';
+          badge.title = 'P2P-Schwarm bereit (1 Klick: Aktualisieren / 3 Klicks: Menü)';
         }
       }
     }
