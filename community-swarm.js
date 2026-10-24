@@ -1,6 +1,14 @@
 /**
- * Osiris EduHub - Hardened Hybrid Document Sharing & Security Engine
+ * Osiris EduHub - Hardened Hybrid Document Sharing & Security Engine v2.5
  * (Social 1-to-1 + Decentralized WebRTC Swarm + Zero-Trust Client Security)
+ *
+ * Transports:
+ *  1. BroadcastChannel: Instant zero-latency cross-tab sharing on same device/browser.
+ *  2. PeerJS WebRTC DataChannels: Automatic cross-device mesh across GitHub Pages & Internet.
+ *     - Automatic deterministic Lobby Slot pool (slots 1..8 per room)
+ *     - Automatic Peer Exchange (PEX) gossip mesh
+ *     - Packet chunking for large PDF/DOCX files (>48 KB)
+ *     - Manual Room-Code / Peer-ID direct connection support
  *
  * Security Hardening Included:
  *  1. Anti-XSS: Strict HTML entity escaping (escapeHtml), DOMParser HTML sanitizer
@@ -31,8 +39,13 @@
     const MAX_TRACKED_PEERS = 50;
     const MAX_META_STRING_LEN = 200;
     const RATE_LIMIT_WINDOW_MS = 10000; // 10 seconds
-    const RATE_LIMIT_MAX_MSGS = 15;     // max 15 messages per 10s per peer
+    const RATE_LIMIT_MAX_MSGS = 25;     // max 25 control messages per 10s per peer
     const PEER_ID_REGEX = /^peer_[a-z0-9]{6,16}$/;
+    const CHUNK_SIZE = 48000;           // 48 KB chunk size for WebRTC DataChannel transfer
+
+    // WebRTC Swarm Lobby Pool Settings
+    const LOBBY_PREFIX = 'osiris-dt-swarm-v2-';
+    const LOBBY_SLOT_COUNT = 8;
 
     let currentConfig = {
         dbName: 'DokumentationDB',
@@ -42,22 +55,78 @@
     };
 
     let localCatalog = [];
-    let remoteCatalog = new Map();       // peerId -> { lastSeen, docs }
+    let remoteCatalog = new Map();       // peerId -> { lastSeen, docs, webrtcId, transport }
     let peerRateTracker = new Map();     // peerId -> [timestamps]
     let blockedPeers = new Set();        // peerIds blocked for flooding/malformed data
-    let pendingRequests = new Set();     // "${peerId}:${docId}" explicitly requested by user
+    let pendingRequests = new Map();     // "${peerId}:${docId}" -> { token, expiresAt }
     let broadcastChannel = null;
 
-    // Generate cryptographically random Peer ID
-    const randBytes = new Uint8Array(6);
-    if (window.crypto && window.crypto.getRandomValues) {
-        window.crypto.getRandomValues(randBytes);
+    // WebRTC PeerJS State
+    let peerJsInstance = null;
+    let myWebrtcId = null;
+    let webrtcStatus = 'initializing';  // 'initializing' | 'connecting' | 'connected' | 'offline' | 'error'
+    let currentLobbySlot = 1;
+    let webrtcConnections = new Map();  // webrtcPeerId -> DataConnection
+    let peerToWebrtcMap = new Map();    // osirisPeerId -> webrtcPeerId
+    let incomingChunks = new Map();     // transferId -> { chunks: Map(idx->str), total, sender, token, startedAt }
+    let activeSwarmRoom = 'global';
+
+    function generateCryptoHex(byteLen) {
+        const buf = new Uint8Array(byteLen || 16);
+        if (window.crypto && window.crypto.getRandomValues) {
+            window.crypto.getRandomValues(buf);
+        } else {
+            for (let i = 0; i < buf.length; i++) buf[i] = Math.floor(Math.random() * 256);
+        }
+        return Array.from(buf).map(b => b.toString(16).padStart(2, '0')).join('');
     }
-    let myPeerId = 'peer_' + Array.from(randBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+
+    // Generate cryptographically random 96-bit Peer ID
+    let myPeerId = 'peer_' + generateCryptoHex(6);
+
+    const ALLOWED_THEMES = Object.freeze(['light', 'dark', 'osiris', 'snow', 'grass', 'ocean', 'sunset']);
+    const ALLOWED_FONTS = Object.freeze([
+        "'Brush Script MT', cursive",
+        "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+        "Georgia, 'Times New Roman', serif",
+        "'Courier New', Courier, monospace",
+        "'Trebuchet MS', Verdana, sans-serif",
+        "'Arial Narrow', Arial, sans-serif",
+        "'Palatino Linotype', 'Book Antiqua', Palatino, serif"
+    ]);
 
     // =========================================================================
     // 1. ZERO-TRUST SECURITY & SANITIZATION SUITE (window.OsirisSecurity)
     // =========================================================================
+
+    function isTrustedOrigin(event) {
+        if (!event) return false;
+        if (window.location.protocol === 'file:' && (event.origin === 'null' || event.origin === '' || event.origin === 'file://')) {
+            return true;
+        }
+        return event.origin === window.location.origin;
+    }
+
+    function getTargetOrigin() {
+        if (window.location.protocol === 'file:' || !window.location.origin || window.location.origin === 'null') {
+            return '*';
+        }
+        return window.location.origin;
+    }
+
+    function sanitizeThemeName(theme) {
+        const t = String(theme || '').trim().toLowerCase();
+        return ALLOWED_THEMES.indexOf(t) !== -1 ? t : 'light';
+    }
+
+    function sanitizeFontFamily(font) {
+        const f = String(font || '').trim();
+        if (ALLOWED_FONTS.indexOf(f) !== -1) return f;
+        if (/^[a-zA-Z0-9\s,'"\-]+$/.test(f) && f.length <= 100 && !/url\s*\(|expression|import/i.test(f)) {
+            return f;
+        }
+        return ALLOWED_FONTS[1];
+    }
 
     function escapeHtml(val) {
         if (val === null || val === undefined) return '';
@@ -72,17 +141,27 @@
 
     function clampString(val, maxLen) {
         if (val === null || val === undefined) return '';
-        const s = String(val).trim();
+        const s = String(val)
+            .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\u202A-\u202E\u2066-\u2069]/g, '')
+            .trim();
         return s.length > (maxLen || MAX_META_STRING_LEN) ? s.substring(0, maxLen || MAX_META_STRING_LEN) : s;
+    }
+
+    function sanitizeFileName(fileName) {
+        const raw = clampString(fileName || 'Dokument.pdf', 150)
+            .replace(/[\\/:*?"<>|]/g, '_')
+            .replace(/\.{2,}/g, '_')
+            .replace(/^\.+/, '');
+        return raw || 'Dokument.pdf';
     }
 
     function sanitizeUrl(url) {
         if (!url || typeof url !== 'string') return '#';
-        const trimmed = url.trim();
+        const trimmed = url.replace(/[\x00-\x20\u202A-\u202E\u2066-\u2069]/g, '').trim();
         try {
             const parsed = new URL(trimmed, window.location.origin);
             if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-                return parsed.href.replace(/"/g, '%22').replace(/'/g, '%27');
+                return parsed.href.replace(/"/g, '%22').replace(/'/g, '%27').replace(/</g, '%3C').replace(/>/g, '%3E');
             }
         } catch (e) {}
         return '#';
@@ -100,16 +179,15 @@
             'data:image/jpg;base64,',
             'data:image/webp;base64,',
             'data:image/gif;base64,',
-            'data:text/plain;base64,',
-            'data:video/mp4;base64,',
-            'data:video/webm;base64,',
-            'data:audio/mpeg;base64,',
-            'data:audio/ogg;base64,',
-            'data:application/octet-stream;base64,'
+            'data:text/plain;base64,'
         ];
         const lower = trimmed.substring(0, 100).toLowerCase();
         if (allowedPrefixes.some(p => lower.startsWith(p))) {
-            return trimmed;
+            const commaIdx = trimmed.indexOf(',');
+            if (commaIdx === -1) return '';
+            const b64 = trimmed.substring(commaIdx + 1).replace(/\s+/g, '');
+            if (!/^[A-Za-z0-9+/=]+$/.test(b64)) return '';
+            return trimmed.substring(0, commaIdx + 1) + b64;
         }
         return '';
     }
@@ -122,7 +200,8 @@
             const forbiddenTags = [
                 'script', 'iframe', 'object', 'embed', 'svg', 'math',
                 'form', 'input', 'button', 'textarea', 'select', 'meta',
-                'link', 'style', 'base', 'applet', 'frame', 'frameset'
+                'link', 'style', 'base', 'applet', 'frame', 'frameset',
+                'audio', 'video', 'source', 'track', 'portal', 'template', 'noscript'
             ];
             forbiddenTags.forEach(tag => {
                 doc.querySelectorAll(tag).forEach(el => el.remove());
@@ -131,208 +210,207 @@
             allElements.forEach(el => {
                 Array.from(el.attributes).forEach(attr => {
                     const name = attr.name.toLowerCase();
-                    const val = (attr.value || '').trim().toLowerCase();
-                    if (name.startsWith('on') || name === 'srcdoc' || name === 'formaction') {
+                    const val = (attr.value || '').replace(/[\x00-\x20]/g, '').toLowerCase();
+                    if (name.startsWith('on') || name === 'srcdoc' || name === 'formaction' || name === 'style' || name === 'id' || name === 'name') {
                         el.removeAttribute(attr.name);
-                    } else if ((name === 'href' || name === 'src' || name === 'xlink:href' || name === 'action') &&
-                               (val.startsWith('javascript:') || val.startsWith('vbscript:') || val.startsWith('data:text/html'))) {
-                        el.removeAttribute(attr.name);
+                    } else if (name === 'href' || name === 'src' || name === 'xlink:href' || name === 'action') {
+                        if (val.startsWith('http://') || val.startsWith('https://') || val.startsWith('data:image/png;base64,') || val.startsWith('data:image/jpeg;base64,')) {
+                            if (name === 'href') {
+                                el.setAttribute('target', '_blank');
+                                el.setAttribute('rel', 'noopener noreferrer');
+                            }
+                        } else {
+                            el.removeAttribute(attr.name);
+                        }
                     }
                 });
             });
             return doc.body.innerHTML;
         } catch (e) {
-            return escapeHtml(dirtyHtml);
+            return '';
         }
     }
 
     function safeJsonParse(raw) {
         if (!raw || typeof raw !== 'string') return null;
-        return JSON.parse(raw, (key, value) => {
-            if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
-                return undefined;
-            }
-            return value;
-        });
-    }
-
-    async function computeSHA256(arrayBuffer) {
         try {
-            const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
-            const hashArray = Array.from(new Uint8Array(hashBuffer));
-            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            return JSON.parse(raw, (key, value) => {
+                if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+                    return undefined;
+                }
+                return value;
+            });
         } catch (e) {
-            console.error('SHA-256 calculation failed:', e);
             return null;
         }
     }
 
-    function asciiSlice(bytes, start, end) {
-        let out = '';
-        const lim = Math.min(bytes.length, end);
-        for (let i = start; i < lim; i++) {
-            out += String.fromCharCode(bytes[i]);
-        }
-        return out;
-    }
-
-    /**
-     * Deep Binary Inspection: Magic Bytes + Active Content (PDF /JavaScript, Office Macros, Polyglots)
-     */
-    function validateMagicBytes(bytes, fileName) {
-        if (!bytes || !(bytes instanceof Uint8Array) || bytes.length < 4) {
-            return { valid: false, reason: 'Datei ist leer oder unvollständig.' };
-        }
-
-        if (bytes.length > MAX_FILE_BYTES) {
-            return { valid: false, reason: 'Dateigröße überschreitet das Sicherheitslimit von 25 MB.' };
-        }
-
-        // 1. Block Executables & Scripts by Magic Header
-        // MZ (Windows EXE / DLL / SCR)
-        if (bytes[0] === 0x4D && bytes[1] === 0x5A) {
-            return { valid: false, reason: 'Sicherheitsrisiko: Ausführbare Windows-Binärdateien (MZ/.exe) sind blockiert.' };
-        }
-        // ELF (Linux binary)
-        if (bytes[0] === 0x7F && bytes[1] === 0x45 && bytes[2] === 0x4C && bytes[3] === 0x46) {
-            return { valid: false, reason: 'Sicherheitsrisiko: Ausführbare ELF-Binärdateien sind blockiert.' };
-        }
-        // Mach-O (macOS binary)
-        if ((bytes[0] === 0xFE && bytes[1] === 0xED && bytes[2] === 0xFA) ||
-            (bytes[0] === 0xCF && bytes[1] === 0xFA && bytes[2] === 0xED)) {
-            return { valid: false, reason: 'Sicherheitsrisiko: Ausführbare Mach-O-Binärdateien sind blockiert.' };
-        }
-        // Shebang (#!)
-        if (bytes[0] === 0x23 && bytes[1] === 0x21) {
-            return { valid: false, reason: 'Sicherheitsrisiko: Ausführbare Shell-Skripte (#!) sind blockiert.' };
-        }
-
-        // 2. Block dangerous file extensions (including double extensions like file.pdf.exe or .svg)
-        const lowerName = (fileName || '').toLowerCase().trim();
-        const forbiddenExts = [
-            '.exe', '.scr', '.bat', '.cmd', '.sh', '.vbs', '.vbe', '.js', '.jse',
-            '.wsf', '.wsh', '.msi', '.ps1', '.jar', '.com', '.hta', '.cpl', '.reg',
-            '.dll', '.sys', '.svg', '.html', '.htm', '.xhtml', '.php', '.asp', '.docm', '.xlsm', '.pptm'
-        ];
-        for (let ext of forbiddenExts) {
-            if (lowerName.endsWith(ext)) {
-                return { valid: false, reason: 'Sicherheitsrisiko: Dateityp (' + ext + ') ist aus Sicherheitsgründen gesperrt.' };
-            }
-        }
-
-        // 3. Identify Whitelisted Formats & Perform Deep Content Inspection
-        const isPdf = bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46; // %PDF
-        const isZipDocx = bytes[0] === 0x50 && bytes[1] === 0x4B && bytes[2] === 0x03 && bytes[3] === 0x04; // PK\x03\x04
-        const isOleDoc = bytes[0] === 0xD0 && bytes[1] === 0xCF && bytes[2] === 0x11 && bytes[3] === 0xE0; // Legacy .doc
-        const isJpeg = bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF;
-        const isPng = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47;
-        const isGif = bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38;
-        const isWebp = bytes.length > 12 && asciiSlice(bytes, 0, 4) === 'RIFF' && asciiSlice(bytes, 8, 12) === 'WEBP';
-
-        // Deep PDF Scan: Block embedded /JavaScript, /JS, /Launch, /RichMedia actions
-        if (isPdf) {
-            const pdfContent = asciiSlice(bytes, 0, Math.min(bytes.length, 2 * 1024 * 1024));
-            const dangerousPdfKeys = ['/JavaScript', '/JS ', '/JS(', '/JS<', '/Launch', '/SubmitForm', '/ImportData', '/RichMedia'];
-            for (let key of dangerousPdfKeys) {
-                if (pdfContent.indexOf(key) !== -1) {
-                    return {
-                        valid: false,
-                        reason: 'Sicherheitsrisiko: PDF enthält eingebetteten ausführbaren Code (' + key.trim() + '). Datei wurde blockiert.'
-                    };
-                }
-            }
-            return { valid: true, format: 'PDF' };
-        }
-
-        // Deep ZIP/DOCX Scan: Block Office Macros (vbaProject.bin) & embedded executables inside ZIP
-        if (isZipDocx) {
-            const zipAscii = asciiSlice(bytes, 0, Math.min(bytes.length, 2 * 1024 * 1024)).toLowerCase();
-            if (zipAscii.indexOf('vbaproject.bin') !== -1 || zipAscii.indexOf('macros/') !== -1) {
-                return {
-                    valid: false,
-                    reason: 'Sicherheitsrisiko: Word-Dokument enthält ausführbare VBA-Makros (vbaProject.bin).'
-                };
-            }
-            if (zipAscii.indexOf('.exe') !== -1 || zipAscii.indexOf('.vbs') !== -1 || zipAscii.indexOf('.bat') !== -1 || zipAscii.indexOf('.ps1') !== -1) {
-                return {
-                    valid: false,
-                    reason: 'Sicherheitsrisiko: Archiv enthält eingebettete ausführbare Skripte oder Programme.'
-                };
-            }
-            return { valid: true, format: 'DOCX' };
-        }
-
-        if (isOleDoc) {
-            return { valid: true, format: 'DOC' };
-        }
-
-        // Deep Image Scan: Ensure no HTML/Script polyglot payload hidden inside image
-        if (isJpeg || isPng || isGif || isWebp) {
-            const headSample = asciiSlice(bytes, 0, Math.min(bytes.length, 65536)).toLowerCase();
-            if (headSample.indexOf('<script') !== -1 || headSample.indexOf('javascript:') !== -1 || headSample.indexOf('onerror=') !== -1) {
-                return {
-                    valid: false,
-                    reason: 'Sicherheitsrisiko: Bilddatei enthält eingebetteten HTML/Skript-Code (Polyglot-Angriff).'
-                };
-            }
-            return { valid: true, format: 'IMAGE' };
-        }
-
-        // Plain Text (.txt) check: verify no binary null bytes and no active HTML/Script tags
-        if (lowerName.endsWith('.txt')) {
-            const sample = asciiSlice(bytes, 0, Math.min(bytes.length, 65536)).toLowerCase();
-            if (sample.indexOf('<script') !== -1 || sample.indexOf('<iframe') !== -1 || sample.indexOf('<svg') !== -1) {
-                return {
-                    valid: false,
-                    reason: 'Sicherheitsrisiko: Textdatei enthält aktiven HTML/Script-Code.'
-                };
-            }
-            return { valid: true, format: 'TEXT' };
-        }
-
-        // Reject all unknown binary formats (Strict Whitelist)
-        return {
-            valid: false,
-            reason: 'Nicht unterstütztes oder unsicheres Dateiformat. Erlaubt sind nur geprüfte PDF-, DOCX-, Bild- und TXT-Dokumente.'
-        };
-    }
-
-    function sanitizeDocRecord(rawDoc) {
-        if (!rawDoc || typeof rawDoc !== 'object') return null;
-        const safeSubTyp = Array.isArray(rawDoc.subTyp)
-            ? rawDoc.subTyp.slice(0, 10).map(s => clampString(s, 80))
-            : [];
-        return {
-            id: Number(rawDoc.id) || Date.now(),
-            thema: clampString(rawDoc.thema || 'Unbenannt', MAX_META_STRING_LEN),
-            lektion: clampString(rawDoc.lektion || '—', MAX_META_STRING_LEN),
-            buch: clampString(rawDoc.buch || '—', MAX_META_STRING_LEN),
-            klassen: clampString(rawDoc.klassen || 'Alle', 80),
-            jahr: clampString(rawDoc.jahr || '2026', 20),
-            typ: clampString(rawDoc.typ || currentConfig.docTypeLabel, 80),
-            subTyp: safeSubTyp,
-            fileName: clampString(rawDoc.fileName || 'Dokument.pdf', 150),
-            fileType: clampString(rawDoc.fileType || 'application/pdf', 100),
-            fileSize: Number(rawDoc.fileSize) || 0,
-            fileHash: clampString(rawDoc.fileHash || '', 64).replace(/[^a-f0-9]/gi, '').toLowerCase(),
-            fileData: sanitizeDataUrl(rawDoc.fileData || ''),
-            date: clampString(rawDoc.date || new Date().toLocaleDateString(), 40)
-        };
-    }
-
     function dataUrlToUint8Array(dataUrl) {
-        const parts = (dataUrl || '').split(',');
-        const base64 = parts[1] || '';
+        if (!dataUrl || typeof dataUrl !== 'string') throw new Error('Invalid DataURL');
+        const commaIdx = dataUrl.indexOf(',');
+        if (commaIdx === -1) throw new Error('Malformed DataURL');
+        const base64 = dataUrl.substring(commaIdx + 1).replace(/\s+/g, '');
         const binary = atob(base64);
         const len = binary.length;
-        if (len > MAX_FILE_BYTES) {
-            throw new Error('File exceeds 25 MB security limit');
-        }
-        const bytes = new Uint8Array(len);
+        if (len > MAX_FILE_BYTES) throw new Error(`File size ${len} exceeds max limit of ${MAX_FILE_BYTES}`);
+        const u8 = new Uint8Array(len);
         for (let i = 0; i < len; i++) {
-            bytes[i] = binary.charCodeAt(i);
+            u8[i] = binary.charCodeAt(i);
         }
-        return bytes;
+        return u8;
+    }
+
+    function validateMagicBytes(u8, fileName) {
+        if (!u8 || !(u8 instanceof Uint8Array) || u8.length === 0) {
+            return { valid: false, reason: 'Leere oder ungültige Binärdaten' };
+        }
+        if (u8.length > MAX_FILE_BYTES) {
+            return { valid: false, reason: `Dateigröße (${(u8.length / (1024*1024)).toFixed(1)} MB) überschreitet das Limit von 25 MB` };
+        }
+
+        const len = u8.length;
+        const b0 = u8[0], b1 = u8[1], b2 = u8[2], b3 = u8[3];
+
+        // 1. PDF Validation (%PDF-)
+        if (b0 === 0x25 && b1 === 0x50 && b2 === 0x44 && b3 === 0x46) {
+            const checkLen = Math.min(len, 200000);
+            const strSlice = String.fromCharCode.apply(null, u8.subarray(0, checkLen));
+            const dangerousPatterns = [
+                /\/JavaScript\b/i,
+                /\/JS\b/i,
+                /\/Launch\b/i,
+                /\/SubmitForm\b/i,
+                /\/ImportData\b/i,
+                /\/RichMedia\b/i
+            ];
+            for (const pat of dangerousPatterns) {
+                if (pat.test(strSlice)) {
+                    return { valid: false, reason: 'PDF enthält verbotene aktive Inhalte / Skripte (' + pat.source + ')' };
+                }
+            }
+            return { valid: true, type: 'application/pdf' };
+        }
+
+        // 2. DOCX / ZIP Container Validation (PK\x03\x04)
+        if (b0 === 0x50 && b1 === 0x4B && b2 === 0x03 && b3 === 0x04) {
+            const checkLen = Math.min(len, 200000);
+            const strSlice = String.fromCharCode.apply(null, u8.subarray(0, checkLen));
+            if (strSlice.includes('vbaProject.bin') || strSlice.includes('.exe') || strSlice.includes('.vbs') || strSlice.includes('.bat') || strSlice.includes('.ps1')) {
+                return { valid: false, reason: 'Office-Container enthält Makros oder ausführbaren Code' };
+            }
+            return { valid: true, type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
+        }
+
+        // 3. PNG Image Validation (\x89PNG)
+        if (b0 === 0x89 && b1 === 0x50 && b2 === 0x4E && b3 === 0x47) {
+            return { valid: true, type: 'image/png' };
+        }
+
+        // 4. JPEG Image Validation (\xFF\xD8\xFF)
+        if (b0 === 0xFF && b1 === 0xD8 && b2 === 0xFF) {
+            return { valid: true, type: 'image/jpeg' };
+        }
+
+        // 5. WEBP Image Validation (RIFF....WEBP)
+        if (b0 === 0x52 && b1 === 0x49 && b2 === 0x46 && b3 === 0x46 && len >= 12) {
+            if (u8[8] === 0x57 && u8[9] === 0x45 && u8[10] === 0x42 && u8[11] === 0x50) {
+                return { valid: true, type: 'image/webp' };
+            }
+        }
+
+        // 6. GIF Image Validation (GIF87a / GIF89a)
+        if (b0 === 0x47 && b1 === 0x49 && b2 === 0x46 && b3 === 0x38) {
+            return { valid: true, type: 'image/gif' };
+        }
+
+        // 7. Plain Text Validation
+        const ext = (fileName || '').toLowerCase().split('.').pop();
+        if (ext === 'txt' || ext === 'text') {
+            for (let i = 0; i < Math.min(len, 4096); i++) {
+                const byte = u8[i];
+                if (byte === 0x00 || (byte < 0x09 && byte !== 0x07 && byte !== 0x08) || (byte > 0x0D && byte < 0x20 && byte !== 0x1B)) {
+                    return { valid: false, reason: 'Textdatei enthält unerwartete Binärzeichen' };
+                }
+            }
+            return { valid: true, type: 'text/plain' };
+        }
+
+        return { valid: false, reason: 'Dateityp nicht zugelassen (Nur PDF, DOCX, PNG, JPEG, WEBP, GIF, TXT)' };
+    }
+
+    async function computeSHA256(buffer) {
+        if (!buffer) return '';
+        try {
+            if (window.crypto && window.crypto.subtle) {
+                const hashBuf = await window.crypto.subtle.digest('SHA-256', buffer);
+                return Array.from(new Uint8Array(hashBuf))
+                    .map(b => b.toString(16).padStart(2, '0'))
+                    .join('');
+            }
+        } catch (e) {
+            console.warn('SubtleCrypto error:', e);
+        }
+        return '';
+    }
+
+    function sanitizeDocRecord(raw) {
+        if (!raw || typeof raw !== 'object') return null;
+        const cleanThema = clampString(raw.thema || raw.title || 'Unbenannt', MAX_META_STRING_LEN);
+        const cleanLektion = clampString(raw.lektion || '—', MAX_META_STRING_LEN);
+        const cleanBuch = clampString(raw.buch || '—', MAX_META_STRING_LEN);
+        const cleanKlassen = clampString(raw.klassen || 'Alle', 80);
+        const cleanJahr = clampString(raw.jahr || '2026', 20);
+        const cleanTyp = clampString(raw.typ || currentConfig.docTypeLabel, 80);
+        const cleanSubTyp = Array.isArray(raw.subTyp)
+            ? raw.subTyp.slice(0, 10).map(s => clampString(s, 80))
+            : [];
+        const cleanFileName = sanitizeFileName(raw.fileName || 'Dokument.pdf');
+        const cleanFileType = clampString(raw.fileType || 'application/pdf', 100);
+        const cleanDataUrl = sanitizeDataUrl(raw.fileData);
+
+        return {
+            id: Number(raw.id) || Date.now(),
+            thema: cleanThema,
+            lektion: cleanLektion,
+            buch: cleanBuch,
+            klassen: cleanKlassen,
+            jahr: cleanJahr,
+            typ: cleanTyp,
+            subTyp: cleanSubTyp,
+            fileName: cleanFileName,
+            fileType: cleanFileType,
+            fileSize: Math.min(Math.max(0, Number(raw.fileSize) || 0), MAX_FILE_BYTES),
+            fileHash: clampString(raw.fileHash || '', 64).replace(/[^a-f0-9]/gi, '').toLowerCase(),
+            fileData: cleanDataUrl,
+            date: clampString(raw.date || new Date().toLocaleDateString(), 40)
+        };
+    }
+
+    function sanitizeWikiEntry(raw) {
+        if (!raw || typeof raw !== 'object') return null;
+        return {
+            id: Number(raw.id) || Date.now(),
+            title: clampString(raw.title || 'Ohne Titel', 120),
+            category: clampString(raw.category || 'Allgemein', 80),
+            tags: clampString(raw.tags || '', 160),
+            text: clampString(raw.text || '', 50000),
+            date: clampString(raw.date || new Date().toISOString().slice(0,10), 40),
+            files: Array.isArray(raw.files) ? raw.files.slice(0, 10).map(f => ({
+                id: Number(f.id) || Date.now(),
+                name: sanitizeFileName(f.name),
+                type: clampString(f.type || '', 80),
+                size: Math.min(Math.max(0, Number(f.size) || 0), MAX_FILE_BYTES),
+                data: sanitizeDataUrl(f.data)
+            })).filter(f => f.data) : []
+        };
+    }
+
+    function sanitizeLinkEntry(raw) {
+        if (!raw || typeof raw !== 'object') return null;
+        return {
+            name: clampString(raw.name || '', 100),
+            url: sanitizeUrl(raw.url)
+        };
     }
 
     // =========================================================================
@@ -342,6 +420,14 @@
     async function shareSocial(platform, docData) {
         const safeDoc = sanitizeDocRecord(docData);
         if (!safeDoc) return;
+
+        // When sharing via P2P Swarm from popup
+        if (platform === 'swarm') {
+            const isShared = isDocShared(safeDoc.id);
+            await toggleShareDocToSwarm(safeDoc.id, !isShared);
+            openSwarmModal();
+            return;
+        }
 
         const fileName = safeDoc.fileName;
         const title = safeDoc.thema || fileName;
@@ -423,7 +509,7 @@
 
         const pkg = {
             app: 'OsirisEduHub',
-            version: '2.1-hardened',
+            version: '2.5-hardened',
             exportedAt: new Date().toISOString(),
             document: safeDoc
         };
@@ -442,7 +528,7 @@
     }
 
     // =========================================================================
-    // 3. DECENTRALIZED WEBRTC / P2P SWARM ENGINE (HARDENED)
+    // 3. DECENTRALIZED MULTI-TRANSPORT SWARM ENGINE (WebRTC + BroadcastChannel)
     // =========================================================================
 
     function isPeerRateAllowed(peerId) {
@@ -485,14 +571,16 @@
                 fileType: clampString(d.fileType || 'application/pdf', 100),
                 fileSize: Math.min(Math.max(0, Number(d.fileSize) || 0), MAX_FILE_BYTES),
                 fileHash: clampString(d.fileHash || '', 64).replace(/[^a-f0-9]/gi, '').toLowerCase(),
-                date: clampString(d.date || '', 40)
+                date: clampString(d.date || '', 40),
+                sourceDb: clampString(d.sourceDb || currentConfig.dbName, 60)
             };
         }).filter(Boolean);
     }
 
-    function loadSharedDocsConfig() {
+    function loadSharedDocsConfig(dbName) {
         try {
-            const raw = localStorage.getItem(SHARED_DOCS_KEY + '_' + currentConfig.dbName);
+            const targetDb = dbName || currentConfig.dbName;
+            const raw = localStorage.getItem(SHARED_DOCS_KEY + '_' + targetDb);
             const parsed = raw ? safeJsonParse(raw) : [];
             return Array.isArray(parsed) ? parsed.map(Number).filter(Boolean) : [];
         } catch (e) {
@@ -500,16 +588,408 @@
         }
     }
 
-    function saveSharedDocsConfig(list) {
+    function saveSharedDocsConfig(list, dbName) {
         try {
-            localStorage.setItem(SHARED_DOCS_KEY + '_' + currentConfig.dbName, JSON.stringify(list));
+            const targetDb = dbName || currentConfig.dbName;
+            localStorage.setItem(SHARED_DOCS_KEY + '_' + targetDb, JSON.stringify(list));
         } catch (e) {}
+    }
+
+    // Aggregates shared docs from both DokumentationDB and TestBankDB
+    async function refreshLocalCatalog() {
+        const dbsToScan = ['DokumentationDB', 'TestBankDB'];
+        let combined = [];
+
+        for (const dbName of dbsToScan) {
+            const sharedIds = loadSharedDocsConfig(dbName);
+            if (sharedIds.length === 0) continue;
+
+            const items = await new Promise(resolve => {
+                try {
+                    const req = indexedDB.open(dbName);
+                    req.onsuccess = (e) => {
+                        const db = e.target.result;
+                        if (!db.objectStoreNames.contains('documents')) {
+                            resolve([]);
+                            return;
+                        }
+                        const tx = db.transaction(['documents'], 'readonly');
+                        const store = tx.objectStore('documents');
+                        const allReq = store.getAll();
+                        allReq.onsuccess = async (ev) => {
+                            const allDocs = ev.target.result || [];
+                            const filtered = allDocs.filter(d => sharedIds.includes(Number(d.id)));
+
+                            const cleanDocs = await Promise.all(filtered.slice(0, MAX_CATALOG_ITEMS_PER_PEER).map(async d => {
+                                let hash = d.fileHash;
+                                if (!hash && d.fileData) {
+                                    try {
+                                        const u8 = dataUrlToUint8Array(d.fileData);
+                                        hash = await computeSHA256(u8.buffer);
+                                    } catch (e) {}
+                                }
+                                return {
+                                    id: Number(d.id),
+                                    thema: clampString(d.thema, MAX_META_STRING_LEN),
+                                    lektion: clampString(d.lektion, MAX_META_STRING_LEN),
+                                    buch: clampString(d.buch, MAX_META_STRING_LEN),
+                                    klassen: clampString(d.klassen, 80),
+                                    jahr: clampString(d.jahr, 20),
+                                    typ: clampString(d.typ, 80),
+                                    subTyp: Array.isArray(d.subTyp) ? d.subTyp.slice(0, 10).map(s => clampString(s, 80)) : [],
+                                    fileName: clampString(d.fileName, 150),
+                                    fileType: clampString(d.fileType, 100),
+                                    fileSize: Number(d.fileSize) || 0,
+                                    fileHash: hash || '',
+                                    date: clampString(d.date, 40),
+                                    peerId: myPeerId,
+                                    sourceDb: dbName
+                                };
+                            }));
+                            resolve(cleanDocs);
+                        };
+                        allReq.onerror = () => resolve([]);
+                    };
+                    req.onerror = () => resolve([]);
+                } catch (e) {
+                    resolve([]);
+                }
+            });
+            combined = combined.concat(items);
+        }
+
+        localCatalog = combined.slice(0, MAX_CATALOG_ITEMS_PER_PEER);
+    }
+
+    // --- Dynamic PeerJS Loader Helper ---
+    function ensurePeerJsLoaded() {
+        return new Promise((resolve) => {
+            if (typeof window.Peer !== 'undefined') {
+                resolve(true);
+                return;
+            }
+            const candidateUrls = [
+                'lib/peerjs/v1/peerjs.min.js',
+                'lib/peerjs/peerjs.min.js',
+                '../lib/peerjs/v1/peerjs.min.js',
+                '../lib/peerjs/peerjs.min.js',
+                'peerjs.min.js',
+                'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js'
+            ];
+            function tryNext() {
+                if (typeof window.Peer !== 'undefined') { resolve(true); return; }
+                if (candidateUrls.length === 0) { resolve(false); return; }
+                const src = candidateUrls.shift();
+                const script = document.createElement('script');
+                script.src = src;
+                script.onload = () => {
+                    if (typeof window.Peer !== 'undefined') resolve(true);
+                    else tryNext();
+                };
+                script.onerror = () => tryNext();
+                document.head.appendChild(script);
+            }
+            tryNext();
+        });
+    }
+
+    // --- WebRTC PeerJS Mesh Setup ---
+    function getLobbySlotId(room, slotNum) {
+        const cleanRoom = (room || 'global').replace(/[^a-z0-9\-]/gi, '').toLowerCase().substring(0, 24) || 'global';
+        return `${LOBBY_PREFIX}${cleanRoom}-${slotNum}`;
+    }
+
+    async function initWebRtcSwarm() {
+        const loaded = await ensurePeerJsLoaded();
+        if (!loaded || typeof window.Peer === 'undefined') {
+            console.warn('[Osiris Swarm] PeerJS could not be loaded; running on BroadcastChannel only.');
+            webrtcStatus = 'offline';
+            updateSwarmBadge();
+            renderSwarmModalContent();
+            return;
+        }
+
+        try {
+            activeSwarmRoom = (sessionStorage.getItem('osiris_swarm_room') || 'global').trim();
+        } catch (e) {}
+
+        webrtcStatus = 'connecting';
+        updateSwarmBadge();
+        renderSwarmModalContent();
+
+        // Attempt to claim an available lobby slot from 1 to LOBBY_SLOT_COUNT
+        attemptClaimLobbySlot(1);
+    }
+
+    function attemptClaimLobbySlot(slotIndex) {
+        if (slotIndex > LOBBY_SLOT_COUNT) {
+            // All fixed lobby slots are occupied: register as dynamic client
+            const cleanRoom = activeSwarmRoom.replace(/[^a-z0-9\-]/gi, '').toLowerCase().substring(0, 24) || 'global';
+            const dynId = `${LOBBY_PREFIX}${cleanRoom}-dyn-${myPeerId.replace('_', '-')}`;
+            createPeerInstance(dynId, false);
+            return;
+        }
+
+        currentLobbySlot = slotIndex;
+        const candidateId = getLobbySlotId(activeSwarmRoom, slotIndex);
+
+        try {
+            createPeerInstance(candidateId, true, slotIndex);
+        } catch (err) {
+            console.warn(`[Osiris Swarm] Error creating Peer on ${candidateId}:`, err);
+            attemptClaimLobbySlot(slotIndex + 1);
+        }
+    }
+
+    function createPeerInstance(peerId, isLobbySlot, currentSlot) {
+        if (peerJsInstance) {
+            try { peerJsInstance.destroy(); } catch (e) {}
+            peerJsInstance = null;
+        }
+
+        const peer = new window.Peer(peerId, {
+            debug: 1,
+            config: {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' }
+                ]
+            }
+        });
+
+        peer.on('open', (id) => {
+            peerJsInstance = peer;
+            myWebrtcId = id;
+            webrtcStatus = 'connected';
+            console.log(`[Osiris Swarm] WebRTC Mesh Online as ${id}`);
+
+            // Connect to all other lobby slots in the current room
+            connectToLobbyMesh();
+
+            updateSwarmBadge();
+            renderSwarmModalContent();
+        });
+
+        peer.on('connection', (conn) => {
+            setupDataConnection(conn);
+        });
+
+        peer.on('error', (err) => {
+            if (isLobbySlot && err.type === 'unavailable-id') {
+                // This slot is taken by another teacher: try the next slot
+                attemptClaimLobbySlot((currentSlot || 1) + 1);
+            } else {
+                console.warn('[Osiris Swarm] WebRTC Peer Error:', err.type, err.message);
+                if (!peerJsInstance && isLobbySlot) {
+                    attemptClaimLobbySlot((currentSlot || 1) + 1);
+                }
+            }
+        });
+
+        peer.on('disconnected', () => {
+            webrtcStatus = 'connecting';
+            try { peer.reconnect(); } catch (e) {}
+        });
+
+        peer.on('close', () => {
+            webrtcStatus = 'offline';
+        });
+    }
+
+    function connectToLobbyMesh() {
+        if (!peerJsInstance || !myWebrtcId) return;
+
+        // Try connecting to all other lobby slots 1..8
+        for (let i = 1; i <= LOBBY_SLOT_COUNT; i++) {
+            const targetId = getLobbySlotId(activeSwarmRoom, i);
+            if (targetId !== myWebrtcId && !webrtcConnections.has(targetId)) {
+                connectToWebRtcPeer(targetId);
+            }
+        }
+    }
+
+    function connectToWebRtcPeer(targetId) {
+        if (!peerJsInstance || !targetId || targetId === myWebrtcId) return;
+        if (webrtcConnections.has(targetId)) return;
+
+        try {
+            const conn = peerJsInstance.connect(targetId, {
+                reliable: true,
+                serialization: 'json'
+            });
+            setupDataConnection(conn);
+        } catch (e) {
+            console.warn('[Osiris Swarm] Connect error to', targetId, e);
+        }
+    }
+
+    function setupDataConnection(conn) {
+        if (!conn) return;
+
+        conn.on('open', () => {
+            webrtcConnections.set(conn.peer, conn);
+
+            // Immediately exchange presence & catalog over WebRTC
+            sendOverConn(conn, {
+                type: 'PEER_ANNOUNCE',
+                sender: myPeerId,
+                webrtcId: myWebrtcId,
+                knownWebrtcIds: Array.from(webrtcConnections.keys()),
+                catalog: localCatalog
+            });
+
+            updateSwarmBadge();
+            renderSwarmModalContent();
+        });
+
+        conn.on('data', (raw) => {
+            handleWebRtcIncomingData(raw, conn);
+        });
+
+        conn.on('close', () => {
+            webrtcConnections.delete(conn.peer);
+            updateSwarmBadge();
+            renderSwarmModalContent();
+        });
+
+        conn.on('error', () => {
+            webrtcConnections.delete(conn.peer);
+        });
+    }
+
+    function sendOverConn(conn, packet) {
+        if (!conn || !conn.open) return;
+        try {
+            const jsonStr = JSON.stringify(packet);
+            if (jsonStr.length <= CHUNK_SIZE) {
+                conn.send(packet);
+            } else {
+                // Chunk large packets (e.g. DELIVER_DOC with full PDF bytes)
+                const transferId = generateCryptoHex(8);
+                const totalChunks = Math.ceil(jsonStr.length / CHUNK_SIZE);
+                for (let i = 0; i < totalChunks; i++) {
+                    const chunkSlice = jsonStr.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+                    conn.send({
+                        type: 'SWARM_CHUNK',
+                        sender: myPeerId,
+                        transferId: transferId,
+                        chunkIndex: i,
+                        totalChunks: totalChunks,
+                        data: chunkSlice
+                    });
+                }
+            }
+        } catch (e) {
+            console.warn('[Osiris Swarm] Send over WebRTC failed:', e);
+        }
+    }
+
+    function handleWebRtcIncomingData(raw, conn) {
+        let msg = raw;
+        if (typeof raw === 'string') {
+            msg = safeJsonParse(raw);
+        }
+        if (!msg || typeof msg !== 'object') return;
+
+        // Handle chunked packet reassembly
+        if (msg.type === 'SWARM_CHUNK') {
+            handleIncomingChunk(msg, conn);
+            return;
+        }
+
+        // Map Osiris peer ID to WebRTC connection ID
+        if (msg.sender && PEER_ID_REGEX.test(msg.sender) && conn && conn.peer) {
+            peerToWebrtcMap.set(msg.sender, conn.peer);
+        }
+
+        // PEX Gossip: Discover other active WebRTC peer IDs
+        if (Array.isArray(msg.knownWebrtcIds)) {
+            msg.knownWebrtcIds.slice(0, 16).forEach(wId => {
+                if (wId && typeof wId === 'string' && wId !== myWebrtcId && !webrtcConnections.has(wId)) {
+                    connectToWebRtcPeer(wId);
+                }
+            });
+        }
+
+        handleSwarmMessage({ data: msg });
+    }
+
+    function handleIncomingChunk(chunkMsg, conn) {
+        const transferId = clampString(chunkMsg.transferId, 32);
+        const idx = Number(chunkMsg.chunkIndex);
+        const total = Number(chunkMsg.totalChunks);
+        const chunkData = typeof chunkMsg.data === 'string' ? chunkMsg.data : '';
+
+        if (!transferId || isNaN(idx) || isNaN(total) || total > 800) return;
+
+        const now = Date.now();
+        // Clean expired transfers (>60s)
+        incomingChunks.forEach((entry, tid) => {
+            if (now - entry.startedAt > 60000) incomingChunks.delete(tid);
+        });
+
+        let entry = incomingChunks.get(transferId);
+        if (!entry) {
+            entry = {
+                chunks: new Map(),
+                total: total,
+                sender: chunkMsg.sender,
+                startedAt: now
+            };
+            incomingChunks.set(transferId, entry);
+        }
+
+        entry.chunks.set(idx, chunkData);
+
+        if (entry.chunks.size === entry.total) {
+            incomingChunks.delete(transferId);
+            let fullStr = '';
+            for (let i = 0; i < entry.total; i++) {
+                fullStr += entry.chunks.get(i) || '';
+            }
+            const reassembled = safeJsonParse(fullStr);
+            if (reassembled && typeof reassembled === 'object') {
+                if (reassembled.sender && PEER_ID_REGEX.test(reassembled.sender) && conn && conn.peer) {
+                    peerToWebrtcMap.set(reassembled.sender, conn.peer);
+                }
+                handleSwarmMessage({ data: reassembled });
+            }
+        }
+    }
+
+    // --- Outgoing Unified Packet Router ---
+    function sendSwarmPacket(packet, targetOsirisPeerId) {
+        // 1. BroadcastChannel (local browser tabs)
+        if (broadcastChannel) {
+            try {
+                broadcastChannel.postMessage(packet);
+            } catch (e) {}
+        }
+
+        // 2. WebRTC DataChannels (cross-device mesh across GitHub Pages)
+        if (webrtcConnections.size > 0) {
+            if (targetOsirisPeerId && peerToWebrtcMap.has(targetOsirisPeerId)) {
+                const targetWebrtcId = peerToWebrtcMap.get(targetOsirisPeerId);
+                const targetConn = webrtcConnections.get(targetWebrtcId);
+                if (targetConn && targetConn.open) {
+                    sendOverConn(targetConn, packet);
+                    return;
+                }
+            }
+
+            // Otherwise multicast to all open WebRTC connections
+            webrtcConnections.forEach(conn => {
+                sendOverConn(conn, packet);
+            });
+        }
     }
 
     async function initSwarm(config) {
         if (config) Object.assign(currentConfig, config);
         await refreshLocalCatalog();
 
+        // 1. Init BroadcastChannel (local tabs)
         if ('BroadcastChannel' in window) {
             try {
                 broadcastChannel = new BroadcastChannel(SWARM_CHANNEL_NAME);
@@ -520,71 +1000,40 @@
             }
         }
 
-        setInterval(broadcastPresence, 15000);
+        // 2. Init WebRTC PeerJS Mesh (Global cross-device mesh)
+        initWebRtcSwarm();
+
+        // Periodic presence broadcast & mesh reconnection every 15s
+        setInterval(() => {
+            broadcastPresence();
+            connectToLobbyMesh();
+            pruneStalePeers();
+        }, 15000);
+
         updateSwarmBadge();
     }
 
-    async function refreshLocalCatalog() {
-        const sharedIds = loadSharedDocsConfig();
-        if (sharedIds.length === 0) {
-            localCatalog = [];
-            return;
-        }
-
-        return new Promise((resolve) => {
-            const req = indexedDB.open(currentConfig.dbName);
-            req.onsuccess = (e) => {
-                const db = e.target.result;
-                if (!db.objectStoreNames.contains(currentConfig.storeName)) {
-                    localCatalog = [];
-                    resolve();
-                    return;
-                }
-                const tx = db.transaction([currentConfig.storeName], 'readonly');
-                const store = tx.objectStore(currentConfig.storeName);
-                const allReq = store.getAll();
-                allReq.onsuccess = async (ev) => {
-                    const allDocs = ev.target.result || [];
-                    const filtered = allDocs.filter(d => sharedIds.includes(Number(d.id)));
-
-                    localCatalog = await Promise.all(filtered.slice(0, MAX_CATALOG_ITEMS_PER_PEER).map(async d => {
-                        let hash = d.fileHash;
-                        if (!hash && d.fileData) {
-                            try {
-                                const u8 = dataUrlToUint8Array(d.fileData);
-                                hash = await computeSHA256(u8.buffer);
-                            } catch (e) {}
-                        }
-                        return {
-                            id: Number(d.id),
-                            thema: clampString(d.thema, MAX_META_STRING_LEN),
-                            lektion: clampString(d.lektion, MAX_META_STRING_LEN),
-                            buch: clampString(d.buch, MAX_META_STRING_LEN),
-                            klassen: clampString(d.klassen, 80),
-                            jahr: clampString(d.jahr, 20),
-                            typ: clampString(d.typ, 80),
-                            subTyp: Array.isArray(d.subTyp) ? d.subTyp.slice(0, 10).map(s => clampString(s, 80)) : [],
-                            fileName: clampString(d.fileName, 150),
-                            fileType: clampString(d.fileType, 100),
-                            fileSize: Number(d.fileSize) || 0,
-                            fileHash: hash || '',
-                            date: clampString(d.date, 40),
-                            peerId: myPeerId
-                        };
-                    }));
-                    resolve();
-                };
-                allReq.onerror = () => resolve();
-            };
-            req.onerror = () => resolve();
+    function pruneStalePeers() {
+        const now = Date.now();
+        let changed = false;
+        remoteCatalog.forEach((peerData, peerId) => {
+            if (now - peerData.lastSeen > 45000) {
+                remoteCatalog.delete(peerId);
+                changed = true;
+            }
         });
+        if (changed) {
+            updateSwarmBadge();
+            renderSwarmModalContent();
+        }
     }
 
     function broadcastPresence() {
-        if (!broadcastChannel) return;
-        broadcastChannel.postMessage({
+        sendSwarmPacket({
             type: 'PEER_ANNOUNCE',
             sender: myPeerId,
+            webrtcId: myWebrtcId,
+            knownWebrtcIds: Array.from(webrtcConnections.keys()),
             catalog: localCatalog
         });
     }
@@ -608,18 +1057,19 @@
                 enforceMaxPeers();
                 remoteCatalog.set(msg.sender, {
                     lastSeen: Date.now(),
-                    docs: sanitizeRemoteCatalogList(msg.catalog)
+                    docs: sanitizeRemoteCatalogList(msg.catalog),
+                    webrtcId: msg.webrtcId || null
                 });
                 updateSwarmBadge();
                 renderSwarmModalContent();
-                if (broadcastChannel) {
-                    broadcastChannel.postMessage({
-                        type: 'PEER_ACK',
-                        sender: myPeerId,
-                        target: msg.sender,
-                        catalog: localCatalog
-                    });
-                }
+
+                sendSwarmPacket({
+                    type: 'PEER_ACK',
+                    sender: myPeerId,
+                    target: msg.sender,
+                    webrtcId: myWebrtcId,
+                    catalog: localCatalog
+                }, msg.sender);
                 break;
 
             case 'PEER_ACK':
@@ -627,7 +1077,8 @@
                     enforceMaxPeers();
                     remoteCatalog.set(msg.sender, {
                         lastSeen: Date.now(),
-                        docs: sanitizeRemoteCatalogList(msg.catalog)
+                        docs: sanitizeRemoteCatalogList(msg.catalog),
+                        webrtcId: msg.webrtcId || null
                     });
                     updateSwarmBadge();
                     renderSwarmModalContent();
@@ -637,8 +1088,9 @@
             case 'REQUEST_DOC':
                 if (msg.target === myPeerId) {
                     const reqDocId = Number(msg.docId);
-                    if (reqDocId && isDocShared(reqDocId)) {
-                        serveDocToPeer(reqDocId, msg.sender);
+                    const reqToken = typeof msg.requestToken === 'string' && /^[a-f0-9]{16,64}$/i.test(msg.requestToken) ? msg.requestToken : '';
+                    if (reqDocId && reqToken && isDocShared(reqDocId)) {
+                        serveDocToPeer(reqDocId, msg.sender, reqToken);
                     }
                 }
                 break;
@@ -647,9 +1099,11 @@
                 if (msg.target === myPeerId && msg.payload) {
                     const deliveredId = Number(msg.payload.id);
                     const reqKey = `${msg.sender}:${deliveredId}`;
-                    // Block unsolicited document pushes (Anti-DDoS / Anti-Spam)
-                    if (!pendingRequests.has(reqKey)) {
-                        console.warn('[Osiris Security] Blocked unsolicited DELIVER_DOC from', msg.sender);
+                    const pending = pendingRequests.get(reqKey);
+                    // Block unsolicited, expired, or forged document pushes
+                    if (!pending || Date.now() > pending.expiresAt || pending.token !== msg.requestToken) {
+                        pendingRequests.delete(reqKey);
+                        console.warn('[Osiris Security] Blocked unsolicited or forged DELIVER_DOC from', msg.sender);
                         return;
                     }
                     pendingRequests.delete(reqKey);
@@ -659,27 +1113,46 @@
         }
     }
 
-    function serveDocToPeer(docId, targetPeerId) {
-        if (!isDocShared(docId)) return; // Double check opt-in privacy
-        const req = indexedDB.open(currentConfig.dbName);
-        req.onsuccess = (e) => {
-            const db = e.target.result;
-            const tx = db.transaction([currentConfig.storeName], 'readonly');
-            const store = tx.objectStore(currentConfig.storeName);
-            store.get(Number(docId)).onsuccess = (ev) => {
-                const item = ev.target.result;
-                if (!item) return;
+    // Searches both DokumentationDB and TestBankDB to serve requested document
+    function serveDocToPeer(docId, targetPeerId, requestToken) {
+        if (!isDocShared(docId)) return;
+        const dbsToTry = [currentConfig.dbName, currentConfig.dbName === 'DokumentationDB' ? 'TestBankDB' : 'DokumentationDB'];
 
-                if (broadcastChannel) {
-                    broadcastChannel.postMessage({
-                        type: 'DELIVER_DOC',
-                        sender: myPeerId,
-                        target: targetPeerId,
-                        payload: sanitizeDocRecord(item)
-                    });
-                }
-            };
-        };
+        function tryDb(idx) {
+            if (idx >= dbsToTry.length) return;
+            const dbName = dbsToTry[idx];
+            try {
+                const req = indexedDB.open(dbName);
+                req.onsuccess = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains('documents')) {
+                        tryDb(idx + 1);
+                        return;
+                    }
+                    const tx = db.transaction(['documents'], 'readonly');
+                    const store = tx.objectStore('documents');
+                    store.get(Number(docId)).onsuccess = (ev) => {
+                        const item = ev.target.result;
+                        if (item) {
+                            sendSwarmPacket({
+                                type: 'DELIVER_DOC',
+                                sender: myPeerId,
+                                target: targetPeerId,
+                                requestToken: requestToken,
+                                payload: sanitizeDocRecord(item)
+                            }, targetPeerId);
+                        } else {
+                            tryDb(idx + 1);
+                        }
+                    };
+                };
+                req.onerror = () => tryDb(idx + 1);
+            } catch (err) {
+                tryDb(idx + 1);
+            }
+        }
+
+        tryDb(0);
     }
 
     async function receiveDocFromPeer(rawDocItem) {
@@ -707,59 +1180,79 @@
         // 2. Mandatory SHA-256 Bit-Integrity Verification
         const computedHash = await computeSHA256(u8.buffer);
         if (!computedHash || (docItem.fileHash && docItem.fileHash !== computedHash)) {
-            alert('🛑 INTEGRITÄTSFEHLER: Der kryptografische SHA-256 Hash stimmt nicht mit dem Original überein (möglicher Man-in-the-Middle-Angriff)! Übertragung abgebrochen.');
+            alert('🛑 INTEGRITÄTSFEHLER: Der kryptografische SHA-256 Hash stimmt nicht mit dem Original überein! Übertragung abgebrochen.');
             return;
         }
 
-        // 3. Save sanitized record into local IndexedDB
-        const req = indexedDB.open(currentConfig.dbName);
-        req.onsuccess = (e) => {
-            const db = e.target.result;
-            const tx = db.transaction([currentConfig.storeName], 'readwrite');
-            const store = tx.objectStore(currentConfig.storeName);
+        // 3. Save sanitized record into target IndexedDB (sourceDb if matching, or current active db)
+        const targetDb = docItem.sourceDb || currentConfig.dbName;
+        const targetStore = currentConfig.storeName;
 
-            const newItem = Object.assign({}, docItem, {
-                id: Date.now(),
-                fileHash: computedHash,
-                date: new Date().toLocaleDateString()
-            });
+        try {
+            const req = indexedDB.open(targetDb);
+            req.onsuccess = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains(targetStore)) return;
+                const tx = db.transaction([targetStore], 'readwrite');
+                const store = tx.objectStore(targetStore);
 
-            store.add(newItem);
-            tx.oncomplete = () => {
-                const fp = computedHash.substring(0, 6).toUpperCase();
-                alert(`✅ Dokument „${newItem.thema}" erfolgreich geprüft (SHA-256 #${fp}) und lokal gespeichert!`);
-                if (typeof currentConfig.onDocImported === 'function') {
-                    currentConfig.onDocImported();
-                }
+                const newItem = Object.assign({}, docItem, {
+                    id: Date.now(),
+                    fileHash: computedHash,
+                    date: new Date().toLocaleDateString()
+                });
+
+                store.add(newItem);
+                tx.oncomplete = () => {
+                    const fp = computedHash.substring(0, 6).toUpperCase();
+                    alert(`✅ Dokument „${newItem.thema}" erfolgreich geprüft (SHA-256 #${fp}) und gespeichert!`);
+                    if (typeof currentConfig.onDocImported === 'function') {
+                        currentConfig.onDocImported();
+                    }
+                };
             };
-        };
+        } catch (err) {
+            console.error('Save imported doc error:', err);
+        }
     }
 
     function requestDocDownload(docId, peerId) {
         const cleanDocId = Number(docId);
         if (!cleanDocId || !PEER_ID_REGEX.test(peerId)) return;
 
-        pendingRequests.add(`${peerId}:${cleanDocId}`);
-        if (broadcastChannel) {
-            broadcastChannel.postMessage({
-                type: 'REQUEST_DOC',
-                sender: myPeerId,
-                target: peerId,
-                docId: cleanDocId
-            });
-        }
+        // Prune expired pending requests
+        const now = Date.now();
+        pendingRequests.forEach((val, key) => {
+            if (now > val.expiresAt) pendingRequests.delete(key);
+        });
+
+        const requestToken = generateCryptoHex(16);
+        pendingRequests.set(`${peerId}:${cleanDocId}`, {
+            token: requestToken,
+            expiresAt: now + 60000 // 60-second strict TTL
+        });
+
+        sendSwarmPacket({
+            type: 'REQUEST_DOC',
+            sender: myPeerId,
+            target: peerId,
+            docId: cleanDocId,
+            requestToken: requestToken
+        }, peerId);
     }
 
     async function toggleShareDocToSwarm(docId, shouldShare) {
         const cleanId = Number(docId);
         if (!cleanId) return;
-        let sharedIds = loadSharedDocsConfig();
+
+        let sharedIds = loadSharedDocsConfig(currentConfig.dbName);
         if (shouldShare) {
             if (!sharedIds.includes(cleanId)) sharedIds.push(cleanId);
         } else {
             sharedIds = sharedIds.filter(id => id !== cleanId);
         }
-        saveSharedDocsConfig(sharedIds);
+        saveSharedDocsConfig(sharedIds, currentConfig.dbName);
+
         await refreshLocalCatalog();
         broadcastPresence();
         updateSwarmBadge();
@@ -767,8 +1260,10 @@
     }
 
     function isDocShared(docId) {
-        const sharedIds = loadSharedDocsConfig();
-        return sharedIds.includes(Number(docId));
+        const sharedCurrent = loadSharedDocsConfig(currentConfig.dbName);
+        if (sharedCurrent.includes(Number(docId))) return true;
+        const otherDb = currentConfig.dbName === 'DokumentationDB' ? 'TestBankDB' : 'DokumentationDB';
+        return loadSharedDocsConfig(otherDb).includes(Number(docId));
     }
 
     // =========================================================================
@@ -793,11 +1288,13 @@
 
         // Notify parent frame (EDU_HUB.html)
         if (window.parent && window.parent !== window) {
-            window.parent.postMessage({
-                type: 'SWARM_BADGE_UPDATE',
-                activePeers: activePeers,
-                totalShared: totalShared
-            }, '*');
+            try {
+                window.parent.postMessage({
+                    type: 'SWARM_BADGE_UPDATE',
+                    activePeers: activePeers,
+                    totalShared: totalShared
+                }, getTargetOrigin());
+            } catch (e) {}
         }
     }
 
@@ -816,6 +1313,30 @@
         if (modal) modal.style.display = 'none';
     }
 
+    function joinCustomRoom(roomName) {
+        const clean = (roomName || '').replace(/[^a-z0-9\-]/gi, '').toLowerCase().substring(0, 24);
+        if (!clean) return;
+        activeSwarmRoom = clean;
+        try { sessionStorage.setItem('osiris_swarm_room', clean); } catch (e) {}
+        remoteCatalog.clear();
+        webrtcConnections.forEach(c => { try { c.close(); } catch(e) {} });
+        webrtcConnections.clear();
+        peerToWebrtcMap.clear();
+        initWebRtcSwarm();
+    }
+
+    function connectDirectPeer(peerInput) {
+        const target = (peerInput || '').trim();
+        if (!target) return;
+        if (target.startsWith('osiris-') || target.startsWith('peer_')) {
+            connectToWebRtcPeer(target);
+            alert(`Verbindungsanfrage an ${target} gesendet.`);
+        } else {
+            joinCustomRoom(target);
+            alert(`Swarm-Raum gewechselt zu „${target}".`);
+        }
+    }
+
     function createSwarmModalDom() {
         const modal = document.createElement('div');
         modal.id = 'swarm-modal';
@@ -826,7 +1347,7 @@
         `;
 
         modal.innerHTML = `
-            <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 850px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 16px 40px rgba(0,0,0,0.3);">
+            <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 860px; max-height: 92vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 16px 40px rgba(0,0,0,0.3);">
                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--border); background: var(--bg);">
                     <div style="display:flex; align-items:center; gap:12px;">
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#0099ff; flex-shrink:0;">
@@ -836,8 +1357,8 @@
                             <path d="M12 2a15.3 15.3 0 0 0-4 10 15.3 15.3 0 0 0 4 10z"></path>
                         </svg>
                         <div>
-                            <h3 style="margin:0; color:var(--primary); font-size:1.15rem;">Community-Schwarm (Dezentrales P2P)</h3>
-                            <div style="font-size:0.75rem; color:gray;">Zero-Knowledge · Browser-to-Browser · Keine Benutzerkonten</div>
+                            <h3 style="margin:0; color:var(--primary); font-size:1.15rem;">Community-Schwarm (Dezentrales WebRTC P2P)</h3>
+                            <div style="font-size:0.75rem; color:gray;">Zero-Knowledge · Browser-to-Browser · Cross-Device auf GitHub Hosting</div>
                         </div>
                     </div>
                     <button id="swarm-close-x" aria-label="Schließen" style="background:transparent; border:none; cursor:pointer; color:var(--text); padding:6px; display:flex; align-items:center; justify-content:center;">
@@ -845,15 +1366,27 @@
                     </button>
                 </div>
 
-                <div style="padding: 10px 20px; background: rgba(40,167,69,0.1); border-bottom: 1px solid rgba(40,167,69,0.25); font-size: 0.82rem; display: flex; gap: 10px; align-items: center; justify-content: space-between;">
+                <div style="padding: 10px 20px; background: rgba(40,167,69,0.08); border-bottom: 1px solid rgba(40,167,69,0.2); font-size: 0.82rem; display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap:wrap;">
                     <div style="display:flex; align-items:center; gap:8px;">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:#28a745; flex-shrink:0;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                        <span><strong>100% Lokal &amp; Privat:</strong> Dokumente werden nur bei Klick auf „In Schwarm teilen“ übertragen.</span>
+                        <span><strong>100% Dezentral &amp; Privat:</strong> Dokumente werden via WebRTC DataChannel direkt von Gerät zu Gerät übertragen.</span>
                     </div>
-                    <span style="font-size:0.75rem; color:var(--primary); font-weight:600; display:flex; align-items:center; gap:4px;">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-                        Details im Info-Menü
+                    <span id="swarm-room-label" style="font-size:0.75rem; color:var(--primary); font-weight:600;">
+                        Raum: <strong>${escapeHtml(activeSwarmRoom)}</strong>
                     </span>
+                </div>
+
+                <!-- WebRTC Live P2P Status & Direct Connect Bar -->
+                <div style="padding: 10px 20px; background: var(--bg); border-bottom: 1px solid var(--border); font-size: 0.82rem; display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap:wrap;">
+                    <div id="swarm-net-status" style="display:flex; align-items:center; gap:8px;">
+                        <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#28a745;"></span>
+                        <span>Global P2P aktiv (ID: <code id="swarm-my-id-code" style="user-select:all; font-family:monospace; font-size:0.75rem;">${escapeHtml(myWebrtcId || myPeerId)}</code>)</span>
+                        <button id="btn-copy-peer-id" type="button" style="padding:2px 8px; border:1px solid var(--border); border-radius:4px; background:var(--surface); cursor:pointer; font-size:0.72rem;">Kopieren</button>
+                    </div>
+                    <div style="display:flex; gap:6px; align-items:center;">
+                        <input id="inp-direct-peer" type="text" placeholder="Raum-Code / Peer-ID..." style="padding:4px 8px; border:1px solid var(--border); border-radius:4px; background:var(--surface); color:var(--text); font-size:0.75rem; width:170px;">
+                        <button id="btn-connect-direct" type="button" style="padding:4px 10px; background:var(--accent); color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer; font-size:0.75rem;">Verbinden</button>
+                    </div>
                 </div>
 
                 <div style="display:flex; border-bottom: 1px solid var(--border); background: var(--surface);">
@@ -877,14 +1410,34 @@
         document.getElementById('swarm-tab-remote').addEventListener('click', () => switchSwarmTab('remote'));
         document.getElementById('swarm-tab-local').addEventListener('click', () => switchSwarmTab('local'));
 
-        // Safe Event Delegation for Swarm Action Buttons (Zero inline onclick interpolation)
+        document.getElementById('btn-copy-peer-id').addEventListener('click', () => {
+            const idVal = myWebrtcId || myPeerId;
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(idVal).then(() => alert('Peer-ID in die Zwischenablage kopiert!'));
+            } else {
+                prompt('Ihre Peer-ID zum Teilen mit Kollegen:', idVal);
+            }
+        });
+
+        document.getElementById('btn-connect-direct').addEventListener('click', () => {
+            const val = (document.getElementById('inp-direct-peer').value || '').trim();
+            if (val) connectDirectPeer(val);
+        });
+
+        // Safe Event Delegation for Swarm Action Buttons
         const contentWrap = document.getElementById('swarm-tab-content');
         contentWrap.addEventListener('click', (e) => {
             const dlBtn = e.target.closest('[data-swarm-download]');
             if (dlBtn) {
                 const docId = Number(dlBtn.getAttribute('data-doc-id'));
                 const peerId = dlBtn.getAttribute('data-peer-id') || '';
+                dlBtn.disabled = true;
+                dlBtn.innerHTML = '<span>Lade...</span>';
                 requestDocDownload(docId, peerId);
+                setTimeout(() => {
+                    dlBtn.disabled = false;
+                    dlBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> <span>Laden</span>';
+                }, 3000);
                 return;
             }
             const stopBtn = e.target.closest('[data-swarm-stop]');
@@ -918,6 +1471,20 @@
         const wrap = document.getElementById('swarm-tab-content');
         if (!wrap) return;
 
+        // Update live status bar in modal if present
+        const idCode = document.getElementById('swarm-my-id-code');
+        if (idCode) idCode.textContent = myWebrtcId || myPeerId;
+
+        const netStatus = document.getElementById('swarm-net-status');
+        if (netStatus) {
+            const dotColor = webrtcStatus === 'connected' ? '#28a745' : (webrtcStatus === 'connecting' ? '#ffc107' : '#6c757d');
+            const statusLabel = webrtcStatus === 'connected'
+                ? `Global P2P aktiv (Mesh: ${webrtcConnections.size} Peers)`
+                : (webrtcStatus === 'connecting' ? 'Verbinde mit Globalem Swarm...' : 'Lokaler Browser-Swarm');
+            netStatus.querySelector('span:first-child').style.background = dotColor;
+            netStatus.querySelector('span:nth-child(2)').childNodes[0].textContent = statusLabel + ' ';
+        }
+
         if (currentSwarmTab === 'remote') {
             const allRemoteDocs = [];
             remoteCatalog.forEach((peerData, peerId) => {
@@ -933,7 +1500,7 @@
                         <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" style="color:var(--primary); opacity:0.6; margin-bottom:10px;"><path d="M4.93 4.93a10 10 0 0 1 14.14 0"></path><path d="M7.76 7.76a6 6 0 0 1 8.48 0"></path><circle cx="12" cy="12" r="2"></circle><path d="M12 14v8"></path></svg>
                         <h4 style="margin:0 0 8px 0; color:var(--text);">Keine weiteren Peers im Schwarm aktiv</h4>
                         <p style="margin:0; font-size:0.85rem; max-width:480px; margin:auto;">
-                            Sobald sich andere Lehrkräfte im Netzwerk befinden oder ein Kollege Dokumente bereitstellt, erscheinen diese hier automatisch in Echtzeit.
+                            Sobald sich andere Lehrkräfte auf GitHub Pages oder im Netzwerk befinden und Dokumente bereitstellen, erscheinen diese hier automatisch in Echtzeit.
                         </p>
                     </div>
                 `;
@@ -1036,12 +1603,12 @@
         const footerStats = document.getElementById('swarm-footer-stats');
         if (footerStats) {
             const activePeers = remoteCatalog.size;
-            footerStats.textContent = `Status: ${activePeers} Peer(s) im Netzwerk | ${localCatalog.length} eigene(s) Dokument(e) freigegeben | ${blockedPeers.size} Angreifer blockiert`;
+            footerStats.textContent = `Status: ${activePeers} Peer(s) im Netzwerk (${webrtcConnections.size} WebRTC verbunden) | ${localCatalog.length} eigene(s) Dokument(e) freigegeben`;
         }
     }
 
-    // Export both OsirisSecurity and EduHybridShare globally
-    window.OsirisSecurity = {
+    // Export both OsirisSecurity and EduHybridShare globally (Immutable / Frozen)
+    const osirisSecurityApi = Object.freeze({
         escapeHtml: escapeHtml,
         clampString: clampString,
         sanitizeUrl: sanitizeUrl,
@@ -1050,11 +1617,18 @@
         safeJsonParse: safeJsonParse,
         validateMagicBytes: validateMagicBytes,
         sanitizeDocRecord: sanitizeDocRecord,
+        sanitizeWikiEntry: sanitizeWikiEntry,
+        sanitizeLinkEntry: sanitizeLinkEntry,
+        sanitizeThemeName: sanitizeThemeName,
+        sanitizeFontFamily: sanitizeFontFamily,
+        sanitizeFileName: sanitizeFileName,
+        isTrustedOrigin: isTrustedOrigin,
+        getTargetOrigin: getTargetOrigin,
         computeSHA256: computeSHA256,
         MAX_FILE_BYTES: MAX_FILE_BYTES
-    };
+    });
 
-    window.EduHybridShare = {
+    const eduHybridShareApi = Object.freeze({
         init: initSwarm,
         shareSocial: shareSocial,
         openSwarmModal: openSwarmModal,
@@ -1065,7 +1639,27 @@
         requestDocDownload: requestDocDownload,
         validateMagicBytes: validateMagicBytes,
         computeSHA256: computeSHA256,
-        exportSinglePackage: exportSinglePackage
-    };
+        exportSinglePackage: exportSinglePackage,
+        joinCustomRoom: joinCustomRoom,
+        connectDirectPeer: connectDirectPeer
+    });
+
+    try {
+        Object.defineProperty(window, 'OsirisSecurity', {
+            value: osirisSecurityApi,
+            writable: false,
+            configurable: false,
+            enumerable: true
+        });
+        Object.defineProperty(window, 'EduHybridShare', {
+            value: eduHybridShareApi,
+            writable: false,
+            configurable: false,
+            enumerable: true
+        });
+    } catch (e) {
+        window.OsirisSecurity = osirisSecurityApi;
+        window.EduHybridShare = eduHybridShareApi;
+    }
 
 })(window);

@@ -3,6 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' blob: data:; script-src 'self' 'unsafe-inline' blob: https://cdnjs.cloudflare.com https://unpkg.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https: blob: data:; worker-src 'self' blob:; frame-src 'self' blob: data:; object-src 'none'; base-uri 'self';">
+    <meta name="referrer" content="no-referrer">
     <title>MEINE DOKUMENTATION</title>
     <!-- Library loading: local files are tried first (this app is meant to run
          fully offline, next to these .js files on disk). If a local file is
@@ -52,6 +54,10 @@
         osirisLoadWithFallback(['lib/pdf/v1/pdf.min.js', 'lib/pdf/pdf.min.js', '../lib/pdf/v1/pdf.min.js', 'pdf.min.js'], 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js', 'pdfjsLib'),
         osirisLoadWithFallback(['lib/pdf/v1/pdf-lib.min.js', 'lib/pdf/pdf-lib.min.js', '../lib/pdf/v1/pdf-lib.min.js', 'pdf-lib.min.js'], 'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js', 'PDFLib'),
         osirisLoadWithFallback(['lib/jszip/v1/jszip.min.js', 'lib/jszip/jszip.min.js', '../lib/jszip/v1/jszip.min.js', 'jszip.min.js'], 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js', 'JSZip'),
+        osirisLoadWithFallback(['lib/htmldocx/v1/html-docx.js', 'lib/htmldocx/html-docx.js', '../lib/htmldocx/v1/html-docx.js', 'html-docx.js'], 'https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.js', 'htmlDocx'),
+      
+        osirisLoadWithFallback(['lib/peerjs/v1/peerjs.min.js', 'lib/peerjs/peerjs.min.js', '../lib/peerjs/v1/peerjs.min.js', '../lib/peerjs/peerjs.min.js', 'peerjs.min.js'], 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js', 'Peer'),
+        osirisLoadWithFallback(['lib/pdf/v1/pdf.worker.min.js', 'lib/pdf/pdf.worker.min.js', '../lib/pdf/v1/pdf.worker.min.js', 'pdf.worker.min.js'], 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js', 'pdfjsWorker'),
       ]);
     </script>
     <script>
@@ -242,11 +248,18 @@
         #fs-content { max-width: 1000px; margin: 40px auto; background: var(--surface); padding: 30px; border-radius: 10px; border: 1px solid var(--border); box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
         #fs-iframe-container { width: 100%; height: 65vh; margin-top: 20px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); display: flex; align-items: center; justify-content: center;}
         
+        #fs-floating-actions {
+            position: fixed; bottom: 35px; right: 25px;
+            display: flex; align-items: center; gap: 12px; z-index: 10000;
+            transition: opacity 0.5s ease-out;
+        }
+        #fs-floating-actions > * { margin: 0; }
         #btn-download {
-            position: fixed; bottom: 40px; right: 20px; background: var(--accent); color: white;
-            padding: 15px 25px; border-radius: 50px; text-decoration: none; font-weight: bold;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3); display: flex; align-items: center; gap: 10px; z-index: 10000;
-            transition: transform 0.2s, opacity 0.5s ease-out;
+            position: static; background: var(--accent); color: white;
+            padding: 14px 22px; border-radius: 50px; text-decoration: none; font-weight: bold;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3); display: flex; align-items: center; gap: 8px;
+            border: none; cursor: pointer; font-size: 0.95rem; font-family: inherit;
+            transition: transform 0.2s, opacity 0.5s ease-out; white-space: nowrap;
         }
         #btn-download:hover { transform: scale(1.05); }
 
@@ -329,18 +342,28 @@
         }
         #reset-filters-btn:hover { color: var(--accent); transform: rotate(-180deg); }
 
-        /* --- Share Button --- */
+        /* --- Share & Word Action Buttons --- */
         #btn-share {
-            position: fixed; bottom: 40px; right: 200px; background: #131111; color: white;
-            padding: 15px 25px; border-radius: 50px; font-weight: bold; font-family: inherit; font-size: 1rem;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3); display: flex; align-items: center; gap: 10px;
-            z-index: 10000; border: none; cursor: pointer;
-            transition: transform 0.2s, opacity 0.5s ease-out;
+            position: static; background: #131111; color: white;
+            padding: 14px 22px; border-radius: 50px; font-weight: bold; font-family: inherit; font-size: 0.95rem;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3); display: flex; align-items: center; gap: 8px;
+            border: none; cursor: pointer;
+            transition: transform 0.2s, opacity 0.5s ease-out; white-space: nowrap;
         }
         #btn-share:hover { transform: scale(1.05); }
 
+        #btn-pdf-to-docx {
+            position: static; background: #2b579a; color: white;
+            padding: 14px 22px; border-radius: 50px; font-weight: bold; font-family: inherit; font-size: 0.95rem;
+            box-shadow: 0 4px 15px rgba(43,87,154,0.4); display: none; align-items: center; gap: 8px;
+            border: none; cursor: pointer;
+            transition: transform 0.2s, background 0.2s, opacity 0.5s ease-out; white-space: nowrap;
+        }
+        #btn-pdf-to-docx:hover:not(:disabled) { transform: scale(1.05); background: #1e3f70; }
+        #btn-pdf-to-docx:disabled { opacity: 0.75; cursor: wait; }
+
         #share-popup {
-            position: fixed; bottom: 110px; right: 200px; background: var(--surface);
+            position: fixed; bottom: 100px; right: 25px; background: var(--surface);
             border: 1px solid var(--border); border-radius: 14px; padding: 8px;
             box-shadow: 0 8px 28px rgba(0,0,0,0.22); z-index: 10002;
             display: flex; flex-direction: column; gap: 4px; min-width: 190px;
@@ -350,6 +373,16 @@
         }
         #share-popup.visible {
             opacity: 1; pointer-events: auto; transform: translateY(0);
+        }
+
+        @media (max-width: 768px) {
+            #fs-floating-actions {
+                bottom: 20px; right: 15px; left: 15px;
+                justify-content: center; flex-wrap: wrap; gap: 8px;
+            }
+            #fs-floating-actions button, #fs-floating-actions a {
+                padding: 10px 14px; font-size: 0.82rem; flex: 1 1 auto; justify-content: center;
+            }
         }
         .share-option {
             display: flex; align-items: center; gap: 12px; padding: 10px 14px;
@@ -544,7 +577,7 @@
         </div>
 
         <div class="filters-container" id="filters-bar" style="display: none;">
-            <select id="filter-buch" onchange="renderResults()" style="padding: 8px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface); color: var(--text);">
+            <select id="filter-buch" onchange="onFilterBuchChange()" style="padding: 8px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface); color: var(--text);">
                 <option value="">Filter: ALLE LEHRWERKE</option>
                 <option value="HALLO ZUSAMMEN!">HALLO ZUSAMMEN!</option>
                 <option value="VORWÄRTS!">VORWÄRTS!</option>
@@ -563,7 +596,12 @@
                 <option value="8. Klasse">8. KLASSE (QUATRIÈME)</option>
                 <option value="Sonstiges">SONSTIGES</option>
             </select>
-            <input type="text" id="filter-thema" placeholder="Filter: THEMA/LEKTION" oninput="renderResults()">
+            <select id="filter-thema" onchange="onFilterThemaChange()" style="padding: 8px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface); color: var(--text);">
+                <option value="">Filter: ALLE THEMEN</option>
+            </select>
+            <select id="filter-lektion" onchange="renderResults()" style="padding: 8px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface); color: var(--text);">
+                <option value="">Filter: ALLE LEKTIONEN</option>
+            </select>
             <select id="filter-typ" onchange="renderResults()">
                 <option value="">Filter: ALLE DOKTYPEN</option>
                 <option value="LEHRSKIZZE">LEHRSKIZZE</option>
@@ -582,14 +620,7 @@
     <button id="fs-close" onclick="closeModal()">✖ SCHLIEßEN</button>
     <div id="fs-content">
         </div>
-    <a id="btn-download" href="#" download>
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
-        </svg> DOWNLOAD
-    </a>
-
     <div id="share-popup">
-        <div style="font-size:0.75rem; font-weight:bold; color:gray; padding:4px 10px 2px; border-bottom:1px solid var(--border); margin-bottom:4px; text-transform:uppercase; letter-spacing:0.5px;">1-zu-1 Teilen (Social)</div>
        <button class="share-option" onclick="shareVia('whatsapp', event)">
 <svg width="30px" height="30px" viewBox="0 0 48 48">
     <g id="Icons" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
@@ -636,20 +667,38 @@
 
 </path>
     </g>
-</svg> Bluetooth / Gerät</button>
-        <button class="share-option" onclick="shareVia('package', event)">
-            <svg width="24px" height="24px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--primary);"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg> Paket (.edu.json)
-        </button>
-        <div style="font-size:0.75rem; font-weight:bold; color:gray; padding:6px 10px 2px; border-top:1px solid var(--border); margin-top:4px; text-transform:uppercase; letter-spacing:0.5px;">Dezentraler P2P-Schwarm</div>
-        <button class="share-option" id="btn-toggle-swarm-share" onclick="toggleCurrentDocSwarmShare(event)" style="color:var(--primary);">
-            <span id="swarm-share-icon" style="font-size:1.15rem;">🌐</span> <span id="swarm-share-text">In Community-Schwarm teilen</span>
+</svg> Bluetooth</button>
+        <div style="font-size:0.75rem; font-weight:bold; color:gray; padding:4px 10px 2px; border-bottom:1px solid var(--border); margin:4px 0 2px; text-transform:uppercase; letter-spacing:0.5px;">P2P Schwarm</div>
+        <button id="btn-share-swarm" class="share-option" onclick="shareVia('swarm', event)">
+            <svg width="30px" height="30px" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+            <span id="swarm-share-text">In Community-Schwarm teilen</span>
         </button>
     </div>
-    <button id="btn-share" onclick="toggleSharePopup(event)">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+
+    <div id="fs-floating-actions" class="fs-floating-bar">
+        <button id="btn-share" onclick="toggleSharePopup(event)" title="Dokument teilen">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92c0-1.61-1.31-2.92-2.92-2.92zM18 4c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zM6 13c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm12 7.02c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1z"/>
-            </svg> TEILEN
-    </button>
+            </svg>
+            <span>TEILEN</span>
+        </button>
+        <button id="btn-pdf-to-docx" onclick="convertCurrentPdfToDocx(event)" style="display:none;" title="Dieses PDF als bearbeitbares Word-Dokument (DOCX) herunterladen">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
+            <span id="btn-pdf-to-docx-text">WORD (DOCX)</span>
+        </button>
+        <a id="btn-download" href="#" download title="Originaldatei herunterladen">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+            </svg>
+            <span>DOWNLOAD</span>
+        </a>
+    </div>
 </div>
 
 <footer class="no-print" style="width: 100%; max-width: 1200px; margin-top: 40px; padding: 20px; border-top: 1px solid var(--border); text-align: center; font-size: 0.8em; opacity: 0.7;">
@@ -791,18 +840,26 @@
         return JSON.parse(raw, (k, v) => (k === '__proto__' || k === 'constructor' || k === 'prototype') ? undefined : v);
     }
 
-    // Live updates from EDU_HUB.html
+    // Live updates from EDU_HUB.html (Verified Origin + Sanitized Payloads)
     window.addEventListener('message', function (e) {
+        if (window.OsirisSecurity && window.OsirisSecurity.isTrustedOrigin && !window.OsirisSecurity.isTrustedOrigin(e)) return;
+        if (window.parent && e.source && e.source !== window.parent && e.source !== window) return;
         const msg = e.data || {};
         if (msg.type === 'OPEN_SWARM_MODAL') {
             if (window.EduHybridShare) window.EduHybridShare.openSwarmModal();
         } else if (msg.type === 'SET_FONT' && msg.payload && msg.payload.font) {
-            document.documentElement.style.setProperty('--bank-font-family', msg.payload.font);
+            const safeFont = window.OsirisSecurity && window.OsirisSecurity.sanitizeFontFamily
+                ? window.OsirisSecurity.sanitizeFontFamily(msg.payload.font)
+                : String(msg.payload.font).replace(/[;<>{}()\\]/g, '').slice(0, 120);
+            if (safeFont) document.documentElement.style.setProperty('--bank-font-family', safeFont);
         } else if (msg.type === 'SET_LANG' && msg.payload && (msg.payload.lang === 'FR' || msg.payload.lang === 'DE')) {
             bankLang = msg.payload.lang;
             applyBankLang();
         } else if (msg.type === 'SET_THEME' || msg.type === 'THEME_CHANGED') {
-            var th = (msg.payload && msg.payload.theme) || msg.theme;
+            var rawTh = (msg.payload && msg.payload.theme) || msg.theme;
+            var th = window.OsirisSecurity && window.OsirisSecurity.sanitizeThemeName
+                ? window.OsirisSecurity.sanitizeThemeName(rawTh)
+                : (['light', 'dark', 'osiris', 'snow', 'grass', 'ocean'].includes(rawTh) ? rawTh : '');
             if (th) {
                 document.documentElement.setAttribute('data-theme', th);
                 localStorage.setItem('wiki_theme', th);
@@ -1736,18 +1793,17 @@
         if (data && data.themes && data.themes.length > 0) {
             let thHtml = `<option value="" disabled selected data-i18n="chooseThema">Themenbereich wählen...</option>`;
             data.themes.forEach(t => {
-                thHtml += `<option value="${t.title.replace(/"/g, '&quot;')}">${t.fullTitle || t.title}</option>`;
+                thHtml += `<option value="${escapeHtml(t.title)}">${escapeHtml(t.fullTitle || t.title)}</option>`;
             });
             thHtml += `<option value="SONSTIGES">SONSTIGES (freies Thema)...</option>`;
             themaSelect.innerHTML = thHtml;
-
             // Populate all lessons across the book initially (Optional by default)
             let lHtml = `<option value="" selected data-i18n="chooseLektionOptional">(Optional / Keine Lektion)</option>`;
             data.themes.forEach(t => {
                 if (t.lessons && t.lessons.length > 0) {
-                    lHtml += `<optgroup label="${(t.fullTitle || t.title).replace(/"/g, '&quot;')}">`;
+                    lHtml += `<optgroup label="${escapeHtml(t.fullTitle || t.title)}">`;
                     t.lessons.forEach(les => {
-                        lHtml += `<option value="${les.replace(/"/g, '&quot;')}">${les}</option>`;
+                        lHtml += `<option value="${escapeHtml(les)}">${escapeHtml(les)}</option>`;
                     });
                     lHtml += `</optgroup>`;
                 }
@@ -1789,7 +1845,7 @@
         if (chosenTheme && chosenTheme.lessons && chosenTheme.lessons.length > 0) {
             let lHtml = `<option value="" selected data-i18n="chooseLektionOptional">(Optional / Keine Lektion)</option>`;
             chosenTheme.lessons.forEach(les => {
-                lHtml += `<option value="${les.replace(/"/g, '&quot;')}">${les}</option>`;
+                lHtml += `<option value="${escapeHtml(les)}">${escapeHtml(les)}</option>`;
             });
             lHtml += `<option value="SONSTIGES">SONSTIGES (freie Lektion)...</option>`;
             lektionSelect.innerHTML = lHtml;
@@ -2086,7 +2142,7 @@
         if (!pdfjsLib) return null;
         const buffer = await file.arrayBuffer();
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'lib/pdf/v1/pdf.worker.min.js';
-        const loadingTask = pdfjsLib.getDocument({ data: buffer });
+        const loadingTask = pdfjsLib.getDocument({ data: buffer, isEvalSupported: false });
         const pdf = await loadingTask.promise;
         const metadata = await pdf.getMetadata();
         const raw = metadata && metadata.info && metadata.info[OSIRIS_META_KEY];
@@ -2509,15 +2565,179 @@ function saveEntry() {
         };
     }
 
+    
+    // --- Dynamic Themes & Lessons Filter Linking ---
+    function updateFilterThemenUndLektionen() {
+        const buchSelect = document.getElementById('filter-buch');
+        const themaSelect = document.getElementById('filter-thema');
+        const lektionSelect = document.getElementById('filter-lektion');
+        if (!themaSelect || !lektionSelect) return;
+
+        const selectedBuch = buchSelect ? buchSelect.value.trim() : '';
+        const prevThema = themaSelect.value;
+        const prevLektion = lektionSelect.value;
+
+        const knownThemes = new Set();
+        let thOptions = '<option value="">Filter: ALLE THEMEN</option>';
+
+        if (selectedBuch && typeof CURRICULUM_DATA !== 'undefined' && CURRICULUM_DATA[selectedBuch]) {
+            const bData = CURRICULUM_DATA[selectedBuch];
+            if (bData.themes && bData.themes.length > 0) {
+                bData.themes.forEach(t => {
+                    const val = t.title || t.fullTitle;
+                    const label = t.fullTitle || t.title;
+                    knownThemes.add(val.toLowerCase());
+                    thOptions += `<option value="${escapeHtml(val)}">${escapeHtml(label)}</option>`;
+                });
+            }
+        } else if (typeof CURRICULUM_DATA !== 'undefined') {
+            for (const [bName, bData] of Object.entries(CURRICULUM_DATA)) {
+                if (bName.includes('(') || bName.startsWith('Deutsch Na klar')) continue;
+                if (bData.themes && bData.themes.length > 0) {
+                    thOptions += `<optgroup label="${escapeHtml(bName)}">`;
+                    bData.themes.forEach(t => {
+                        const val = t.title || t.fullTitle;
+                        const label = t.fullTitle || t.title;
+                        knownThemes.add(val.toLowerCase());
+                        thOptions += `<option value="${escapeHtml(val)}">${escapeHtml(label)}</option>`;
+                    });
+                    thOptions += `</optgroup>`;
+                }
+            }
+        }
+
+        // Include any custom themes stored in database
+        if (window._dbUniqueThemes && window._dbUniqueThemes.length > 0) {
+            const extras = window._dbUniqueThemes.filter(th => !knownThemes.has(th.toLowerCase()));
+            if (extras.length > 0) {
+                thOptions += `<optgroup label="── Weitere Themen (in DB) ──">`;
+                extras.forEach(th => {
+                    thOptions += `<option value="${escapeHtml(th)}">${escapeHtml(th)}</option>`;
+                });
+                thOptions += `</optgroup>`;
+            }
+        }
+
+        themaSelect.innerHTML = thOptions;
+
+        if (prevThema && Array.from(themaSelect.options).some(o => o.value === prevThema)) {
+            themaSelect.value = prevThema;
+        } else {
+            themaSelect.value = '';
+        }
+
+        updateFilterLektionen(prevLektion);
+    }
+
+    function updateFilterLektionen(keepLektionVal) {
+        const buchSelect = document.getElementById('filter-buch');
+        const themaSelect = document.getElementById('filter-thema');
+        const lektionSelect = document.getElementById('filter-lektion');
+        if (!lektionSelect) return;
+
+        const selectedBuch = buchSelect ? buchSelect.value.trim() : '';
+        const selectedThema = themaSelect ? themaSelect.value.trim() : '';
+        const targetLektion = (keepLektionVal !== undefined) ? keepLektionVal : lektionSelect.value;
+
+        const knownLessons = new Set();
+        let lOptions = '<option value="">Filter: ALLE LEKTIONEN</option>';
+
+        if (selectedBuch && typeof CURRICULUM_DATA !== 'undefined' && CURRICULUM_DATA[selectedBuch]) {
+            const bData = CURRICULUM_DATA[selectedBuch];
+            if (selectedThema) {
+                const th = bData.themes.find(t => (t.title === selectedThema || t.fullTitle === selectedThema));
+                if (th && th.lessons && th.lessons.length > 0) {
+                    th.lessons.forEach(les => {
+                        knownLessons.add(les.toLowerCase());
+                        lOptions += `<option value="${escapeHtml(les)}">${escapeHtml(les)}</option>`;
+                    });
+                }
+            } else {
+                bData.themes.forEach(t => {
+                    if (t.lessons && t.lessons.length > 0) {
+                        lOptions += `<optgroup label="${escapeHtml(t.fullTitle || t.title)}">`;
+                        t.lessons.forEach(les => {
+                            knownLessons.add(les.toLowerCase());
+                            lOptions += `<option value="${escapeHtml(les)}">${escapeHtml(les)}</option>`;
+                        });
+                        lOptions += `</optgroup>`;
+                    }
+                });
+            }
+        } else if (typeof CURRICULUM_DATA !== 'undefined') {
+            if (selectedThema) {
+                for (const [bName, bData] of Object.entries(CURRICULUM_DATA)) {
+                    if (bName.includes('(') || bName.startsWith('Deutsch Na klar')) continue;
+                    const th = bData.themes.find(t => (t.title === selectedThema || t.fullTitle === selectedThema));
+                    if (th && th.lessons && th.lessons.length > 0) {
+                        lOptions += `<optgroup label="${escapeHtml(bName + ': ' + (th.fullTitle || th.title))}">`;
+                        th.lessons.forEach(les => {
+                            knownLessons.add(les.toLowerCase());
+                            lOptions += `<option value="${escapeHtml(les)}">${escapeHtml(les)}</option>`;
+                        });
+                        lOptions += `</optgroup>`;
+                    }
+                }
+            } else {
+                for (const [bName, bData] of Object.entries(CURRICULUM_DATA)) {
+                    if (bName.includes('(') || bName.startsWith('Deutsch Na klar')) continue;
+                    if (bData.themes && bData.themes.length > 0) {
+                        bData.themes.forEach(t => {
+                            if (t.lessons && t.lessons.length > 0) {
+                                lOptions += `<optgroup label="${escapeHtml(bName + ' – ' + (t.fullTitle || t.title))}">`;
+                                t.lessons.forEach(les => {
+                                    knownLessons.add(les.toLowerCase());
+                                    lOptions += `<option value="${escapeHtml(les)}">${escapeHtml(les)}</option>`;
+                                });
+                                lOptions += `</optgroup>`;
+                            }
+                        });
+                    }
+                }
+            }
+        }
+
+        // Include any custom lessons from DB
+        if (window._dbUniqueLessons && window._dbUniqueLessons.length > 0) {
+            const extraLes = window._dbUniqueLessons.filter(les => !knownLessons.has(les.toLowerCase()));
+            if (extraLes.length > 0) {
+                lOptions += `<optgroup label="── Weitere Lektionen (in DB) ──">`;
+                extraLes.forEach(les => {
+                    lOptions += `<option value="${escapeHtml(les)}">${escapeHtml(les)}</option>`;
+                });
+                lOptions += `</optgroup>`;
+            }
+        }
+
+        lektionSelect.innerHTML = lOptions;
+
+        if (targetLektion && Array.from(lektionSelect.options).some(o => o.value === targetLektion)) {
+            lektionSelect.value = targetLektion;
+        } else {
+            lektionSelect.value = '';
+        }
+    }
+
+    function onFilterBuchChange() {
+        updateFilterThemenUndLektionen();
+        renderResults();
+    }
+
+    function onFilterThemaChange() {
+        updateFilterLektionen();
+        renderResults();
+    }
+
     function renderResults() {
         if (!idb) return;
 
         const q = document.getElementById('search-input').value.toLowerCase().trim();
         const fBuch = document.getElementById('filter-buch') ? document.getElementById('filter-buch').value.trim() : '';
         const fJahr = document.getElementById('filter-jahr').value.trim();
-        const fKlass = document.getElementById('filter-klassen').value.toLowerCase().trim();
-        const fThema = document.getElementById('filter-thema').value.toLowerCase().trim();
-        const fTyp = document.getElementById('filter-typ').value;
+        const fKlass = document.getElementById('filter-klassen') ? document.getElementById('filter-klassen').value.toLowerCase().trim() : '';
+        const fThema = document.getElementById('filter-thema') ? document.getElementById('filter-thema').value.toLowerCase().trim() : '';
+        const fLektion = document.getElementById('filter-lektion') ? document.getElementById('filter-lektion').value.toLowerCase().trim() : '';
+        const fTyp = document.getElementById('filter-typ') ? document.getElementById('filter-typ').value : '';
         const deleteMode = document.getElementById('delete-mode-cb').checked;
         const editMode = document.getElementById('edit-mode-cb').checked;
 
@@ -2528,6 +2748,18 @@ function saveEntry() {
 
         req.onsuccess = (e) => {
             const db = e.target.result.reverse(); // newest first
+            if (!window._filterThemenInitDone) {
+                window._filterThemenInitDone = true;
+                const dbThemes = new Set();
+                const dbLessons = new Set();
+                db.forEach(item => {
+                    if (item.thema && item.thema.trim()) dbThemes.add(item.thema.trim());
+                    if (item.lektion && item.lektion.trim()) dbLessons.add(item.lektion.trim());
+                });
+                window._dbUniqueThemes = Array.from(dbThemes);
+                window._dbUniqueLessons = Array.from(dbLessons);
+                updateFilterThemenUndLektionen();
+            }
             const container = document.getElementById('results-container');
             container.innerHTML = '';
 
@@ -2537,7 +2769,8 @@ function saveEntry() {
                 if (fBuch && item.buch !== fBuch) return false;
                 if (fJahr && !String(item.jahr).includes(fJahr)) return false;
                 if (fKlass && !item.klassen.toLowerCase().includes(fKlass)) return false;
-                if (fThema && !(item.thema.toLowerCase().includes(fThema) || item.lektion.toLowerCase().includes(fThema))) return false;
+                if (fThema && !(item.thema.toLowerCase().includes(fThema) || fThema.includes(item.thema.toLowerCase()))) return false;
+                if (fLektion && !(item.lektion.toLowerCase().includes(fLektion) || fLektion.includes(item.lektion.toLowerCase()))) return false;
                 if (fTyp && item.typ !== fTyp) return false;
                 return true;
             });
@@ -2696,6 +2929,11 @@ function saveEntry() {
             downloadBtn.href = sanitizeDataUrl(item.fileData);
             downloadBtn.download = item.fileName;
             
+            const pdfToDocxBtn = document.getElementById('btn-pdf-to-docx');
+            if (pdfToDocxBtn) {
+                pdfToDocxBtn.style.display = isPdf ? 'inline-flex' : 'none';
+            }
+
             const shareBtn = document.getElementById('btn-share');
             window._currentModalDoc = item;
             window._shareFileName = item.fileName;
@@ -2705,18 +2943,28 @@ function saveEntry() {
                 updateSwarmShareButtonState(EduHybridShare.isDocShared(item.id));
             }
 
+            const floatingBar = document.getElementById('fs-floating-actions');
             function refreshDownloadButton() {
+                if (floatingBar) {
+                    floatingBar.style.opacity = '1';
+                    floatingBar.style.pointerEvents = 'auto';
+                }
                 downloadBtn.style.opacity = '1';
                 downloadBtn.style.pointerEvents = 'auto';
                 shareBtn.style.opacity = '1';
                 shareBtn.style.pointerEvents = 'auto';
                 if (window.downloadTimeout) clearTimeout(window.downloadTimeout);
                 window.downloadTimeout = setTimeout(() => {
+                    if (floatingBar) {
+                        floatingBar.style.opacity = '0';
+                        floatingBar.style.pointerEvents = 'none';
+                    }
                     downloadBtn.style.opacity = '0';
                     downloadBtn.style.pointerEvents = 'none';
                     shareBtn.style.opacity = '0';
                     shareBtn.style.pointerEvents = 'none';
-                    document.getElementById('share-popup').classList.remove('visible');
+                    const popup = document.getElementById('share-popup');
+                    if (popup) popup.classList.remove('visible');
                 }, 5000);
             }
 
@@ -2733,25 +2981,59 @@ function saveEntry() {
     }
 
     // Helper function for PDF.js (Pulled OUTSIDE of openModal)
+    
+    // Robust PDF.js Worker Configuration & Safe Document Loader
+    function ensurePdfWorkerConfigured(pdfjsLib) {
+        if (!pdfjsLib) return;
+        let workerUrl = 'lib/pdf/v1/pdf.worker.min.js';
+        const scripts = Array.from(document.querySelectorAll('script[src]'));
+        const workerScript = scripts.find(s => s.src && s.src.includes('pdf.worker'));
+        const mainScript = scripts.find(s => s.src && s.src.includes('pdf.min.js'));
+        if (workerScript && workerScript.src) {
+            workerUrl = workerScript.src;
+        } else if (mainScript && mainScript.src) {
+            workerUrl = mainScript.src.replace('pdf.min.js', 'pdf.worker.min.js');
+        } else if (window.location.origin && window.location.origin.includes('github.io')) {
+            workerUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+        }
+        if (pdfjsLib.GlobalWorkerOptions) {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+        }
+    }
+
+    async function loadPdfDocumentSafe(pdfjsLib, bytes) {
+        ensurePdfWorkerConfigured(pdfjsLib);
+        try {
+            const loadingTask = pdfjsLib.getDocument({ data: bytes, isEvalSupported: false });
+            return await loadingTask.promise;
+        } catch (workerErr) {
+            console.warn('[PDF.js] Primary worker loading error, retrying with CDN fallback:', workerErr);
+            if (pdfjsLib.GlobalWorkerOptions) {
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+            }
+            const fallbackTask = pdfjsLib.getDocument({ data: bytes, isEvalSupported: false });
+            return await fallbackTask.promise;
+        }
+    }
+
     async function renderPdfMobileFriendly(base64Data) {
         await window.OSIRIS_LIBS_READY;
         const container = document.getElementById('pdf-canvas-container');
+        if (!container) return;
         
         try {
-            // Convert base64 to Uint8Array
-            const binaryString = atob(base64Data.split(',')[1]);
+            const rawB64 = (base64Data && base64Data.includes(',')) ? base64Data.split(',')[1] : (base64Data || '');
+            const binaryString = atob(rawB64.replace(/\s+/g, ''));
             const len = binaryString.length;
             const bytes = new Uint8Array(len);
             for (let i = 0; i < len; i++) { bytes[i] = binaryString.charCodeAt(i); }
 
             const pdfjsLib = window['pdfjs-dist/build/pdf'] || window.pdfjsLib;
-            
-            // ---> THE FIX IS HERE <--- 
-            // We ensure the worker file correctly points to the CDN, matching your <script src="...">
-            pdfjsLib.GlobalWorkerOptions.workerSrc = 'lib/pdf/v1/pdf.worker.min.js';
+            if (!pdfjsLib) {
+                throw new Error('PDF.js Bibliothek konnte nicht geladen werden.');
+            }
 
-            const loadingTask = pdfjsLib.getDocument({data: bytes});
-            const pdf = await loadingTask.promise;
+            const pdf = await loadPdfDocumentSafe(pdfjsLib, bytes);
             container.innerHTML = ''; // Clear loading text
 
             // Render every page
@@ -2769,8 +3051,8 @@ function saveEntry() {
                 container.appendChild(canvas);
             }
         } catch (err) {
-            container.innerHTML = `<div style="color:red; padding:20px;">PDF konnte nicht geladen werden.</div>`;
-            console.error(err);
+            container.innerHTML = `<div style="color:red; padding:20px;">PDF konnte nicht geladen werden: ${escapeHtml(err.message || err)}</div>`;
+            console.error('PDF Render Error:', err);
         }
     }
 
@@ -2900,11 +3182,13 @@ function saveEntry() {
         let nextTheme = themes[(themes.indexOf(current) + 1) % themes.length];
         document.documentElement.setAttribute('data-theme', nextTheme);
         localStorage.setItem('wiki_theme', nextTheme);
-        try { window.parent.postMessage({ type: 'THEME_CHANGED', theme: nextTheme }, '*'); } catch (e) {}
+        const targetOrigin = (window.OsirisSecurity && window.OsirisSecurity.getTargetOrigin) ? window.OsirisSecurity.getTargetOrigin() : '*';
+        try { window.parent.postMessage({ type: 'THEME_CHANGED', theme: nextTheme }, targetOrigin); } catch (e) {}
     };
-
     const savedTheme = localStorage.getItem('wiki_theme');
-    if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
+    if (savedTheme && ['light', 'dark', 'osiris', 'snow', 'grass', 'ocean'].includes(savedTheme)) {
+        document.documentElement.setAttribute('data-theme', savedTheme);
+    }
 
     function toggleLinksPop(e) {
         if(e) e.stopPropagation();
@@ -2979,11 +3263,17 @@ function saveEntry() {
     function toggleSharePopup(e) {
         if (e) e.stopPropagation();
         const popup = document.getElementById('share-popup');
+        const shareBtn = document.getElementById('btn-share');
         const isVisible = popup.classList.contains('visible');
         if (isVisible) {
             popup.classList.remove('visible');
             if (window.shareAutoHideTimer) clearTimeout(window.shareAutoHideTimer);
         } else {
+            if (shareBtn) {
+                const rect = shareBtn.getBoundingClientRect();
+                popup.style.bottom = (window.innerHeight - rect.top + 10) + 'px';
+                popup.style.right = Math.max(10, (window.innerWidth - rect.right)) + 'px';
+            }
             popup.classList.add('visible');
             // Auto-close popup after 4 seconds
             if (window.shareAutoHideTimer) clearTimeout(window.shareAutoHideTimer);
@@ -3003,8 +3293,218 @@ function saveEntry() {
         }
     });
 
+    
+    // --- Offline PDF to Word (DOCX) Converter ---
+    async function convertCurrentPdfToDocx(event) {
+        if (event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+        const item = window._currentModalDoc;
+        if (!item || !item.fileData) {
+            alert('Kein Dokument geladen.');
+            return;
+        }
+
+        const btn = document.getElementById('btn-pdf-to-docx');
+        const btnText = document.getElementById('btn-pdf-to-docx-text');
+        const originalText = btnText ? btnText.textContent : 'WORD (DOCX)';
+
+        const setStatus = (txt) => {
+            if (btnText) btnText.textContent = txt;
+        };
+
+        try {
+            if (btn) btn.disabled = true;
+            setStatus('LADE BIBLIOTHEKEN...');
+
+            await window.OSIRIS_LIBS_READY;
+
+            const pdfjsLib = window['pdfjs-dist/build/pdf'] || window.pdfjsLib;
+            if (!pdfjsLib) {
+                throw new Error('PDF.js Bibliothek nicht verfügbar.');
+            }
+            if (typeof window.htmlDocx === 'undefined') {
+                throw new Error('Word-Konverter (htmlDocx) nicht verfügbar.');
+            }
+
+            setStatus('LESE PDF-DATEN...');
+            const base64Str = item.fileData.includes(',') ? item.fileData.split(',')[1] : item.fileData;
+            const binaryStr = atob(base64Str);
+            const bytes = new Uint8Array(binaryStr.length);
+            for (let i = 0; i < binaryStr.length; i++) {
+                bytes[i] = binaryStr.charCodeAt(i);
+            }
+
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'lib/pdf/v1/pdf.worker.min.js';
+            const pdf = await pdfjsLib.getDocument({ data: bytes, isEvalSupported: false }).promise;
+            const totalPages = pdf.numPages;
+
+            let bodyContentHtml = '';
+
+            for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+                setStatus(`SEITE ${pageNum}/${totalPages}...`);
+                const page = await pdf.getPage(pageNum);
+                const textContent = await page.getTextContent();
+
+                if (pageNum > 1) {
+                    bodyContentHtml += `<div style="page-break-before: always; height: 1px; border-top: 1px dashed #cbd5e1; margin: 24pt 0 16pt 0;"></div>`;
+                }
+
+                if (!textContent || !textContent.items || textContent.items.length === 0) {
+                    bodyContentHtml += `<p style="font-style:italic; color:#64748b;">(Seite ${pageNum}: Keine Textinhalte erkannt)</p>`;
+                    continue;
+                }
+
+                const rawItems = textContent.items
+                    .filter(it => it.str && it.str.trim().length > 0)
+                    .map(it => {
+                        const x = it.transform ? it.transform[4] : 0;
+                        const y = it.transform ? it.transform[5] : 0;
+                        const size = Math.abs(it.transform ? it.transform[3] : 0) || it.height || 11;
+                        return { str: it.str, x, y, size, width: it.width || 0 };
+                    });
+
+                if (rawItems.length === 0) {
+                    bodyContentHtml += `<p style="font-style:italic; color:#64748b;">(Seite ${pageNum}: Keine Textinhalte erkannt)</p>`;
+                    continue;
+                }
+
+                rawItems.sort((a, b) => b.y - a.y || a.x - b.x);
+                const avgSize = rawItems.reduce((acc, it) => acc + it.size, 0) / rawItems.length;
+
+                const lines = [];
+                let curLine = { y: rawItems[0].y, items: [rawItems[0]], maxSize: rawItems[0].size };
+
+                for (let i = 1; i < rawItems.length; i++) {
+                    const item_i = rawItems[i];
+                    if (Math.abs(curLine.y - item_i.y) <= 3.5) {
+                        curLine.items.push(item_i);
+                        if (item_i.size > curLine.maxSize) curLine.maxSize = item_i.size;
+                    } else {
+                        curLine.items.sort((a, b) => a.x - b.x);
+                        lines.push(curLine);
+                        curLine = { y: item_i.y, items: [item_i], maxSize: item_i.size };
+                    }
+                }
+                if (curLine.items.length > 0) {
+                    curLine.items.sort((a, b) => a.x - b.x);
+                    lines.push(curLine);
+                }
+
+                const processedLines = lines.map(line => {
+                    let lineStr = '';
+                    let lastRight = null;
+                    for (const piece of line.items) {
+                        if (lastRight !== null) {
+                            const gap = piece.x - lastRight;
+                            if (gap > 2 && !lineStr.endsWith(' ') && !piece.str.startsWith(' ')) {
+                                lineStr += ' ';
+                            }
+                        }
+                        lineStr += piece.str;
+                        lastRight = piece.x + piece.width;
+                    }
+                    return {
+                        text: lineStr.trim(),
+                        y: line.y,
+                        size: line.maxSize
+                    };
+                }).filter(l => l.text.length > 0);
+
+                for (let i = 0; i < processedLines.length; i++) {
+                    const cur = processedLines[i];
+                    const safeText = escapeHtml(cur.text);
+
+                    if (cur.size >= avgSize * 1.35 && cur.text.length < 90) {
+                        bodyContentHtml += `<h2 style="font-size: 14pt; color: #1f4e79; margin-top: 14pt; margin-bottom: 6pt; font-weight: bold;">${safeText}</h2>`;
+                    } else if (cur.size >= avgSize * 1.18 && cur.text.length < 110) {
+                        bodyContentHtml += `<h3 style="font-size: 12pt; color: #2e75b6; margin-top: 10pt; margin-bottom: 4pt; font-weight: bold;">${safeText}</h3>`;
+                    } else {
+                        bodyContentHtml += `<p style="font-size: 11pt; line-height: 1.25; margin-bottom: 5pt; text-align: justify;">${safeText}</p>`;
+                    }
+                }
+            }
+
+            setStatus('ERSTELLE DOCX...');
+
+            const themaTitle = escapeHtml(item.thema || 'Dokument');
+            const typLabel = escapeHtml(item.typ || 'Unterrichtsmaterial');
+            const klassenLabel = escapeHtml(item.klassen || '-');
+            const buchLabel = escapeHtml(item.buch || '-');
+            const lektionLabel = escapeHtml(item.lektion || '-');
+            const jahrLabel = escapeHtml(item.jahr || new Date().getFullYear().toString());
+            const dateLabel = escapeHtml(item.date || new Date().toLocaleDateString('de-DE'));
+
+            const metaHeaderHtml = `
+                <table style="width: 100%; border-collapse: collapse; margin-bottom: 20pt; font-family: Calibri, Arial, sans-serif; border-bottom: 2pt solid #1f4e79;">
+                    <tr>
+                        <td style="padding: 8pt 0; vertical-align: top;">
+                            <div style="font-size: 18pt; font-weight: bold; color: #1f4e79; margin-bottom: 4pt;">${themaTitle}</div>
+                            <div style="font-size: 11pt; color: #555555;">Typ: <strong>${typLabel}</strong> | Klassenstufe: <strong>${klassenLabel}</strong></div>
+                        </td>
+                        <td style="text-align: right; padding: 8pt 0; vertical-align: top; font-size: 9.5pt; color: #666666;">
+                            <div>Lehrwerk: <strong>${buchLabel}</strong></div>
+                            <div>Lektion/Modul: <strong>${lektionLabel}</strong></div>
+                            <div>Schuljahr: <strong>${jahrLabel}</strong> | Erstellt: ${dateLabel}</div>
+                        </td>
+                    </tr>
+                </table>
+            `;
+
+            const fullHtml = `<!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <title>${themaTitle}</title>
+                <style>
+                    body { font-family: Calibri, 'Segoe UI', Arial, sans-serif; font-size: 11pt; line-height: 1.25; color: #1a1a1a; }
+                    h1, h2, h3, h4 { font-family: Calibri, 'Segoe UI', Arial, sans-serif; }
+                    p { margin: 0 0 5pt 0; }
+                    table { border-collapse: collapse; }
+                </style>
+            </head>
+            <body>
+                ${metaHeaderHtml}
+                ${bodyContentHtml}
+            </body>
+            </html>`;
+
+            const docxBlob = window.htmlDocx.asBlob(fullHtml);
+
+            let baseName = (item.fileName || 'Dokument').replace(/\.pdf$/i, '');
+            if (!baseName.endsWith('.docx')) baseName += '.docx';
+
+            const blobUrl = URL.createObjectURL(docxBlob);
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = baseName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+
+            setStatus('FERTIG! (HERUNTERGELADEN)');
+            setTimeout(() => {
+                setStatus(originalText);
+                if (btn) btn.disabled = false;
+            }, 2500);
+
+        } catch (err) {
+            console.error('PDF to Word conversion failed:', err);
+            alert('Fehler bei der PDF-zu-Word-Konvertierung: ' + (err.message || err));
+            setStatus(originalText);
+            if (btn) btn.disabled = false;
+        }
+    }
+
     function shareVia(platform, event) {
         if (event) event.stopPropagation();
+        if (platform === 'swarm') {
+            if (typeof toggleCurrentDocSwarmShare === 'function') toggleCurrentDocSwarmShare(event);
+            if (window.EduHybridShare) window.EduHybridShare.openSwarmModal();
+            return;
+        }
         const popup = document.getElementById('share-popup');
         popup.classList.remove('visible');
         if (window.shareAutoHideTimer) clearTimeout(window.shareAutoHideTimer);

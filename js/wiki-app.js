@@ -1,4 +1,4 @@
-    let db = JSON.parse(localStorage.getItem('offline_wiki_db')) || [];
+﻿    let db = JSON.parse(localStorage.getItem('offline_wiki_db')) || [];
     let links = JSON.parse(localStorage.getItem('wiki_links')) || [];
 
     // --- TRANSLATION DICTIONARY ---
@@ -15,7 +15,7 @@
 
     const i18n = {
         EN: {
-            importBtn: `${svgImportBtn} IMPORT TEXT`, themeBtn: "🎨 Theme", linksBtn: "🔗 Links",
+            importBtn: `${svgImportBtn} IMPORT TEXT`, themeBtn: "🎨 Theme", linksBtn: "USEFUL LINKS",
             importTitle: `${svgImportTitle} Import & Index`, textLabel: "Text Content", sourceLabel: "Source Link",
             saveBtn: "Save to Wiki", searchTitle: `${svgSearch} Wiki Search`, searchPlac: "Search keywords or text...",
             textPlac: "Paste your text here...", popTitle: "Add Link", popBtn: "Add", suggestions: "Suggestions:",
@@ -23,7 +23,7 @@
             exportJson: "Export database (DB)", importJson: "Import database (DB)", resetDb: "Reset database (DB)", deleteMode: "Enable Delete Text"
         },
         FR: {
-            importBtn: `${svgImportBtn} IMPORTER TEXTE`, themeBtn: "🎨 Thème", linksBtn: "🔗 Liens",
+            importBtn: `${svgImportBtn} IMPORTER TEXTE`, themeBtn: "🎨 Thème", linksBtn: "LIENS UTILES",
             importTitle: `${svgImportTitle} Importer & Indexer`, textLabel: "Contenu du texte", sourceLabel: "Lien source",
             saveBtn: "Enregistrer", searchTitle: `${svgSearch} Recherche Wiki`, searchPlac: "Rechercher des mots-clés...",
             textPlac: "Collez votre texte ici...", popTitle: "Ajouter lien", popBtn: "Ajouter", suggestions: "Suggestions :",
@@ -31,7 +31,7 @@
             exportJson: "Exporter banque de données (DB)", importJson: "Importer banque de données (DB)", resetDb: "Réinitialiser banque de données (DB)", deleteMode: "Activer la suppression du texte"
         },
         DE: {
-            importBtn: `${svgImportBtn} TEXT IMPORTIEREN`, themeBtn: "🎨 Design", linksBtn: "🔗 Links",
+            importBtn: `${svgImportBtn} TEXT IMPORTIEREN`, themeBtn: "🎨 Design", linksBtn: "NÜTZLICHE LINKS",
             importTitle: `${svgImportTitle} Importieren & Indexieren`, textLabel: "Textinhalt", sourceLabel: "Quell-Link",
             saveBtn: "Speichern", searchTitle: `${svgSearch} Wiki-Suche`, searchPlac: "Suchen...",
             textPlac: "Text hier einfügen...", popTitle: "Link hinzufügen", popBtn: "Hinzufügen", suggestions: "Vorschläge:",
@@ -39,7 +39,7 @@
             exportJson: "Datenbank Exportieren (DB)", importJson: " Datenbank Importieren (DB)", resetDb: "Datenbank zurücksetzen (DB)", deleteMode: "Textlöschung aktivieren"
         },
         SP: {
-            importBtn: `${svgImportBtn} IMPORTAR TEXTO`, themeBtn: "🎨 Tema", linksBtn: "🔗 Enlaces",
+            importBtn: `${svgImportBtn} IMPORTAR TEXTO`, themeBtn: "🎨 Tema", linksBtn: "ENLACES ÚTILES",
             importTitle: `${svgImportTitle} Importar e Indexar`, textLabel: "Contenido del texto", sourceLabel: "Enlace fuente",
             saveBtn: "Guardar", searchTitle: `${svgSearch} Buscar en Wiki`, searchPlac: "Buscar...",
             textPlac: "Pegue su texto aquí...", popTitle: "Añadir enlace", popBtn: "Añadir", suggestions: "Sugerencias:",
@@ -62,7 +62,7 @@
         document.getElementById('langBtnLabel').textContent = lang;
         document.getElementById('importBtnLabel').textContent = lang === 'DE' ? 'TEXT IMPORTIEREN' : 'IMPORTER TEXTE';
         var _tbl = document.getElementById('themeBtnLabel'); if (_tbl) _tbl.textContent = '';
-        document.getElementById('linksBtnLabel').textContent = data.linksBtn;
+        var _lbl = document.getElementById('linksBtnLabel'); if (_lbl) _lbl.textContent = data.linksBtn;
         
         const importSub = document.getElementById('import-submenu');
         importSub.querySelector('h2').innerHTML = data.importTitle;
@@ -124,18 +124,17 @@
     }
 
     // ── Language toggle (FR / DE, synced with osiris_hub_prefs) ──────────
-    const wikiLangs = ['DE'];
+    const wikiLangs = ['DE', 'FR'];
     function readInitialLang() {
         try {
             const prefs = JSON.parse(localStorage.getItem('osiris_hub_prefs') || '{}');
-            if (prefs.lang === 'DE') return 1; // index into wikiLangs
+            if (prefs.lang === 'FR') return 1;
+            if (prefs.lang === 'DE') return 0;
         } catch(e) {}
-        // fall back to wiki-specific saved index (legacy FR/EN/DE/SP → map to FR/DE)
         const saved = localStorage.getItem('wiki_lang_idx');
         if (saved !== null) {
             const old = parseInt(saved, 10);
-            // old: 0=FR,1=EN,2=DE,3=SP → new: 0=FR,1=DE
-            return 0;
+            return old === 1 ? 1 : 0;
         }
         return 0;
     }

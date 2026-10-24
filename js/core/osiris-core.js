@@ -1,4 +1,4 @@
-/* ============================================================
+﻿/* ============================================================
    osiris-core.js
    Shared library core for the Osiris multi-theme bookshelf.
 
@@ -140,7 +140,7 @@
         var label = targetWindow === global.parent ? "parent" : (targetWindow === global ? "self" : "iframe");
         _debugLog("SEND ->", label, type, payload);
       }
-      targetWindow.postMessage({ type: type, payload: payload }, "*");
+      var _tOrigin = (global.OsirisSecurity && global.OsirisSecurity.getTargetOrigin) ? global.OsirisSecurity.getTargetOrigin() : ((global.location.origin && global.location.origin !== "null") ? global.location.origin : "*"); targetWindow.postMessage({ type: type, payload: payload }, _tOrigin);
     }
   }
 
@@ -234,7 +234,7 @@
       cb(applied, count);
       if (e.source && e.source.postMessage) {
         _debugLog("SEND -> (vault)", "osirisVaultKeysApplied", { count: count });
-        e.source.postMessage({ type: "osirisVaultKeysApplied", count: count }, "*");
+        var _tOrigin2 = (global.OsirisSecurity && global.OsirisSecurity.getTargetOrigin) ? global.OsirisSecurity.getTargetOrigin() : ((global.location.origin && global.location.origin !== "null") ? global.location.origin : "*"); e.source.postMessage({ type: "osirisVaultKeysApplied", count: count }, _tOrigin2);
       }
     });
   }

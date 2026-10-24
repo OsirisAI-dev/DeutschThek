@@ -1,5 +1,41 @@
-    let links = JSON.parse(localStorage.getItem('wiki_links')) || [];
+﻿    let links = JSON.parse(localStorage.getItem('wiki_links')) || [];
     let idb;
+    function escapeHtml(val) {
+        if (window.OsirisSecurity) return window.OsirisSecurity.escapeHtml(val);
+        if (val === null || val === undefined) return '';
+        return String(val)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;')
+            .replace(/`/g, '&#96;');
+    }
+    function sanitizeUrl(url) {
+        if (window.OsirisSecurity) return window.OsirisSecurity.sanitizeUrl(url);
+        if (!url || typeof url !== 'string') return '#';
+        try {
+            const parsed = new URL(url.trim(), window.location.origin);
+            if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+                return parsed.href.replace(/"/g, '%22').replace(/'/g, '%27');
+            }
+        } catch (e) {}
+        return '#';
+    }
+    function sanitizeDataUrl(dataUrl) {
+        if (window.OsirisSecurity) return window.OsirisSecurity.sanitizeDataUrl(dataUrl);
+        if (!dataUrl || typeof dataUrl !== 'string') return '';
+        const t = dataUrl.trim();
+        return /^data:(application\/(pdf|msword|vnd\.openxmlformats|octet-stream)|image\/(png|jpeg|jpg|webp|gif)|text\/plain|video\/|audio\/)[^,]*;base64,/i.test(t) ? t : '';
+    }
+    function sanitizeHtmlFragment(dirtyHtml) {
+        if (window.OsirisSecurity) return window.OsirisSecurity.sanitizeHtmlFragment(dirtyHtml);
+        return escapeHtml(dirtyHtml);
+    }
+    function safeJsonParse(raw) {
+        if (window.OsirisSecurity) return window.OsirisSecurity.safeJsonParse(raw);
+        return JSON.parse(raw, (k, v) => (k === '__proto__' || k === 'constructor' || k === 'prototype') ? undefined : v);
+    }
 
     // --- Predictive Dictionary ---
     function saveToDictionary(field, value) {
@@ -19,7 +55,7 @@
         const dl = document.getElementById('dict-' + field);
         if (!dl) return;
         const dict = JSON.parse(localStorage.getItem('wiki_dict_' + field)) || [];
-        dl.innerHTML = dict.map(term => `<option value="${term.replace(/"/g, '&quot;')}"></option>`).join('');
+        dl.innerHTML = dict.map(term => `<option value="${escapeHtml(term)}"></option>`).join('');
     }
 
     function seedDictionaryFromDB() {
@@ -356,7 +392,7 @@
         if (!pdfjsLib) return null;
         const buffer = await file.arrayBuffer();
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdf.worker.min.js';
-        const loadingTask = pdfjsLib.getDocument({ data: buffer });
+        const loadingTask = pdfjsLib.getDocument({ data: buffer, isEvalSupported: false });
         const pdf = await loadingTask.promise;
         const metadata = await pdf.getMetadata();
         const raw = metadata && metadata.info && metadata.info[OSIRIS_META_KEY];
@@ -398,7 +434,7 @@
         statusEl.style.display = 'flex';
         statusEl.style.flexDirection = 'column';
         statusEl.style.background = 'var(--highlight)';
-        const label = meta.thema ? `„${meta.thema}"` : 'dieser Datei';
+        const label = meta.thema ? `„${escapeHtml(meta.thema)}"` : 'dieser Datei';
         statusEl.innerHTML = `
             <div style="display:flex; gap:8px; align-items:flex-start;">
                 <span>📎</span>
@@ -420,14 +456,15 @@
         statusEl.style.display = 'flex';
         statusEl.style.flexDirection = 'column';
         statusEl.style.background = 'var(--highlight)';
-        const label = item.thema ? `„${item.thema}"` : 'einem vorhandenen Eintrag';
+        const label = item.thema ? `„${escapeHtml(item.thema)}"` : 'einem vorhandenen Eintrag';
+        const safeId = Number(item.id) || 0;
         statusEl.innerHTML = `
             <div style="display:flex; gap:8px; align-items:flex-start;">
                 <span>🔁</span>
                 <span><strong>Diese Datei ist bereits gespeichert</strong> (als ${label}). Um Duplikate zu vermeiden, kann sie nicht erneut hinzugefügt werden — bearbeiten Sie stattdessen den vorhandenen Eintrag oder wählen Sie eine andere Datei.</span>
             </div>
             <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
-                <button type="button" onclick="useExistingEntry(${item.id})" style="flex:1 1 auto; padding:8px 10px; border:none; border-radius:5px; background:var(--accent); color:white; font-weight:bold; cursor:pointer; font-size:0.8rem;">Vorhandenen Eintrag bearbeiten</button>
+                <button type="button" onclick="useExistingEntry(${safeId})" style="flex:1 1 auto; padding:8px 10px; border:none; border-radius:5px; background:var(--accent); color:white; font-weight:bold; cursor:pointer; font-size:0.8rem;">Vorhandenen Eintrag bearbeiten</button>
             </div>
         `;
     }
@@ -473,6 +510,23 @@
         // Save stays disabled while we check, so a fast click can't slip a
         // duplicate through before the hash comparison finishes.
         setSaveBtnEnabled(false);
+        try {
+            const rawBuf = await file.arrayBuffer();
+            if (window.OsirisSecurity) {
+                const secCheck = window.OsirisSecurity.validateMagicBytes(new Uint8Array(rawBuf), file.name);
+                if (!secCheck.valid) {
+                    window.duplicateBlocked = true;
+                    setSaveBtnEnabled(false);
+                    statusEl.style.display = 'flex';
+                    statusEl.style.background = 'rgba(220,53,69,0.12)';
+                    statusEl.innerHTML = `<div style="color:#dc3545; font-weight:bold;">🛑 Sicherheitsblockade: ${escapeHtml(secCheck.reason)}</div>`;
+                    e.target.value = '';
+                    return;
+                }
+            }
+        } catch (secErr) {
+            console.error('Security check failed:', secErr);
+        }
 
         const hash = await computeFileHash(file);
         // Stash the hash so saveEntry() can reuse it without re-reading the file
@@ -992,7 +1046,7 @@ function saveEntry() {
             // We ensure the worker file correctly points to the CDN, matching your <script src="...">
             pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdf.worker.min.js';
 
-            const loadingTask = pdfjsLib.getDocument({data: bytes});
+            const loadingTask = pdfjsLib.getDocument({data: bytes, isEvalSupported: false});
             const pdf = await loadingTask.promise;
             container.innerHTML = ''; // Clear loading text
 

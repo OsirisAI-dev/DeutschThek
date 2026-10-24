@@ -3,21 +3,28 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' blob: data:; script-src 'self' 'unsafe-inline' blob: https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https: wss: ws: blob: data:; worker-src 'self' blob: https://cdn.jsdelivr.net; frame-src 'self' blob: data:; object-src 'none'; base-uri 'self';">
+<meta name="referrer" content="no-referrer">
 <title>DeutschThek — Edu Hub</title>
 
-<script src="community-swarm.js"></script>
+<script src="js/core/community-swarm.js"></script>
 
 <script>
   (function () {
     try {
-      var saved = JSON.parse(localStorage.getItem('osiris_hub_prefs') || '{}');
-      var theme = saved.theme || localStorage.getItem('wiki_theme') || 'light';
+      var sec = window.OsirisSecurity;
+      var rawPrefs = localStorage.getItem('osiris_hub_prefs') || '{}';
+      var saved = sec && sec.safeJsonParse ? sec.safeJsonParse(rawPrefs) : JSON.parse(rawPrefs);
+      var rawTheme = (saved && saved.theme) || localStorage.getItem('wiki_theme') || 'light';
+      var theme = sec && sec.sanitizeThemeName ? sec.sanitizeThemeName(rawTheme) : 'light';
       document.documentElement.setAttribute('data-theme', theme);
-      if (saved.tool) {
+      var allowedTools = { bank: 1, docs: 1, wiki: 1 };
+      if (saved && saved.tool && allowedTools[saved.tool]) {
         document.documentElement.setAttribute('data-active-tool', saved.tool);
       }
-      if (saved.font) {
-        document.documentElement.style.setProperty('--hub-font-family', saved.font);
+      if (saved && saved.font) {
+        var safeFont = sec && sec.sanitizeFontFamily ? sec.sanitizeFontFamily(saved.font) : '';
+        if (safeFont) document.documentElement.style.setProperty('--hub-font-family', safeFont);
       }
       document.documentElement.setAttribute('lang', 'de');
     } catch (e) {}
@@ -1184,18 +1191,41 @@
     "'Palatino Linotype', 'Book Antiqua', Palatino, serif"
   ];
 
+  function getSafeTargetOrigin() {
+    return (window.OsirisSecurity && window.OsirisSecurity.getTargetOrigin)
+      ? window.OsirisSecurity.getTargetOrigin()
+      : ((window.location.origin && window.location.origin !== 'null') ? window.location.origin : '*');
+  }
+  function isTrustedFrameMessage(e) {
+    if (window.OsirisSecurity && window.OsirisSecurity.isTrustedOrigin && !window.OsirisSecurity.isTrustedOrigin(e)) {
+      return false;
+    }
+    var f = document.getElementById('tool-frame');
+    if (f && f.contentWindow && e.source && e.source !== f.contentWindow && e.source !== window) {
+      return false;
+    }
+    return true;
+  }
   function loadPrefs() {
-    var savedTheme = localStorage.getItem('wiki_theme') || 'light';
+    var sec = window.OsirisSecurity;
+    var rawTheme = localStorage.getItem('wiki_theme') || 'light';
+    var savedTheme = sec && sec.sanitizeThemeName ? sec.sanitizeThemeName(rawTheme) : 'light';
     var defaults = { tool: 'bank', font: FONT_POOL[0], lang: 'DE', theme: savedTheme };
     try {
-      var saved = JSON.parse(localStorage.getItem('osiris_hub_prefs') || '{}');
-      return Object.assign(defaults, saved, { lang: 'DE' });
+      var rawPrefs = localStorage.getItem('osiris_hub_prefs') || '{}';
+      var saved = sec && sec.safeJsonParse ? sec.safeJsonParse(rawPrefs) : JSON.parse(rawPrefs);
+      var merged = Object.assign(defaults, saved || {}, { lang: 'DE' });
+      merged.theme = sec && sec.sanitizeThemeName ? sec.sanitizeThemeName(merged.theme) : 'light';
+      merged.font = (sec && sec.sanitizeFontFamily ? sec.sanitizeFontFamily(merged.font) : '') || FONT_POOL[0];
+      return merged;
     } catch (e) { return defaults; }
   }
 
   function savePrefs() {
     try {
-      var _saved = JSON.parse(localStorage.getItem('osiris_hub_prefs') || '{}');
+      var sec = window.OsirisSecurity;
+      var rawPrefs = localStorage.getItem('osiris_hub_prefs') || '{}';
+      var _saved = sec && sec.safeJsonParse ? sec.safeJsonParse(rawPrefs) : JSON.parse(rawPrefs);
       localStorage.setItem('osiris_hub_prefs', JSON.stringify(Object.assign({}, _saved, appState, { lang: 'DE' })));
     } catch (e) {}
   }
@@ -1207,7 +1237,9 @@
   function pushToFrame(type, payload) {
     var frame = document.getElementById('tool-frame');
     if (frame && frame.contentWindow) {
-      frame.contentWindow.postMessage({ type: type, payload: payload }, '*');
+      try {
+        frame.contentWindow.postMessage({ type: type, payload: payload }, getSafeTargetOrigin());
+      } catch (e) {}
     }
   }
 
@@ -1228,8 +1260,8 @@
           frame.contentDocument.documentElement.setAttribute('data-theme', themeName);
         }
         if (frame.contentWindow) {
-          frame.contentWindow.postMessage({ type: 'SET_THEME', theme: themeName, payload: { theme: themeName } }, '*');
-          try { frame.contentWindow.location.hash = 'theme=' + themeName; } catch (e) {}
+          frame.contentWindow.postMessage({ type: 'SET_THEME', theme: themeName, payload: { theme: themeName } }, getSafeTargetOrigin());
+          try { frame.contentWindow.location.hash = 'theme=' + encodeURIComponent(themeName); } catch (e) {}
         }
       }
     } catch (e) {}
@@ -1302,6 +1334,7 @@
   });
 
   window.addEventListener('message', function (e) {
+    if (!isTrustedFrameMessage(e)) return;
     if (e.data && (e.data.type === 'THEME_CHANGED' || e.data.type === 'SET_THEME')) {
       var theme = e.data.theme || (e.data.payload && e.data.payload.theme);
       if (theme && theme !== appState.theme) {
@@ -1323,7 +1356,7 @@
           doc.documentElement.setAttribute('data-theme', curTheme);
         }
         if (frame.contentWindow) {
-          frame.contentWindow.postMessage({ type: 'SET_THEME', theme: curTheme, payload: { theme: curTheme } }, '*');
+          frame.contentWindow.postMessage({ type: 'SET_THEME', theme: curTheme, payload: { theme: curTheme } }, getSafeTargetOrigin());
         }
       } catch (e) {}
     });
@@ -1455,15 +1488,18 @@
 
   // Real-time Swarm pill badge synchronization across subpages & BroadcastChannel
   window.addEventListener('message', function (e) {
+    if (!isTrustedFrameMessage(e)) return;
     if (e.data && e.data.type === 'SWARM_BADGE_UPDATE') {
       var badge = document.getElementById('headerSwarmBadge');
       if (badge) {
-        if (e.data.activePeers > 0) {
+        var activePeers = Math.max(0, Math.min(999, Number(e.data.activePeers) || 0));
+        var totalShared = Math.max(0, Math.min(9999, Number(e.data.totalShared) || 0));
+        if (activePeers > 0) {
           badge.className = 'swarm-pill is-active';
-          badge.textContent = '● Schwarm aktiv (' + e.data.activePeers + ')';
+          badge.textContent = '● Schwarm aktiv (' + activePeers + ')';
         } else {
           badge.className = 'swarm-pill';
-          badge.textContent = '● Schwarm (' + (e.data.totalShared || 0) + ' geteilt)';
+          badge.textContent = '● Schwarm (' + totalShared + ' geteilt)';
         }
       }
     }
@@ -1475,9 +1511,9 @@
       var knownSwarmPeers = new Set();
       swarmBc.onmessage = function (ev) {
         var m = ev.data;
-        if (!m) return;
-        if (m.type === 'PEER_ANNOUNCE') {
-          knownSwarmPeers.add(m.sender);
+        if (!m || typeof m !== 'object') return;
+        if (m.type === 'PEER_ANNOUNCE' && typeof m.sender === 'string' && /^peer_[a-z0-9_]{5,40}$/i.test(m.sender)) {
+          if (knownSwarmPeers.size < 60) knownSwarmPeers.add(m.sender);
           var badge = document.getElementById('headerSwarmBadge');
           if (badge && knownSwarmPeers.size > 0) {
             badge.className = 'swarm-pill is-active';
@@ -1756,8 +1792,13 @@
             });
             if (parsed.meta && parsed.meta.docu_dict_doktyp && Array.isArray(parsed.meta.docu_dict_doktyp)) {
               try {
+                var secDok = window.OsirisSecurity;
                 var existingDok = JSON.parse(localStorage.getItem('docu_dict_doktyp') || '[]');
-                var merged = Array.from(new Set(existingDok.concat(parsed.meta.docu_dict_doktyp)));
+                var cleanNewDok = parsed.meta.docu_dict_doktyp
+                  .filter(function(x) { return typeof x === 'string' && x.trim().length > 0; })
+                  .slice(0, 200)
+                  .map(function(x) { return secDok && secDok.clampString ? secDok.clampString(x, 80) : x.trim().slice(0, 80); });
+                var merged = Array.from(new Set(existingDok.concat(cleanNewDok)));
                 localStorage.setItem('docu_dict_doktyp', JSON.stringify(merged));
               } catch(e) {}
             }
@@ -1765,20 +1806,24 @@
 
           // Restore OW
           if (selOW && parsed.databases.OW) {
+            var secOW = window.OsirisSecurity;
             var owEntries = [];
             var owLinks = [];
             if (Array.isArray(parsed.databases.OW)) {
               owEntries = parsed.databases.OW;
-            } else if (parsed.databases.OW.entries) {
+            } else if (parsed.databases.OW.entries && Array.isArray(parsed.databases.OW.entries)) {
               owEntries = parsed.databases.OW.entries;
-              owLinks = parsed.databases.OW.links || [];
+              owLinks = Array.isArray(parsed.databases.OW.links) ? parsed.databases.OW.links : [];
             }
             if (owEntries.length > 0) {
               var curLocal = [];
               try { curLocal = JSON.parse(localStorage.getItem('offline_wiki_db') || '[]'); } catch(e) {}
               var mapOW = new Map();
               curLocal.forEach(function(i) { if (i && i.id) mapOW.set(i.id, i); });
-              owEntries.forEach(function(i) { if (i && i.id) { mapOW.set(i.id, i); importedCount++; } });
+              owEntries.forEach(function(i) {
+                var safeEntry = secOW && secOW.sanitizeWikiEntry ? secOW.sanitizeWikiEntry(i) : i;
+                if (safeEntry && safeEntry.id) { mapOW.set(safeEntry.id, safeEntry); importedCount++; }
+              });
               localStorage.setItem('offline_wiki_db', JSON.stringify(Array.from(mapOW.values())));
             }
             if (owLinks.length > 0) {
@@ -1786,7 +1831,10 @@
                 var curLinks = JSON.parse(localStorage.getItem('wiki_links') || '[]');
                 var mapLinks = new Map();
                 curLinks.forEach(function(l) { if (l && l.url) mapLinks.set(l.url, l); });
-                owLinks.forEach(function(l) { if (l && l.url) mapLinks.set(l.url, l); });
+                owLinks.forEach(function(l) {
+                  var safeLink = secOW && secOW.sanitizeLinkEntry ? secOW.sanitizeLinkEntry(l) : l;
+                  if (safeLink && safeLink.url) mapLinks.set(safeLink.url, safeLink);
+                });
                 localStorage.setItem('wiki_links', JSON.stringify(Array.from(mapLinks.values())));
               } catch(e) {}
             }
@@ -1820,11 +1868,15 @@
               if (safeDoc) { stDK2.put(safeDoc); importedCount++; }
             });
           } else if (isOW && selOW) {
+            var secOW2 = window.OsirisSecurity;
             var curLocal2 = [];
             try { curLocal2 = JSON.parse(localStorage.getItem('offline_wiki_db') || '[]'); } catch(e) {}
             var mapOW2 = new Map();
             curLocal2.forEach(function(i) { if (i && i.id) mapOW2.set(i.id, i); });
-            items.forEach(function(i) { if (i && i.id) { mapOW2.set(i.id, i); importedCount++; } });
+            items.forEach(function(i) {
+              var safeEntry2 = secOW2 && secOW2.sanitizeWikiEntry ? secOW2.sanitizeWikiEntry(i) : i;
+              if (safeEntry2 && safeEntry2.id) { mapOW2.set(safeEntry2.id, safeEntry2); importedCount++; }
+            });
             localStorage.setItem('offline_wiki_db', JSON.stringify(Array.from(mapOW2.values())));
           } else if (selTB) {
             var dbTB2 = await openIDBPromise("TestBankDB", 1, function(ev) {
