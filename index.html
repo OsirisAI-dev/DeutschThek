@@ -1423,6 +1423,10 @@ function loadPrefs() {
 
   window.addEventListener('message', function (e) {
     if (!isTrustedFrameMessage(e)) return;
+    if (e.data && e.data.type === 'RELOAD_DATA') {
+      pushToFrame('RELOAD_DATA');
+      return;
+    }
     if (e.data && (e.data.type === 'THEME_CHANGED' || e.data.type === 'SET_THEME')) {
       var theme = e.data.theme || (e.data.payload && e.data.payload.theme);
       if (theme && theme !== appState.theme) {

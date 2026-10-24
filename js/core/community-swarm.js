@@ -577,6 +577,239 @@
         }).filter(Boolean);
     }
 
+    
+    // =========================================================================
+    // 2.5 P2P AUTO-SAVE TO DATABASE & DUPLICATE DETECTION SUITE
+    // =========================================================================
+
+    window.knownLocalHashes = window.knownLocalHashes || new Set();
+    window.knownLocalFileKeys = window.knownLocalFileKeys || new Set();
+
+    let autoSyncQueue = [];
+    let isProcessingAutoSync = false;
+    let inFlightSyncIds = new Set();
+
+    function isAutoSaveToDbEnabled() {
+        try {
+            return localStorage.getItem('p2p_auto_save_to_db') !== 'false';
+        } catch (e) {
+            return true;
+        }
+    }
+
+    function setAutoSaveToDbEnabled(enabled) {
+        try {
+            localStorage.setItem('p2p_auto_save_to_db', enabled ? 'true' : 'false');
+        } catch (e) {}
+    }
+
+    function toggleAutoSaveToDb(enabled) {
+        setAutoSaveToDbEnabled(enabled);
+        const toggle = document.getElementById('swarm-auto-save-toggle');
+        if (toggle) toggle.checked = !!enabled;
+        showSwarmToast(enabled ? '⚡ P2P Auto-Speichern aktiviert: Neue Schwarm-Dokumente werden automatisch gespeichert.' : '⏸️ P2P Auto-Speichern deaktiviert.', 'info');
+        if (enabled) {
+            // Trigger auto-sync for any currently known remote docs
+            remoteCatalog.forEach((peerData, peerId) => {
+                if (peerData && Array.isArray(peerData.docs)) {
+                    triggerAutoSyncMissingDocs(peerId, peerData.docs);
+                }
+            });
+        }
+    }
+
+    function showSwarmToast(message, type) {
+        try {
+            const hostDoc = (window.top && window.top.document) ? window.top.document : document;
+            let container = hostDoc.getElementById('osiris-swarm-toast-container');
+            if (!container) {
+                container = hostDoc.createElement('div');
+                container.id = 'osiris-swarm-toast-container';
+                container.style.cssText = 'position:fixed; bottom:24px; right:24px; z-index:999999; display:flex; flex-direction:column; gap:10px; pointer-events:none; max-width:420px;';
+                hostDoc.body.appendChild(container);
+            }
+
+            const toast = hostDoc.createElement('div');
+            const isSuccess = type === 'success';
+            const isInfo = type === 'info';
+            const bgColor = isSuccess ? '#15803d' : (isInfo ? '#2563eb' : '#b91c1c');
+
+            toast.style.cssText = 'background:' + bgColor + '; color:#ffffff; padding:12px 18px; border-radius:8px; font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size:0.86rem; font-weight:600; line-height:1.4; box-shadow:0 8px 24px rgba(0,0,0,0.28); display:flex; align-items:center; gap:10px; pointer-events:auto; opacity:0; transform:translateY(12px); transition:opacity 0.25s ease, transform 0.25s ease;';
+            toast.textContent = message;
+            container.appendChild(toast);
+
+            requestAnimationFrame(() => {
+                toast.style.opacity = '1';
+                toast.style.transform = 'translateY(0)';
+            });
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(12px)';
+                setTimeout(() => {
+                    if (toast.parentNode) toast.parentNode.removeChild(toast);
+                }, 300);
+            }, 4200);
+        } catch (e) {
+            console.log('[P2P Toast]', message);
+        }
+    }
+
+    async function refreshLocalDbHashes() {
+        window.knownLocalHashes = window.knownLocalHashes || new Set();
+        window.knownLocalFileKeys = window.knownLocalFileKeys || new Set();
+        const dbsToScan = ['DokumentationDB', 'TestBankDB'];
+
+        for (const dbName of dbsToScan) {
+            await new Promise(resolve => {
+                try {
+                    const req = indexedDB.open(dbName);
+                    req.onsuccess = (e) => {
+                        const db = e.target.result;
+                        if (!db.objectStoreNames.contains('documents')) {
+                            db.close();
+                            resolve();
+                            return;
+                        }
+                        const tx = db.transaction(['documents'], 'readonly');
+                        const store = tx.objectStore('documents');
+                        const allReq = store.getAll();
+                        allReq.onsuccess = (ev) => {
+                            const allDocs = ev.target.result || [];
+                            db.close();
+                            allDocs.forEach(d => {
+                                if (!d) return;
+                                if (d.fileHash) window.knownLocalHashes.add(String(d.fileHash).toLowerCase().trim());
+                                if (d.fileName && d.fileSize) window.knownLocalFileKeys.add(String(d.fileName).toLowerCase().trim() + '_' + d.fileSize);
+                                if (d.id && d.fileName) window.knownLocalFileKeys.add(d.id + '_' + String(d.fileName).toLowerCase().trim());
+                            });
+                            resolve();
+                        };
+                        allReq.onerror = () => { db.close(); resolve(); };
+                    };
+                    req.onerror = () => resolve();
+                } catch (e) {
+                    resolve();
+                }
+            });
+        }
+    }
+
+    async function checkDocExistsInDatabases(docMeta) {
+        if (!docMeta) return false;
+        const hash = docMeta.fileHash ? String(docMeta.fileHash).trim().toLowerCase() : '';
+        const name = docMeta.fileName ? String(docMeta.fileName).trim().toLowerCase() : '';
+        const size = Number(docMeta.fileSize) || 0;
+        const docId = Number(docMeta.id) || 0;
+
+        // 1. Fast in-memory check
+        if (hash && window.knownLocalHashes && window.knownLocalHashes.has(hash)) {
+            return true;
+        }
+        if (name && size > 0 && window.knownLocalFileKeys && window.knownLocalFileKeys.has(name + '_' + size)) {
+            return true;
+        }
+        if (docId > 0 && name && window.knownLocalFileKeys && window.knownLocalFileKeys.has(docId + '_' + name)) {
+            return true;
+        }
+
+        // 2. Authoritative IndexedDB scan across both databases
+        const dbsToScan = ['DokumentationDB', 'TestBankDB'];
+        for (const dbName of dbsToScan) {
+            const found = await new Promise(resolve => {
+                try {
+                    const req = indexedDB.open(dbName);
+                    req.onsuccess = (e) => {
+                        const db = e.target.result;
+                        if (!db.objectStoreNames.contains('documents')) {
+                            db.close();
+                            resolve(false);
+                            return;
+                        }
+                        const tx = db.transaction(['documents'], 'readonly');
+                        const store = tx.objectStore('documents');
+                        const getReq = store.getAll();
+                        getReq.onsuccess = (ev) => {
+                            const items = ev.target.result || [];
+                            db.close();
+                            const match = items.some(it => {
+                                if (!it) return false;
+                                // a. SHA-256 hash match
+                                if (hash && it.fileHash && String(it.fileHash).trim().toLowerCase() === hash) {
+                                    return true;
+                                }
+                                // b. fileName + fileSize match
+                                if (name && size > 0 && it.fileName && String(it.fileName).trim().toLowerCase() === name && Number(it.fileSize) === size) {
+                                    return true;
+                                }
+                                // c. ID and fileName match
+                                if (docId > 0 && it.id && Number(it.id) === docId && it.fileName && String(it.fileName).trim().toLowerCase() === name) {
+                                    return true;
+                                }
+                                return false;
+                            });
+                            if (match) {
+                                if (hash) window.knownLocalHashes.add(hash);
+                                if (name && size > 0) window.knownLocalFileKeys.add(name + '_' + size);
+                            }
+                            resolve(match);
+                        };
+                        getReq.onerror = () => { db.close(); resolve(false); };
+                    };
+                    req.onerror = () => resolve(false);
+                } catch (err) {
+                    resolve(false);
+                }
+            });
+            if (found) return true;
+        }
+        return false;
+    }
+
+    async function triggerAutoSyncMissingDocs(peerId, remoteDocs) {
+        if (!isAutoSaveToDbEnabled() || !Array.isArray(remoteDocs) || !PEER_ID_REGEX.test(peerId)) return;
+
+        for (const doc of remoteDocs) {
+            if (!doc || !doc.id) continue;
+            const docHash = doc.fileHash ? String(doc.fileHash).toLowerCase().trim() : '';
+            const dedupeKey = docHash || (peerId + ':' + doc.id);
+
+            if (inFlightSyncIds.has(dedupeKey)) continue;
+
+            const exists = await checkDocExistsInDatabases(doc);
+            if (!exists) {
+                inFlightSyncIds.add(dedupeKey);
+                autoSyncQueue.push({
+                    peerId: peerId,
+                    docId: doc.id,
+                    title: doc.thema || doc.fileName,
+                    dedupeKey: dedupeKey
+                });
+            }
+        }
+
+        processAutoSyncQueue();
+    }
+
+    function processAutoSyncQueue() {
+        if (isProcessingAutoSync || autoSyncQueue.length === 0) return;
+        isProcessingAutoSync = true;
+
+        const next = autoSyncQueue.shift();
+        if (!next) {
+            isProcessingAutoSync = false;
+            return;
+        }
+
+        requestDocDownload(next.docId, next.peerId, true /* isAutoSync */);
+
+        // Throttle requests (400ms interval) to protect rate limit & bandwidth
+        setTimeout(() => {
+            isProcessingAutoSync = false;
+            processAutoSyncQueue();
+        }, 400);
+    }
+
     function loadSharedDocsConfig(dbName) {
         try {
             const targetDb = dbName || currentConfig.dbName;
@@ -597,6 +830,7 @@
 
     // Aggregates shared docs from both DokumentationDB and TestBankDB
     async function refreshLocalCatalog() {
+        await refreshLocalDbHashes();
         const dbsToScan = ['DokumentationDB', 'TestBankDB'];
         let combined = [];
 
@@ -1072,6 +1306,7 @@
                 });
                 updateSwarmBadge();
                 renderSwarmModalContent();
+                triggerAutoSyncMissingDocs(msg.sender, remoteCatalog.get(msg.sender).docs);
 
                 sendSwarmPacket({
                     type: 'PEER_ACK',
@@ -1092,6 +1327,7 @@
                     });
                     updateSwarmBadge();
                     renderSwarmModalContent();
+                    triggerAutoSyncMissingDocs(msg.sender, remoteCatalog.get(msg.sender).docs);
                 }
                 break;
 
@@ -1116,8 +1352,9 @@
                         console.warn('[Osiris Security] Blocked unsolicited or forged DELIVER_DOC from', msg.sender);
                         return;
                     }
+                    const isAuto = !!(pending && pending.isAutoSync);
                     pendingRequests.delete(reqKey);
-                    receiveDocFromPeer(msg.payload);
+                    receiveDocFromPeer(msg.payload, isAuto);
                 }
                 break;
         }
@@ -1165,10 +1402,10 @@
         tryDb(0);
     }
 
-    async function receiveDocFromPeer(rawDocItem) {
+    async function receiveDocFromPeer(rawDocItem, isAuto) {
         const docItem = sanitizeDocRecord(rawDocItem);
         if (!docItem || !docItem.fileData) {
-            alert('⚠️ P2P-Übertragung abgelehnt: Ungültige oder manipulierte Dokumentendaten.');
+            if (!isAuto) showSwarmToast('⚠️ P2P-Übertragung abgelehnt: Ungültige oder manipulierte Dokumentendaten.', 'warning');
             return;
         }
 
@@ -1176,57 +1413,91 @@
         try {
             u8 = dataUrlToUint8Array(docItem.fileData);
         } catch (err) {
-            alert('⚠️ Sicherheitswarnung: Datei überschreitet das 25 MB Limit oder ist korrupt.');
+            if (!isAuto) showSwarmToast('⚠️ Sicherheitswarnung: Datei überschreitet das 25 MB Limit oder ist korrupt.', 'warning');
             return;
         }
 
         // 1. Deep Magic-Byte & Active Content Inspection
         const check = validateMagicBytes(u8, docItem.fileName);
         if (!check.valid) {
-            alert('🛑 SICHERHEITSBLOCKADE: Das eingehende Dokument wurde abgewiesen!\nGrund: ' + check.reason);
+            if (!isAuto) showSwarmToast('🛑 SICHERHEITSBLOCKADE: ' + check.reason, 'warning');
             return;
         }
 
         // 2. Mandatory SHA-256 Bit-Integrity Verification
         const computedHash = await computeSHA256(u8.buffer);
         if (!computedHash || (docItem.fileHash && docItem.fileHash !== computedHash)) {
-            alert('🛑 INTEGRITÄTSFEHLER: Der kryptografische SHA-256 Hash stimmt nicht mit dem Original überein! Übertragung abgebrochen.');
+            if (!isAuto) showSwarmToast('🛑 INTEGRITÄTSFEHLER: SHA-256 Hash stimmt nicht mit dem Original überein!', 'warning');
             return;
         }
 
-        // 3. Save sanitized record into target IndexedDB (sourceDb if matching, or current active db)
+        // 3. Duplicate Check: Does this document ALREADY exist in either database?
+        const alreadyExists = await checkDocExistsInDatabases({
+            fileHash: computedHash,
+            fileName: docItem.fileName,
+            fileSize: u8.length,
+            id: docItem.id
+        });
+
+        if (alreadyExists) {
+            console.log(`[Osiris P2P Auto-Save] Dokument „${docItem.thema}" existiert bereits in der Datenbank. Kein Duplikat angelegt.`);
+            if (!isAuto) {
+                showSwarmToast(`ℹ️ Das Dokument „${docItem.thema}" existiert bereits in Ihrer Datenbank.`, 'info');
+            }
+            renderSwarmModalContent();
+            return;
+        }
+
+        // 4. Save sanitized record into target IndexedDB
         const targetDb = docItem.sourceDb || currentConfig.dbName;
-        const targetStore = currentConfig.storeName;
+        const targetStore = currentConfig.storeName || 'documents';
 
         try {
             const req = indexedDB.open(targetDb);
             req.onsuccess = (e) => {
                 const db = e.target.result;
-                if (!db.objectStoreNames.contains(targetStore)) return;
+                if (!db.objectStoreNames.contains(targetStore)) {
+                    db.close();
+                    return;
+                }
                 const tx = db.transaction([targetStore], 'readwrite');
                 const store = tx.objectStore(targetStore);
 
                 const newItem = Object.assign({}, docItem, {
-                    id: Date.now(),
+                    id: Date.now() + Math.floor(Math.random() * 1000),
                     fileHash: computedHash,
+                    fileSize: u8.length,
                     date: new Date().toLocaleDateString()
                 });
 
                 store.add(newItem);
                 tx.oncomplete = () => {
+                    db.close();
                     const fp = computedHash.substring(0, 6).toUpperCase();
-                    alert(`✅ Dokument „${newItem.thema}" erfolgreich geprüft (SHA-256 #${fp}) und gespeichert!`);
+                    if (window.knownLocalHashes) window.knownLocalHashes.add(computedHash);
+
+                    const toastMsg = isAuto
+                        ? `📥 P2P: „${newItem.thema}" automatisch in Datenbank gespeichert (SHA-256 #${fp})`
+                        : `✅ Dokument „${newItem.thema}" erfolgreich geprüft (SHA-256 #${fp}) und gespeichert!`;
+                    showSwarmToast(toastMsg, 'success');
+
                     if (typeof currentConfig.onDocImported === 'function') {
                         currentConfig.onDocImported();
                     }
+                    if (window.parent && window.parent !== window) {
+                        window.parent.postMessage({ type: 'RELOAD_DATA' }, '*');
+                    }
+                    window.postMessage({ type: 'RELOAD_DATA' }, '*');
+                    renderSwarmModalContent();
                 };
+                tx.onerror = () => { db.close(); };
             };
         } catch (err) {
             console.error('Save imported doc error:', err);
         }
     }
 
-    function requestDocDownload(docId, peerId) {
+    function requestDocDownload(docId, peerId, isAutoSync) {
         const cleanDocId = Number(docId);
         if (!cleanDocId || !PEER_ID_REGEX.test(peerId)) return;
 
@@ -1239,7 +1510,8 @@
         const requestToken = generateCryptoHex(16);
         pendingRequests.set(`${peerId}:${cleanDocId}`, {
             token: requestToken,
-            expiresAt: now + 60000 // 60-second strict TTL
+            expiresAt: now + 45000,
+            isAutoSync: !!isAutoSync
         });
 
         sendSwarmPacket({
@@ -1478,7 +1750,13 @@
                         <span id="swarm-net-dot" style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#22c55e; box-shadow:0 0 8px rgba(34, 197, 94, 0.7); flex-shrink:0;"></span>
                         <span id="swarm-net-status-text" style="color:${isDark ? '#bbf7d0' : '#166534'};"><strong>Automatische Direktverbindung:</strong> Alle Kollegen auf dieser Seite tauschen Dokumente direkt ohne Code aus.</span>
                     </div>
-                    <span id="swarm-mesh-badge" style="font-size:0.75rem; font-weight:700; color:#16a34a; background:${isDark ? 'rgba(34,197,94,0.18)' : '#dcfce7'}; border:1px solid rgba(34,197,94,0.35); padding:3px 9px; border-radius:6px; white-space:nowrap;">● P2P Direkt aktiv</span>
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer; font-size:0.75rem; font-weight:600; color:${isDark ? '#bbf7d0' : '#166534'}; background:${isDark ? 'rgba(34,197,94,0.18)' : '#dcfce7'}; border:1px solid rgba(34,197,94,0.35); padding:3px 9px; border-radius:6px;" title="Dokumente aus dem P2P-Schwarm automatisch in die lokale Datenbank speichern, falls sie noch nicht vorhanden sind">
+                            <input type="checkbox" id="swarm-auto-save-toggle" ${isAutoSaveToDbEnabled() ? 'checked' : ''} onchange="EduHybridShare.toggleAutoSaveToDb(this.checked)" style="cursor:pointer; width:13px; height:13px; accent-color:#16a34a;">
+                            <span>Auto-Speichern in DB</span>
+                        </label>
+                        <span id="swarm-mesh-badge" style="font-size:0.75rem; font-weight:700; color:#16a34a; background:${isDark ? 'rgba(34,197,94,0.18)' : '#dcfce7'}; border:1px solid rgba(34,197,94,0.35); padding:3px 9px; border-radius:6px; white-space:nowrap;">● P2P Direkt aktiv</span>
+                    </div>
                 </div>
 
                 <!-- Tabs -->
@@ -1624,6 +1902,7 @@
                                     <span style="background:#2563eb; color:white; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:700;">${safeTyp}</span>
                                     <span style="background:${isDark ? '#334155' : '#e2e8f0'}; color:${textColor}; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:600;">${safeKlassen}</span>
                                     <span style="background:${isDark ? '#334155' : '#e2e8f0'}; color:${textColor}; padding:2px 8px; border-radius:4px; font-size:0.72rem;">${safeJahr}</span>
+                                    ${(doc.fileHash && window.knownLocalHashes && window.knownLocalHashes.has(doc.fileHash.toLowerCase())) ? `<span title="Bereits in Ihrer lokalen Datenbank vorhanden" style="background:${isDark ? "rgba(34,197,94,0.22)" : "#dcfce7"}; color:#16a34a; border:1px solid rgba(34,197,94,0.45); padding:1px 7px; border-radius:4px; font-size:0.72rem; font-weight:700;">✅ In Datenbank</span>` : ""}
                                     <span title="SHA-256 Fingerabdruck" style="background:${isDark ? 'rgba(34,197,94,0.18)' : '#dcfce7'}; color:#16a34a; border:1px solid rgba(34,197,94,0.35); padding:1px 7px; border-radius:4px; font-family:monospace; font-size:0.72rem; font-weight:700;">SHA: #${shortHash}</span>
                                 </div>
                                 <h4 style="margin:0 0 4px 0; color:${isDark ? '#60a5fa' : '#1e3a8a'}; font-size:1rem; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${safeThema}</h4>
@@ -1736,6 +2015,11 @@
     }
 
     const eduHybridShareApi = Object.freeze({
+        isAutoSaveToDbEnabled: isAutoSaveToDbEnabled,
+        setAutoSaveToDbEnabled: setAutoSaveToDbEnabled,
+        toggleAutoSaveToDb: toggleAutoSaveToDb,
+        checkDocExistsInDatabases: checkDocExistsInDatabases,
+        showSwarmToast: showSwarmToast,
         isAutoShareImportEnabled: isAutoShareImportEnabled,
         setAutoShareImport: setAutoShareImport,
         init: initSwarm,
