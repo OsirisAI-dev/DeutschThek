@@ -350,7 +350,17 @@
                 font-size: 0.82rem;
             }
         }
-            #theme-toggle { display: none !important; }
+            
+        /* --- Swarm Auto-Share Toggle --- */
+        .swarm-toggle-wrap { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+        .swarm-toggle-switch { position: relative; display: inline-block; width: 38px; height: 20px; flex-shrink: 0; }
+        .swarm-toggle-switch input { opacity: 0; width: 0; height: 0; margin: 0; position: absolute; }
+        .swarm-toggle-slider { position: absolute; cursor: pointer; inset: 0; background-color: #94a3b8; transition: .25s ease; border-radius: 20px; }
+        .swarm-toggle-slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+        .swarm-toggle-switch input:checked + .swarm-toggle-slider { background-color: #2563eb; }
+        .swarm-toggle-switch input:checked + .swarm-toggle-slider:before { transform: translateX(18px); }
+
+#theme-toggle { display: none !important; }
             #langBtn { display: none !important; }
     </style>
 </head>
@@ -385,19 +395,28 @@
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
             </svg>
-        Importer & Indexer
+        Dokument importieren & indexieren
     </h2>
-    <label>Contenu du texte</label>
-    <textarea id="import-text" placeholder="Collez votre texte ici..."></textarea>
+    <label>Textinhalt</label>
+    <textarea id="import-text" placeholder="Fügen Sie Ihren Text hier ein..."></textarea>
     
-    <label>Lien source</label>
+    <label>Quell-Link (URL)</label>
     <input type="url" id="import-url" placeholder="https://...">
     
-    <button id="save-btn" onclick="saveEntry()" style="margin-top:20px; background: var(--accent); color:white; border:none; padding:12px; width:100%; border-radius:5px; font-weight:bold; cursor:pointer;">Enregistrer</button>
+    <button id="save-btn" onclick="saveEntry()" style="margin-top:20px; background: var(--accent); color:white; border:none; padding:12px; width:100%; border-radius:5px; font-weight:bold; cursor:pointer;">SPEICHERN</button>
 
-    <div style="margin-top:15px; display:flex; align-items:center; gap:8px;">
-        <input type="checkbox" id="delete-mode-cb" style="width:auto; margin:0; cursor:pointer;" onchange="renderResults()">
-        <label for="delete-mode-cb" style="margin:0; cursor:pointer;" id="delete-mode-label">Textlöschung aktivieren</label>
+    <div id="mode-checkboxes" style="margin-top:15px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+        <label style="display:inline-flex; align-items:center; gap:6px; margin:0; cursor:pointer;">
+            <input type="checkbox" id="delete-mode-cb" style="width:auto; margin:0; cursor:pointer;" onchange="renderResults()">
+            <span id="delete-mode-label">Textlöschung aktivieren</span>
+        </label>
+        <label class="swarm-toggle-wrap" style="display:inline-flex; align-items:center; gap:8px; cursor:pointer; font-weight:700; font-size:0.86rem; color:var(--primary); user-select:none; margin:0;" title="Wenn aktiviert, werden alle importierten Texte automatisch im Community-Schwarm freigegeben">
+            <span class="swarm-toggle-switch">
+                <input type="checkbox" id="swarm-auto-share-toggle" onchange="toggleSwarmAutoShare(this)">
+                <span class="swarm-toggle-slider"></span>
+            </span>
+            <span id="swarm-auto-share-label">Schwärm ein/ aus</span>
+        </label>
     </div></div>
 
 <div class="container">
@@ -422,7 +441,7 @@
 <footer class="no-print" style="position: fixed; bottom: 0; left: 0; right: 0; z-index: 500; background-color: var(--bg); width: 100%; padding: 10px 20px; border-top: 1px solid var(--border); text-align: center; font-size: 0.8em; opacity: 0.9;">
     <div style="max-width: 1200px; margin: 0 auto 8px; overflow: hidden; white-space: nowrap; background: var(--surface); padding: 6px 8px; border-radius: 5px; border: 1px solid var(--border);">
         <div id="footer-ticker" style="display: inline-block; animation: ticker 25s linear infinite;">
-            <span>Ajoutez vos liens favoris pour les voir défiler ici !</span>
+            <span>Fügen Sie Ihre Lieblingslinks hinzu, damit sie hier angezeigt werden!</span>
         </div>
     </div>
     <p style="margin: 0;">© 2026 - <strong>Das Lehrer-Portfolio</strong> | Osiris Inc.</p>

@@ -392,7 +392,17 @@
         }
         .share-option:hover { background: var(--bg); }
         .share-option .share-icon { font-size: 1.25em; flex-shrink: 0; }
-            #theme-toggle { display: none !important; }
+            
+        /* --- Swarm Auto-Share Toggle --- */
+        .swarm-toggle-wrap { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+        .swarm-toggle-switch { position: relative; display: inline-block; width: 38px; height: 20px; flex-shrink: 0; }
+        .swarm-toggle-switch input { opacity: 0; width: 0; height: 0; margin: 0; position: absolute; }
+        .swarm-toggle-slider { position: absolute; cursor: pointer; inset: 0; background-color: #94a3b8; transition: .25s ease; border-radius: 20px; }
+        .swarm-toggle-slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+        .swarm-toggle-switch input:checked + .swarm-toggle-slider { background-color: #2563eb; }
+        .swarm-toggle-switch input:checked + .swarm-toggle-slider:before { transform: translateX(18px); }
+
+#theme-toggle { display: none !important; }
 
 
     @media (max-width: 420px) {
@@ -553,11 +563,24 @@
         <div id="file-dup-status" style="display:none; margin-top:8px; padding:10px 12px; border-radius:6px; font-size:0.85rem; align-items:center; gap:8px; border:1px solid var(--border); line-height:1.4;"></div>
     </div>
 
-     <div id="mode-checkboxes" style="margin-top:15px; display:flex; align-items:center; gap:8px;">
-        <input type="checkbox" id="delete-mode-cb" style="width:auto; margin:0; cursor:pointer;" onchange="renderResults()">
-        <label for="delete-mode-cb" style="margin:0; cursor:pointer;" id="delete-mode-label" data-i18n="deleteMode">Löschmodus aktivieren</label>
-        <input type="checkbox" id="edit-mode-cb" style="width:auto; margin:0; margin-left: 350px; cursor:pointer;" onchange="renderResults()">
-        <label for="edit-mode-cb" style="margin:0; cursor:pointer;" id="edit-mode-label" data-i18n="editMode">Modifikationen aktivieren</label>
+     <div id="mode-checkboxes" style="margin-top:15px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+        <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+            <label style="display:inline-flex; align-items:center; gap:6px; margin:0; cursor:pointer;">
+                <input type="checkbox" id="delete-mode-cb" style="width:auto; margin:0; cursor:pointer;" onchange="renderResults()">
+                <span id="delete-mode-label" data-i18n="deleteMode">Löschmodus aktivieren</span>
+            </label>
+            <label style="display:inline-flex; align-items:center; gap:6px; margin:0; cursor:pointer;">
+                <input type="checkbox" id="edit-mode-cb" style="width:auto; margin:0; cursor:pointer;" onchange="renderResults()">
+                <span id="edit-mode-label" data-i18n="editMode">Modifikationen aktivieren</span>
+            </label>
+        </div>
+        <label class="swarm-toggle-wrap" style="display:inline-flex; align-items:center; gap:8px; cursor:pointer; font-weight:700; font-size:0.86rem; color:var(--primary); user-select:none; margin:0;" title="Wenn aktiviert, werden alle importierten/gespeicherten Dateien automatisch im Community-Schwarm freigegeben">
+            <span class="swarm-toggle-switch">
+                <input type="checkbox" id="swarm-auto-share-toggle" onchange="toggleSwarmAutoShare(this)">
+                <span class="swarm-toggle-slider"></span>
+            </span>
+            <span id="swarm-auto-share-label">Schwärm ein/ aus</span>
+        </label>
     </div>
 
     
@@ -816,6 +839,7 @@
     }
 
     applyBankLang();
+    initSwarmAutoShareToggle();
 
     // --- Zero-Trust DOM & Data Sanitization Helpers ---
     function escapeHtml(val) {
@@ -2282,6 +2306,53 @@
 
     document.getElementById('inp-file').addEventListener('change', handleFileSelect);
 
+
+    function isSwarmAutoShareEnabled() {
+        try {
+            const toggle = document.getElementById('swarm-auto-share-toggle');
+            if (toggle) return toggle.checked;
+            return localStorage.getItem('swarm_auto_share_import') === 'true';
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function toggleSwarmAutoShare(el) {
+        const isChecked = !!(el && el.checked);
+        try {
+            localStorage.setItem('swarm_auto_share_import', isChecked ? 'true' : 'false');
+        } catch (e) {}
+        document.querySelectorAll('#swarm-auto-share-toggle').forEach(t => { t.checked = isChecked; });
+    }
+
+    async function autoShareToSwarm(docItem) {
+        if (!docItem || !docItem.id) return;
+        try {
+            if (window.EduHybridShare && typeof window.EduHybridShare.toggleShareDocToSwarm === 'function') {
+                await window.EduHybridShare.toggleShareDocToSwarm(docItem.id, true, docItem);
+            }
+            if (window.parent && window.parent !== window && window.parent.EduHybridShare && typeof window.parent.EduHybridShare.toggleShareDocToSwarm === 'function') {
+                await window.parent.EduHybridShare.toggleShareDocToSwarm(docItem.id, true, docItem);
+            }
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage({ type: 'SHARE_DOC_TO_SWARM', doc: docItem }, '*');
+            }
+        } catch (e) {
+            console.warn('Auto-share to swarm failed:', e);
+        }
+    }
+
+    function initSwarmAutoShareToggle() {
+        const isChecked = isSwarmAutoShareEnabled();
+        document.querySelectorAll('#swarm-auto-share-toggle').forEach(t => { t.checked = isChecked; });
+    }
+    window.addEventListener('storage', function(e) {
+        if (e.key === 'swarm_auto_share_import') {
+            const isChecked = e.newValue === 'true';
+            document.querySelectorAll('#swarm-auto-share-toggle').forEach(t => { t.checked = isChecked; });
+        }
+    });
+
 function saveEntry() {
         const rawThema = document.getElementById('inp-thema').value;
         let thema = (rawThema === 'SONSTIGES') 
@@ -2388,6 +2459,7 @@ function saveEntry() {
             const store = tx.objectStore("documents");
             isEdit ? store.put(entry) : store.add(entry);
             tx.oncomplete = () => {
+                if (isSwarmAutoShareEnabled()) { autoShareToSwarm(entry); }
                 if (saveProgress) saveProgress.style.width = '100%';
                 
                 // Slight delay to let the animation finish visually
@@ -3140,6 +3212,7 @@ function saveEntry() {
                 const store = tx.objectStore("documents");
                 validEntries.forEach(item => store.put(item));
                 tx.oncomplete = () => {
+                    if (isSwarmAutoShareEnabled()) { validEntries.forEach(item => autoShareToSwarm(item)); }
                     const msg = blockedCount > 0
                         ? `${validEntries.length} Dokument(e) importiert (${blockedCount} unsichere Einträge blockiert).`
                         : `Datenbank erfolgreich geprüft und importiert (${validEntries.length} Dokument(e))!`;

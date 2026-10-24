@@ -1,3 +1,50 @@
+
+    function isSwarmAutoShareEnabled() {
+        try {
+            const toggle = document.getElementById('swarm-auto-share-toggle');
+            if (toggle) return toggle.checked;
+            return localStorage.getItem('swarm_auto_share_import') === 'true';
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function toggleSwarmAutoShare(el) {
+        const isChecked = !!(el && el.checked);
+        try {
+            localStorage.setItem('swarm_auto_share_import', isChecked ? 'true' : 'false');
+        } catch (e) {}
+        document.querySelectorAll('#swarm-auto-share-toggle').forEach(t => { t.checked = isChecked; });
+    }
+
+    async function autoShareToSwarm(docItem) {
+        if (!docItem || !docItem.id) return;
+        try {
+            if (window.EduHybridShare && typeof window.EduHybridShare.toggleShareDocToSwarm === 'function') {
+                await window.EduHybridShare.toggleShareDocToSwarm(docItem.id, true, docItem);
+            }
+            if (window.parent && window.parent !== window && window.parent.EduHybridShare && typeof window.parent.EduHybridShare.toggleShareDocToSwarm === 'function') {
+                await window.parent.EduHybridShare.toggleShareDocToSwarm(docItem.id, true, docItem);
+            }
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage({ type: 'SHARE_DOC_TO_SWARM', doc: docItem }, '*');
+            }
+        } catch (e) {
+            console.warn('Auto-share to swarm failed:', e);
+        }
+    }
+
+    function initSwarmAutoShareToggle() {
+        const isChecked = isSwarmAutoShareEnabled();
+        document.querySelectorAll('#swarm-auto-share-toggle').forEach(t => { t.checked = isChecked; });
+    }
+    window.addEventListener('storage', function(e) {
+        if (e.key === 'swarm_auto_share_import') {
+            const isChecked = e.newValue === 'true';
+            document.querySelectorAll('#swarm-auto-share-toggle').forEach(t => { t.checked = isChecked; });
+        }
+    });
+
 ﻿    let db = JSON.parse(localStorage.getItem('offline_wiki_db')) || [];
     let links = JSON.parse(localStorage.getItem('wiki_links')) || [];
 
@@ -88,6 +135,7 @@
 
         updateConnDot();
         renderResults();
+        initSwarmAutoShareToggle();
         updateTicker(); 
     }
 
@@ -281,6 +329,7 @@
             let testDb = JSON.parse(localStorage.getItem('offline_wiki_db')) || [];
             testDb.unshift(entry);
             localStorage.setItem('offline_wiki_db', JSON.stringify(testDb));
+            if (isSwarmAutoShareEnabled()) { autoShareToSwarm(entry); }
             
             // If it succeeds, update the global database array
             db = testDb;

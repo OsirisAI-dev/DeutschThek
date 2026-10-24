@@ -1721,7 +1721,23 @@
         MAX_FILE_BYTES: MAX_FILE_BYTES
     });
 
+    function isAutoShareImportEnabled() {
+        try {
+            return localStorage.getItem('swarm_auto_share_import') === 'true';
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function setAutoShareImport(enabled) {
+        try {
+            localStorage.setItem('swarm_auto_share_import', enabled ? 'true' : 'false');
+        } catch (e) {}
+    }
+
     const eduHybridShareApi = Object.freeze({
+        isAutoShareImportEnabled: isAutoShareImportEnabled,
+        setAutoShareImport: setAutoShareImport,
         init: initSwarm,
         shareSocial: shareSocial,
         openSwarmModal: openSwarmModal,

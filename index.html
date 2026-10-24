@@ -626,6 +626,16 @@
     border-top: 1px solid var(--hub-border);
     background: var(--hub-bg);
   }
+
+        /* --- Swarm Auto-Share Toggle --- */
+        .swarm-toggle-wrap { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+        .swarm-toggle-switch { position: relative; display: inline-block; width: 38px; height: 20px; flex-shrink: 0; }
+        .swarm-toggle-switch input { opacity: 0; width: 0; height: 0; margin: 0; position: absolute; }
+        .swarm-toggle-slider { position: absolute; cursor: pointer; inset: 0; background-color: #94a3b8; transition: .25s ease; border-radius: 20px; }
+        .swarm-toggle-slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+        .swarm-toggle-switch input:checked + .swarm-toggle-slider { background-color: #2563eb; }
+        .swarm-toggle-switch input:checked + .swarm-toggle-slider:before { transform: translateX(18px); }
+
   .hub-modal-footer {
     padding: 12px 22px;
     border-top: 1px solid var(--hub-border);
@@ -1138,6 +1148,24 @@
       </button>
       <input type="file" id="backupFileInput" style="display:none;" accept=".json,application/json">
 
+      <!-- Swarm Auto-Share Toggle Option -->
+      <div class="backup-swarm-toggle-bar" style="grid-column: 1 / -1; padding: 12px 16px; background: var(--hub-surface); border: 1px solid var(--hub-border); border-radius: 8px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+        <div style="display:flex; align-items:center; gap:8px; font-size:0.86rem; color:var(--hub-text);">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+            <circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10z"></path><path d="M12 2a15.3 15.3 0 0 0-4 10 15.3 15.3 0 0 0 4 10z"></path>
+          </svg>
+          <strong>Import-Optionen (Schwarm):</strong>
+        </div>
+        <label class="swarm-toggle-wrap" style="display:inline-flex; align-items:center; gap:8px; cursor:pointer; font-weight:700; font-size:0.86rem; color:var(--hub-accent); user-select:none; margin:0;" title="Wenn aktiviert, werden alle importierten Dokumente automatisch im Community-Schwarm freigegeben">
+          <span class="swarm-toggle-switch">
+            <input type="checkbox" id="swarm-auto-share-toggle" onchange="toggleSwarmAutoShare(this)">
+            <span class="swarm-toggle-slider"></span>
+          </span>
+          <span id="swarm-auto-share-label">Schwärm ein/ aus</span>
+        </label>
+      </div>
+
       <!-- 3. Reset Button -->
       <button class="backup-action-btn reset-action" id="btnBackupReset">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#dc3545; flex-shrink:0;">
@@ -1219,7 +1247,54 @@
     }
     return true;
   }
-  function loadPrefs() {
+  
+    function isSwarmAutoShareEnabled() {
+        try {
+            const toggle = document.getElementById('swarm-auto-share-toggle');
+            if (toggle) return toggle.checked;
+            return localStorage.getItem('swarm_auto_share_import') === 'true';
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function toggleSwarmAutoShare(el) {
+        const isChecked = !!(el && el.checked);
+        try {
+            localStorage.setItem('swarm_auto_share_import', isChecked ? 'true' : 'false');
+        } catch (e) {}
+        document.querySelectorAll('#swarm-auto-share-toggle').forEach(t => { t.checked = isChecked; });
+    }
+
+    async function autoShareToSwarm(docItem) {
+        if (!docItem || !docItem.id) return;
+        try {
+            if (window.EduHybridShare && typeof window.EduHybridShare.toggleShareDocToSwarm === 'function') {
+                await window.EduHybridShare.toggleShareDocToSwarm(docItem.id, true, docItem);
+            }
+            if (window.parent && window.parent !== window && window.parent.EduHybridShare && typeof window.parent.EduHybridShare.toggleShareDocToSwarm === 'function') {
+                await window.parent.EduHybridShare.toggleShareDocToSwarm(docItem.id, true, docItem);
+            }
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage({ type: 'SHARE_DOC_TO_SWARM', doc: docItem }, '*');
+            }
+        } catch (e) {
+            console.warn('Auto-share to swarm failed:', e);
+        }
+    }
+
+    function initSwarmAutoShareToggle() {
+        const isChecked = isSwarmAutoShareEnabled();
+        document.querySelectorAll('#swarm-auto-share-toggle').forEach(t => { t.checked = isChecked; });
+    }
+    window.addEventListener('storage', function(e) {
+        if (e.key === 'swarm_auto_share_import') {
+            const isChecked = e.newValue === 'true';
+            document.querySelectorAll('#swarm-auto-share-toggle').forEach(t => { t.checked = isChecked; });
+        }
+    });
+
+function loadPrefs() {
     var sec = window.OsirisSecurity;
     var rawTheme = localStorage.getItem('wiki_theme') || 'light';
     var savedTheme = sec && sec.sanitizeThemeName ? sec.sanitizeThemeName(rawTheme) : 'light';
@@ -1916,6 +1991,17 @@
           }
         }
 
+        if (isSwarmAutoShareEnabled() && window.EduHybridShare && typeof window.EduHybridShare.toggleShareDocToSwarm === 'function') {
+          try {
+            var allImported = [].concat(Array.isArray(tbDocs) ? tbDocs : [], Array.isArray(dkDocs) ? dkDocs : []);
+            for (var k = 0; k < allImported.length; k++) {
+              var itm = allImported[k];
+              if (itm && itm.id) {
+                window.EduHybridShare.toggleShareDocToSwarm(itm.id, true, itm);
+              }
+            }
+          } catch(e) {}
+        }
         pushToFrame('RELOAD_DATA');
         await refreshBackupCounts();
         showBackupStatus('✓ Wiederherstellung abgeschlossen: ' + importedCount + ' Einträge importiert.', 'success');
@@ -2025,6 +2111,7 @@
   }
   applyTheme(appState.theme, false);
   applyLang();
+  initSwarmAutoShareToggle();
   switchTool(appState.tool);
 })();
 </script>
