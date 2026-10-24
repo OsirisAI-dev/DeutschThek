@@ -1416,13 +1416,7 @@
     };
 
     function getSwarmLang() {
-        try {
-            if (window.__bankLang && SWARM_STRINGS[window.__bankLang]) return window.__bankLang;
-            const docLang = (document.documentElement.getAttribute('lang') || 'de').toUpperCase();
-            if (docLang.startsWith('FR')) return 'FR';
-            if (docLang.startsWith('EN')) return 'EN';
-        } catch (e) {}
-        return (window.bankLang && SWARM_STRINGS[window.bankLang]) ? window.bankLang : 'FR';
+        return 'DE';
     }
 
         function isDarkThemeActive() {
@@ -1431,15 +1425,15 @@
     }
 
     function createSwarmModalDom() {
-        const i18n = (typeof SWARM_STRINGS !== 'undefined' && SWARM_STRINGS[getSwarmLang()]) || {
+        const i18n = (typeof SWARM_STRINGS !== 'undefined' && SWARM_STRINGS.DE) || {
             title: "Community-Schwarm (Dezentrales WebRTC P2P)",
-            sub: "Partage direct navigateur-à-navigateur · Automatique sur cette adresse",
-            directNotice: "✨ Connexion directe automatique : Tous les collègues connectés sur cette page échangent directement leurs documents.",
-            tabRemote: "Documents disponibles dans l'essaim",
-            tabLocal: "Mes documents partagés",
-            close: "Fermer",
-            download: "Télécharger",
-            stopShare: "Arrêter le partage"
+            sub: "Zero-Knowledge · Browser-zu-Browser · Cross-Device auf GitHub Hosting",
+            directNotice: "✨ Automatische Direktverbindung: Alle Kollegen auf dieser Seite tauschen Dokumente direkt ohne Code aus!",
+            tabRemote: "Verfügbare Dokumente im Schwarm",
+            tabLocal: "Meine geteilten Dokumente",
+            close: "Schließen",
+            download: "Laden",
+            stopShare: "Teilen beenden"
         };
 
         const isDark = isDarkThemeActive();
@@ -1482,9 +1476,9 @@
                 <div style="padding: 12px 22px; background: ${isDark ? 'rgba(34, 197, 94, 0.12)' : 'rgba(34, 197, 94, 0.08)'}; border-bottom: 1px solid ${isDark ? 'rgba(34, 197, 94, 0.25)' : 'rgba(34, 197, 94, 0.2)'}; font-size: 0.84rem; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap:wrap;">
                     <div style="display:flex; align-items:center; gap:9px;">
                         <span id="swarm-net-dot" style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#22c55e; box-shadow:0 0 8px rgba(34, 197, 94, 0.7); flex-shrink:0;"></span>
-                        <span id="swarm-net-status-text" style="color:${isDark ? '#bbf7d0' : '#166534'};"><strong>Connexion automatique en direct :</strong> Tous les utilisateurs ouvrant cette adresse échangent directement leurs documents.</span>
+                        <span id="swarm-net-status-text" style="color:${isDark ? '#bbf7d0' : '#166534'};"><strong>Automatische Direktverbindung:</strong> Alle Kollegen auf dieser Seite tauschen Dokumente direkt ohne Code aus.</span>
                     </div>
-                    <span id="swarm-mesh-badge" style="font-size:0.75rem; font-weight:700; color:#16a34a; background:${isDark ? 'rgba(34,197,94,0.18)' : '#dcfce7'}; border:1px solid rgba(34,197,94,0.35); padding:3px 9px; border-radius:6px; white-space:nowrap;">● P2P Direct Actif</span>
+                    <span id="swarm-mesh-badge" style="font-size:0.75rem; font-weight:700; color:#16a34a; background:${isDark ? 'rgba(34,197,94,0.18)' : '#dcfce7'}; border:1px solid rgba(34,197,94,0.35); padding:3px 9px; border-radius:6px; white-space:nowrap;">● P2P Direkt aktiv</span>
                 </div>
 
                 <!-- Tabs -->
@@ -1498,7 +1492,7 @@
 
                 <!-- Footer -->
                 <div style="padding: 14px 22px; border-top: 1px solid ${borderColor}; display: flex; justify-content: space-between; align-items: center; background: ${headerBg}; font-size: 0.82rem;">
-                    <span id="swarm-footer-stats" style="color:${isDark ? '#94a3b8' : '#64748b'};">Status: P2P Swarm actif</span>
+                    <span id="swarm-footer-stats" style="color:${isDark ? '#94a3b8' : '#64748b'};">Status: P2P-Schwarm aktiv</span>
                     <button id="swarm-close-btn" style="padding: 8px 18px; border: 1px solid ${borderColor}; border-radius: 6px; background: ${dialogBg}; color: ${dialogText}; font-weight: 600; cursor: pointer; font-size:0.84rem;">${i18n.close}</button>
                 </div>
             </div>
@@ -1565,7 +1559,7 @@
         const metaColor = isDark ? '#94a3b8' : '#64748b';
         const shadow = isDark ? '0 3px 10px rgba(0,0,0,0.35)' : '0 2px 6px rgba(0,0,0,0.06)';
 
-        const i18n = (typeof SWARM_STRINGS !== 'undefined' && SWARM_STRINGS[getSwarmLang()]) || {
+        const i18n = (typeof SWARM_STRINGS !== 'undefined' && SWARM_STRINGS.DE) || {
             download: "Laden",
             stopShare: "Teilen beenden",
             noPeers: "Keine weiteren Peers im Schwarm aktiv",
@@ -1663,7 +1657,7 @@
                 let html = `
                     <div style="display:flex; flex-direction:column; gap:12px;">
                         <div style="font-size:0.85rem; color:${metaColor}; margin-bottom:2px; font-weight:600;">
-                            Vous partagez ${localCatalog.length} document(s) dans l'essaim :
+                            Sie teilen ${localCatalog.length} Dokument(e) im Schwarm :
                         </div>
                 `;
 
