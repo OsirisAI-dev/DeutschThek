@@ -1479,6 +1479,10 @@
   if (swarmBtnEl) {
     swarmBtnEl.addEventListener('click', function(e) {
       e.stopPropagation();
+      if (window.EduHybridShare) {
+        window.EduHybridShare.openSwarmModal();
+        return;
+      }
       if (appState.tool === 'wiki') {
         switchTool('docs');
       }
@@ -1994,6 +1998,11 @@
     }
   });
 
+  
+  // Initialize Swarm directly in Hub for instant cross-device discovery
+  if (window.EduHybridShare) {
+    EduHybridShare.init({ dbName: 'DokumentationDB', storeName: 'documents', docTypeLabel: 'Doktyp' });
+  }
   applyTheme(appState.theme, false);
   applyLang();
   switchTool(appState.tool);

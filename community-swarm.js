@@ -753,7 +753,10 @@
                 iceServers: [
                     { urls: 'stun:stun.l.google.com:19302' },
                     { urls: 'stun:stun1.l.google.com:19302' },
-                    { urls: 'stun:stun2.l.google.com:19302' }
+                    { urls: 'stun:stun2.l.google.com:19302' },
+                    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelay', credential: 'openrelay' },
+                    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelay', credential: 'openrelay' },
+                    { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelay', credential: 'openrelay' }
                 ]
             }
         });
@@ -1337,7 +1340,105 @@
         }
     }
 
+    
+    const SWARM_STRINGS = {
+        FR: {
+            title: "Essaim Communautaire (P2P Décentralisé)",
+            sub: "Partage direct navigateur-à-navigateur · Multi-appareils sur GitHub · Zéro compte",
+            directNotice: "✨ Connexion directe automatique : Tous les collègues ouvrant cette page partagent directement leurs documents !",
+            privateHint: "💡 Salon privé (Optionnel) : Entrez un nom de salon (ex: collège-paris) ou collez l'ID d'un collègue.",
+            roomLabel: "Salon",
+            activeP2p: "P2P Mondial actif",
+            connecting: "Connexion à l'essaim P2P...",
+            localOnly: "Essaim local (onglet)",
+            copyBtn: "Copier mon ID",
+            copied: "ID copié dans le presse-papier !",
+            directPh: "Nom de salon / Peer-ID...",
+            connectBtn: "Rejoindre",
+            tabRemote: "Documents disponibles dans l'essaim",
+            tabLocal: "Mes documents partagés",
+            noPeers: "Aucun autre collègue actif dans cet essaim pour le moment",
+            noPeersHint: "Dès qu'un collègue ouvre DeutschThek et clique sur « Partager dans l'essaim », son document apparaît ici en direct !",
+            download: "Télécharger",
+            downloading: "Téléchargement...",
+            noSharedLocal: "Vous ne partagez aucun document pour le moment",
+            noSharedLocalHint: "Pour partager un document avec vos collègues, ouvrez-le en plein écran et cliquez sur « Partager dans l'essaim ».",
+            stopShare: "Arrêter le partage",
+            close: "Fermer",
+            docsAvailable: "document(s) vérifié(s) disponible(s) dans l'essaim :"
+        },
+        EN: {
+            title: "Community Swarm (Decentralized P2P)",
+            sub: "Direct Browser-to-Browser · Cross-Device on GitHub · Zero Accounts",
+            directNotice: "✨ Automatic Direct Connection: All colleagues on this page can exchange files directly without any code!",
+            privateHint: "💡 Private Room (Optional): Type a room name (e.g. grade-8a) or paste a peer ID to connect privately.",
+            roomLabel: "Room",
+            activeP2p: "Global P2P Active",
+            connecting: "Connecting to P2P Swarm...",
+            localOnly: "Local Browser Swarm",
+            copyBtn: "Copy my ID",
+            copied: "ID copied to clipboard!",
+            directPh: "Room name / Peer-ID...",
+            connectBtn: "Connect",
+            tabRemote: "Available Documents in Swarm",
+            tabLocal: "My Shared Documents",
+            noPeers: "No other peers active in this swarm right now",
+            noPeersHint: "As soon as a colleague opens DeutschThek and shares a document, it will appear here in real time!",
+            download: "Download",
+            downloading: "Downloading...",
+            noSharedLocal: "You are not sharing any documents yet",
+            noSharedLocalHint: "To share a document with colleagues, open it and click 'Share to Community Swarm'.",
+            stopShare: "Stop Sharing",
+            close: "Close",
+            docsAvailable: "verified document(s) available in the swarm:"
+        },
+        DE: {
+            title: "Community-Schwarm (Dezentrales WebRTC P2P)",
+            sub: "Zero-Knowledge · Browser-to-Browser · Cross-Device auf GitHub Hosting",
+            directNotice: "✨ Automatische Direktverbindung: Alle Kollegen auf dieser Seite tauschen Dokumente direkt ohne Code aus!",
+            privateHint: "💡 Privater Raum (Optional): Raum-Name (z.B. klasse-8a) eingeben oder Peer-ID einfügen.",
+            roomLabel: "Raum",
+            activeP2p: "Global P2P aktiv",
+            connecting: "Verbinde mit Globalem Swarm...",
+            localOnly: "Lokaler Browser-Swarm",
+            copyBtn: "Kopieren",
+            copied: "Peer-ID in die Zwischenablage kopiert!",
+            directPh: "Raum-Code / Peer-ID...",
+            connectBtn: "Verbinden",
+            tabRemote: "Verfügbare Dokumente im Schwarm",
+            tabLocal: "Meine geteilten Dokumente",
+            noPeers: "Keine weiteren Peers im Schwarm aktiv",
+            noPeersHint: "Sobald sich andere Lehrkräfte auf GitHub Pages befinden und Dokumente bereitstellen, erscheinen diese hier automatisch in Echtzeit.",
+            download: "Laden",
+            downloading: "Lade...",
+            noSharedLocal: "Sie teilen derzeit keine Dokumente",
+            noSharedLocalHint: "Um ein Dokument mit der Community zu teilen, öffnen Sie das Dokument in der Vollansicht und klicken Sie auf „In Community-Schwarm teilen“.",
+            stopShare: "Teilen beenden",
+            close: "Schließen",
+            docsAvailable: "geprüfte(s) Dokument(e) im Schwarm verfügbar :"
+        }
+    };
+
+    function getSwarmLang() {
+        try {
+            if (window.__bankLang && SWARM_STRINGS[window.__bankLang]) return window.__bankLang;
+            const docLang = (document.documentElement.getAttribute('lang') || 'de').toUpperCase();
+            if (docLang.startsWith('FR')) return 'FR';
+            if (docLang.startsWith('EN')) return 'EN';
+        } catch (e) {}
+        return (window.bankLang && SWARM_STRINGS[window.bankLang]) ? window.bankLang : 'FR';
+    }
+
     function createSwarmModalDom() {
+        const i18n = (typeof SWARM_STRINGS !== 'undefined' && SWARM_STRINGS[getSwarmLang()]) || {
+            title: "Community-Schwarm (Dezentrales WebRTC P2P)",
+            sub: "Partage direct navigateur-à-navigateur · Automatique sur cette adresse",
+            directNotice: "✨ Connexion automatique : Tous les utilisateurs sur cette page échangent directement leurs documents.",
+            tabRemote: "Documents disponibles dans l'essaim",
+            tabLocal: "Mes documents partagés",
+            close: "Fermer"
+        };
+
         const modal = document.createElement('div');
         modal.id = 'swarm-modal';
         modal.style.cssText = `
@@ -1348,6 +1449,7 @@
 
         modal.innerHTML = `
             <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 860px; max-height: 92vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 16px 40px rgba(0,0,0,0.3);">
+                <!-- Header -->
                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--border); background: var(--bg);">
                     <div style="display:flex; align-items:center; gap:12px;">
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#0099ff; flex-shrink:0;">
@@ -1357,8 +1459,8 @@
                             <path d="M12 2a15.3 15.3 0 0 0-4 10 15.3 15.3 0 0 0 4 10z"></path>
                         </svg>
                         <div>
-                            <h3 style="margin:0; color:var(--primary); font-size:1.15rem;">Community-Schwarm (Dezentrales WebRTC P2P)</h3>
-                            <div style="font-size:0.75rem; color:gray;">Zero-Knowledge · Browser-to-Browser · Cross-Device auf GitHub Hosting</div>
+                            <h3 id="swarm-ui-title" style="margin:0; color:var(--primary); font-size:1.15rem;">${i18n.title}</h3>
+                            <div id="swarm-ui-sub" style="font-size:0.75rem; color:gray;">${i18n.sub}</div>
                         </div>
                     </div>
                     <button id="swarm-close-x" aria-label="Schließen" style="background:transparent; border:none; cursor:pointer; color:var(--text); padding:6px; display:flex; align-items:center; justify-content:center;">
@@ -1366,39 +1468,27 @@
                     </button>
                 </div>
 
-                <div style="padding: 10px 20px; background: rgba(40,167,69,0.08); border-bottom: 1px solid rgba(40,167,69,0.2); font-size: 0.82rem; display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap:wrap;">
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:#28a745; flex-shrink:0;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                        <span><strong>100% Dezentral &amp; Privat:</strong> Dokumente werden via WebRTC DataChannel direkt von Gerät zu Gerät übertragen.</span>
-                    </div>
-                    <span id="swarm-room-label" style="font-size:0.75rem; color:var(--primary); font-weight:600;">
-                        Raum: <strong>${escapeHtml(activeSwarmRoom)}</strong>
-                    </span>
-                </div>
-
-                <!-- WebRTC Live P2P Status & Direct Connect Bar -->
-                <div style="padding: 10px 20px; background: var(--bg); border-bottom: 1px solid var(--border); font-size: 0.82rem; display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap:wrap;">
+                <!-- Automatic Connection Status Banner (Zero Codes / Zero Keys) -->
+                <div style="padding: 12px 20px; background: rgba(40,167,69,0.08); border-bottom: 1px solid rgba(40,167,69,0.2); font-size: 0.84rem; display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap:wrap;">
                     <div id="swarm-net-status" style="display:flex; align-items:center; gap:8px;">
-                        <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#28a745;"></span>
-                        <span>Global P2P aktiv (ID: <code id="swarm-my-id-code" style="user-select:all; font-family:monospace; font-size:0.75rem;">${escapeHtml(myWebrtcId || myPeerId)}</code>)</span>
-                        <button id="btn-copy-peer-id" type="button" style="padding:2px 8px; border:1px solid var(--border); border-radius:4px; background:var(--surface); cursor:pointer; font-size:0.72rem;">Kopieren</button>
+                        <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#28a745; box-shadow:0 0 6px rgba(40,167,69,0.6);"></span>
+                        <span><strong>Connexion directe automatique :</strong> Tous les collègues connectés sur cette page partagent directement leurs documents.</span>
                     </div>
-                    <div style="display:flex; gap:6px; align-items:center;">
-                        <input id="inp-direct-peer" type="text" placeholder="Raum-Code / Peer-ID..." style="padding:4px 8px; border:1px solid var(--border); border-radius:4px; background:var(--surface); color:var(--text); font-size:0.75rem; width:170px;">
-                        <button id="btn-connect-direct" type="button" style="padding:4px 10px; background:var(--accent); color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer; font-size:0.75rem;">Verbinden</button>
-                    </div>
+                    <span style="font-size:0.75rem; color:#28a745; font-weight:bold; background:rgba(40,167,69,0.12); padding:3px 8px; border-radius:4px; border:1px solid rgba(40,167,69,0.3);">● En ligne P2P</span>
                 </div>
 
+                <!-- Tabs -->
                 <div style="display:flex; border-bottom: 1px solid var(--border); background: var(--surface);">
-                    <button id="swarm-tab-remote" style="flex:1; padding:12px; border:none; background:transparent; border-bottom:3px solid var(--primary); font-weight:bold; cursor:pointer; color:var(--primary);">Verfügbare Dokumente im Schwarm</button>
-                    <button id="swarm-tab-local" style="flex:1; padding:12px; border:none; background:transparent; border-bottom:3px solid transparent; font-weight:bold; cursor:pointer; color:gray;">Meine geteilten Dokumente</button>
+                    <button id="swarm-tab-remote" style="flex:1; padding:12px; border:none; background:transparent; border-bottom:3px solid var(--primary); font-weight:bold; cursor:pointer; color:var(--primary);">${i18n.tabRemote}</button>
+                    <button id="swarm-tab-local" style="flex:1; padding:12px; border:none; background:transparent; border-bottom:3px solid transparent; font-weight:bold; cursor:pointer; color:gray;">${i18n.tabLocal}</button>
                 </div>
 
                 <div id="swarm-tab-content" style="padding: 20px; overflow-y: auto; flex: 1;"></div>
 
+                <!-- Footer -->
                 <div style="padding: 12px 20px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: var(--bg); font-size: 0.8rem;">
-                    <span id="swarm-footer-stats">Status: Geschütztes P2P-Netzwerk bereit</span>
-                    <button id="swarm-close-btn" style="padding: 8px 16px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font-weight: bold; cursor: pointer;">Schließen</button>
+                    <span id="swarm-footer-stats">Status: P2P Swarm actif</span>
+                    <button id="swarm-close-btn" style="padding: 8px 16px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font-weight: bold; cursor: pointer;">${i18n.close}</button>
                 </div>
             </div>
         `;
@@ -1409,20 +1499,6 @@
         document.getElementById('swarm-close-btn').addEventListener('click', closeSwarmModal);
         document.getElementById('swarm-tab-remote').addEventListener('click', () => switchSwarmTab('remote'));
         document.getElementById('swarm-tab-local').addEventListener('click', () => switchSwarmTab('local'));
-
-        document.getElementById('btn-copy-peer-id').addEventListener('click', () => {
-            const idVal = myWebrtcId || myPeerId;
-            if (navigator.clipboard) {
-                navigator.clipboard.writeText(idVal).then(() => alert('Peer-ID in die Zwischenablage kopiert!'));
-            } else {
-                prompt('Ihre Peer-ID zum Teilen mit Kollegen:', idVal);
-            }
-        });
-
-        document.getElementById('btn-connect-direct').addEventListener('click', () => {
-            const val = (document.getElementById('inp-direct-peer').value || '').trim();
-            if (val) connectDirectPeer(val);
-        });
 
         // Safe Event Delegation for Swarm Action Buttons
         const contentWrap = document.getElementById('swarm-tab-content');
@@ -1640,8 +1716,6 @@
         validateMagicBytes: validateMagicBytes,
         computeSHA256: computeSHA256,
         exportSinglePackage: exportSinglePackage,
-        joinCustomRoom: joinCustomRoom,
-        connectDirectPeer: connectDirectPeer
     });
 
     try {
