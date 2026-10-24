@@ -1321,7 +1321,7 @@
         FR: {
             title: "Essaim Communautaire (P2P Décentralisé)",
             sub: "Partage direct navigateur-à-navigateur · Multi-appareils sur GitHub · Zéro compte",
-            directNotice: "✨ Connexion directe automatique : Tous les collègues ouvrant cette page partagent directement leurs documents !",ID d'un collègue.",
+            directNotice: "✨ Connexion directe automatique : Tous les collègues ouvrant cette page partagent directement leurs documents !",
             activeP2p: "P2P Mondial actif",
             connecting: "Connexion à l'essaim P2P...",
             localOnly: "Essaim local (onglet)",
