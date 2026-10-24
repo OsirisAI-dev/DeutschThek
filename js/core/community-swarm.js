@@ -1429,66 +1429,81 @@
         return (window.bankLang && SWARM_STRINGS[window.bankLang]) ? window.bankLang : 'FR';
     }
 
+        function isDarkThemeActive() {
+        const t = (document.documentElement.getAttribute('data-theme') || '').toLowerCase();
+        return t === 'dark' || t === 'osiris';
+    }
+
     function createSwarmModalDom() {
         const i18n = (typeof SWARM_STRINGS !== 'undefined' && SWARM_STRINGS[getSwarmLang()]) || {
             title: "Community-Schwarm (Dezentrales WebRTC P2P)",
             sub: "Partage direct navigateur-à-navigateur · Automatique sur cette adresse",
-            directNotice: "✨ Connexion automatique : Tous les utilisateurs sur cette page échangent directement leurs documents.",
+            directNotice: "✨ Connexion directe automatique : Tous les collègues connectés sur cette page échangent directement leurs documents.",
             tabRemote: "Documents disponibles dans l'essaim",
             tabLocal: "Mes documents partagés",
-            close: "Fermer"
+            close: "Fermer",
+            download: "Télécharger",
+            stopShare: "Arrêter le partage"
         };
+
+        const isDark = isDarkThemeActive();
+        const dialogBg = isDark ? '#1a1e24' : '#ffffff';
+        const dialogText = isDark ? '#f1f5f9' : '#1e293b';
+        const headerBg = isDark ? '#14181d' : '#f8fafc';
+        const borderColor = isDark ? '#334155' : '#e2e8f0';
 
         const modal = document.createElement('div');
         modal.id = 'swarm-modal';
         modal.style.cssText = `
-            display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.65);
+            display: none; position: fixed; inset: 0; background: rgba(5, 10, 18, 0.78);
             z-index: 10005; align-items: center; justify-content: center; padding: 20px;
-            backdrop-filter: blur(4px);
+            backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
         `;
 
         modal.innerHTML = `
-            <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 860px; max-height: 92vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 16px 40px rgba(0,0,0,0.3);">
-                <!-- Header -->
-                <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--border); background: var(--bg);">
+            <div id="swarm-modal-dialog" style="background: ${dialogBg}; color: ${dialogText}; border: 1px solid ${borderColor}; border-radius: 14px; width: 100%; max-width: 860px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,0.45); opacity: 1 !important;">
+                
+                <!-- Header (Solid Opaque Background) -->
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 22px; border-bottom: 1px solid ${borderColor}; background: ${headerBg};">
                     <div style="display:flex; align-items:center; gap:12px;">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#0099ff; flex-shrink:0;">
+                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
                             <circle cx="12" cy="12" r="10"></circle>
                             <line x1="2" y1="12" x2="22" y2="12"></line>
                             <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10z"></path>
                             <path d="M12 2a15.3 15.3 0 0 0-4 10 15.3 15.3 0 0 0 4 10z"></path>
                         </svg>
                         <div>
-                            <h3 id="swarm-ui-title" style="margin:0; color:var(--primary); font-size:1.15rem;">${i18n.title}</h3>
-                            <div id="swarm-ui-sub" style="font-size:0.75rem; color:gray;">${i18n.sub}</div>
+                            <h3 id="swarm-ui-title" style="margin:0; font-size:1.18rem; font-weight:700; color:${isDark ? '#60a5fa' : '#1e3a8a'};">${i18n.title}</h3>
+                            <div id="swarm-ui-sub" style="font-size:0.75rem; color:${isDark ? '#94a3b8' : '#64748b'}; margin-top:2px;">${i18n.sub}</div>
                         </div>
                     </div>
-                    <button id="swarm-close-x" aria-label="Schließen" style="background:transparent; border:none; cursor:pointer; color:var(--text); padding:6px; display:flex; align-items:center; justify-content:center;">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    <button id="swarm-close-x" aria-label="Schließen" style="background:transparent; border:none; cursor:pointer; color:${isDark ? '#94a3b8' : '#64748b'}; padding:6px; display:flex; align-items:center; justify-content:center; border-radius:6px;">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                     </button>
                 </div>
 
-                <!-- Automatic Connection Status Banner (Zero Codes / Zero Keys) -->
-                <div style="padding: 12px 20px; background: rgba(40,167,69,0.08); border-bottom: 1px solid rgba(40,167,69,0.2); font-size: 0.84rem; display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap:wrap;">
-                    <div id="swarm-net-status" style="display:flex; align-items:center; gap:8px;">
-                        <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#28a745; box-shadow:0 0 6px rgba(40,167,69,0.6);"></span>
-                        <span><strong>Connexion directe automatique :</strong> Tous les collègues connectés sur cette page partagent directement leurs documents.</span>
+                <!-- Clean Status Banner (Pure Direct Exchange - No Private Keys or Codes) -->
+                <div style="padding: 12px 22px; background: ${isDark ? 'rgba(34, 197, 94, 0.12)' : 'rgba(34, 197, 94, 0.08)'}; border-bottom: 1px solid ${isDark ? 'rgba(34, 197, 94, 0.25)' : 'rgba(34, 197, 94, 0.2)'}; font-size: 0.84rem; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap:wrap;">
+                    <div style="display:flex; align-items:center; gap:9px;">
+                        <span id="swarm-net-dot" style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#22c55e; box-shadow:0 0 8px rgba(34, 197, 94, 0.7); flex-shrink:0;"></span>
+                        <span id="swarm-net-status-text" style="color:${isDark ? '#bbf7d0' : '#166534'};"><strong>Connexion automatique en direct :</strong> Tous les utilisateurs ouvrant cette adresse échangent directement leurs documents.</span>
                     </div>
-                    <span style="font-size:0.75rem; color:#28a745; font-weight:bold; background:rgba(40,167,69,0.12); padding:3px 8px; border-radius:4px; border:1px solid rgba(40,167,69,0.3);">● En ligne P2P</span>
+                    <span id="swarm-mesh-badge" style="font-size:0.75rem; font-weight:700; color:#16a34a; background:${isDark ? 'rgba(34,197,94,0.18)' : '#dcfce7'}; border:1px solid rgba(34,197,94,0.35); padding:3px 9px; border-radius:6px; white-space:nowrap;">● P2P Direct Actif</span>
                 </div>
 
                 <!-- Tabs -->
-                <div style="display:flex; border-bottom: 1px solid var(--border); background: var(--surface);">
-                    <button id="swarm-tab-remote" style="flex:1; padding:12px; border:none; background:transparent; border-bottom:3px solid var(--primary); font-weight:bold; cursor:pointer; color:var(--primary);">${i18n.tabRemote}</button>
-                    <button id="swarm-tab-local" style="flex:1; padding:12px; border:none; background:transparent; border-bottom:3px solid transparent; font-weight:bold; cursor:pointer; color:gray;">${i18n.tabLocal}</button>
+                <div style="display:flex; border-bottom: 1px solid ${borderColor}; background: ${headerBg};">
+                    <button id="swarm-tab-remote" style="flex:1; padding:13px; border:none; background:transparent; border-bottom:3px solid #2563eb; font-weight:700; cursor:pointer; color:#2563eb; font-size:0.9rem;">${i18n.tabRemote}</button>
+                    <button id="swarm-tab-local" style="flex:1; padding:13px; border:none; background:transparent; border-bottom:3px solid transparent; font-weight:600; cursor:pointer; color:${isDark ? '#94a3b8' : '#64748b'}; font-size:0.9rem;">${i18n.tabLocal}</button>
                 </div>
 
-                <div id="swarm-tab-content" style="padding: 20px; overflow-y: auto; flex: 1;"></div>
+                <!-- Tab Content Area (Solid Opaque Background, Zero Bleed-Through) -->
+                <div id="swarm-tab-content" style="padding: 22px; overflow-y: auto; flex: 1; background: ${dialogBg}; min-height: 260px;"></div>
 
                 <!-- Footer -->
-                <div style="padding: 12px 20px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: var(--bg); font-size: 0.8rem;">
-                    <span id="swarm-footer-stats">Status: P2P Swarm actif</span>
-                    <button id="swarm-close-btn" style="padding: 8px 16px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font-weight: bold; cursor: pointer;">${i18n.close}</button>
+                <div style="padding: 14px 22px; border-top: 1px solid ${borderColor}; display: flex; justify-content: space-between; align-items: center; background: ${headerBg}; font-size: 0.82rem;">
+                    <span id="swarm-footer-stats" style="color:${isDark ? '#94a3b8' : '#64748b'};">Status: P2P Swarm actif</span>
+                    <button id="swarm-close-btn" style="padding: 8px 18px; border: 1px solid ${borderColor}; border-radius: 6px; background: ${dialogBg}; color: ${dialogText}; font-weight: 600; cursor: pointer; font-size:0.84rem;">${i18n.close}</button>
                 </div>
             </div>
         `;
@@ -1500,7 +1515,7 @@
         document.getElementById('swarm-tab-remote').addEventListener('click', () => switchSwarmTab('remote'));
         document.getElementById('swarm-tab-local').addEventListener('click', () => switchSwarmTab('local'));
 
-        // Safe Event Delegation for Swarm Action Buttons
+        // Event delegation for Download and Stop sharing buttons
         const contentWrap = document.getElementById('swarm-tab-content');
         contentWrap.addEventListener('click', (e) => {
             const dlBtn = e.target.closest('[data-swarm-download]');
@@ -1508,11 +1523,11 @@
                 const docId = Number(dlBtn.getAttribute('data-doc-id'));
                 const peerId = dlBtn.getAttribute('data-peer-id') || '';
                 dlBtn.disabled = true;
-                dlBtn.innerHTML = '<span>Lade...</span>';
+                dlBtn.innerHTML = `<span>${i18n.downloading || 'Lade...'}</span>`;
                 requestDocDownload(docId, peerId);
                 setTimeout(() => {
                     dlBtn.disabled = false;
-                    dlBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> <span>Laden</span>';
+                    dlBtn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> <span>${i18n.download || 'Laden'}</span>`;
                 }, 3000);
                 return;
             }
@@ -1543,22 +1558,34 @@
         renderSwarmModalContent();
     }
 
-    function renderSwarmModalContent() {
+        function renderSwarmModalContent() {
         const wrap = document.getElementById('swarm-tab-content');
         if (!wrap) return;
 
-        // Update live status bar in modal if present
-        const idCode = document.getElementById('swarm-my-id-code');
-        if (idCode) idCode.textContent = myWebrtcId || myPeerId;
+        const isDark = isDarkThemeActive();
+        const cardBg = isDark ? '#232a35' : '#ffffff';
+        const cardBorder = isDark ? '#374151' : '#e2e8f0';
+        const textColor = isDark ? '#f8fafc' : '#0f172a';
+        const metaColor = isDark ? '#94a3b8' : '#64748b';
+        const shadow = isDark ? '0 3px 10px rgba(0,0,0,0.35)' : '0 2px 6px rgba(0,0,0,0.06)';
 
-        const netStatus = document.getElementById('swarm-net-status');
-        if (netStatus) {
-            const dotColor = webrtcStatus === 'connected' ? '#28a745' : (webrtcStatus === 'connecting' ? '#ffc107' : '#6c757d');
-            const statusLabel = webrtcStatus === 'connected'
-                ? `Global P2P aktiv (Mesh: ${webrtcConnections.size} Peers)`
-                : (webrtcStatus === 'connecting' ? 'Verbinde mit Globalem Swarm...' : 'Lokaler Browser-Swarm');
-            netStatus.querySelector('span:first-child').style.background = dotColor;
-            netStatus.querySelector('span:nth-child(2)').childNodes[0].textContent = statusLabel + ' ';
+        const i18n = (typeof SWARM_STRINGS !== 'undefined' && SWARM_STRINGS[getSwarmLang()]) || {
+            download: "Laden",
+            stopShare: "Teilen beenden",
+            noPeers: "Keine weiteren Peers im Schwarm aktiv",
+            noPeersHint: "Sobald sich andere Lehrkräfte auf GitHub Pages befinden und Dokumente bereitstellen, erscheinen diese hier automatisch in Echtzeit.",
+            noSharedLocal: "Sie teilen derzeit keine Dokumente",
+            noSharedLocalHint: "Um ein Dokument mit der Community zu teilen, öffnen Sie das Dokument in der Vollansicht und klicken Sie auf „In Community-Schwarm teilen“.",
+            docsAvailable: "geprüfte(s) Dokument(e) im Schwarm verfügbar :"
+        };
+
+        // Update badge and status text
+        const netDot = document.getElementById('swarm-net-dot');
+        const netBadge = document.getElementById('swarm-mesh-badge');
+        if (netDot && netBadge) {
+            const isConn = webrtcStatus === 'connected';
+            netDot.style.background = isConn ? '#22c55e' : (webrtcStatus === 'connecting' ? '#eab308' : '#64748b');
+            netBadge.textContent = isConn ? `● WebRTC Mesh (${webrtcConnections.size} Peers)` : (webrtcStatus === 'connecting' ? '● Verbinde...' : '● Lokal');
         }
 
         if (currentSwarmTab === 'remote') {
@@ -1572,19 +1599,19 @@
 
             if (allRemoteDocs.length === 0) {
                 wrap.innerHTML = `
-                    <div style="text-align:center; padding: 40px 20px; color: gray;">
-                        <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" style="color:var(--primary); opacity:0.6; margin-bottom:10px;"><path d="M4.93 4.93a10 10 0 0 1 14.14 0"></path><path d="M7.76 7.76a6 6 0 0 1 8.48 0"></path><circle cx="12" cy="12" r="2"></circle><path d="M12 14v8"></path></svg>
-                        <h4 style="margin:0 0 8px 0; color:var(--text);">Keine weiteren Peers im Schwarm aktiv</h4>
-                        <p style="margin:0; font-size:0.85rem; max-width:480px; margin:auto;">
-                            Sobald sich andere Lehrkräfte auf GitHub Pages oder im Netzwerk befinden und Dokumente bereitstellen, erscheinen diese hier automatisch in Echtzeit.
+                    <div style="text-align:center; padding: 48px 20px; color: ${metaColor};">
+                        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="1.75" style="opacity:0.75; margin-bottom:12px;"><path d="M4.93 4.93a10 10 0 0 1 14.14 0"></path><path d="M7.76 7.76a6 6 0 0 1 8.48 0"></path><circle cx="12" cy="12" r="2"></circle><path d="M12 14v8"></path></svg>
+                        <h4 style="margin:0 0 8px 0; color:${textColor}; font-size:1.05rem;">${i18n.noPeers}</h4>
+                        <p style="margin:0; font-size:0.86rem; max-width:480px; margin:auto; line-height:1.5;">
+                            ${i18n.noPeersHint}
                         </p>
                     </div>
                 `;
             } else {
                 let html = `
-                    <div style="display:flex; flex-direction:column; gap:10px;">
-                        <div style="font-size:0.85rem; color:gray; margin-bottom:4px;">
-                            ${allRemoteDocs.length} geprüfte(s) Dokument(e) im Schwarm verfügbar:
+                    <div style="display:flex; flex-direction:column; gap:12px;">
+                        <div style="font-size:0.85rem; color:${metaColor}; margin-bottom:2px; font-weight:600;">
+                            ${allRemoteDocs.length} ${i18n.docsAvailable}
                         </div>
                 `;
 
@@ -1601,21 +1628,22 @@
                     const shortHash = doc.fileHash ? escapeHtml(doc.fileHash.substring(0, 6).toUpperCase()) : 'UNVERIFIED';
 
                     html += `
-                        <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border:1px solid var(--border); border-radius:8px; background:var(--surface);">
-                            <div>
-                                <div style="display:flex; gap:6px; align-items:center; margin-bottom:4px; flex-wrap:wrap;">
-                                    <span style="background:var(--primary); color:white; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:bold;">${safeTyp}</span>
-                                    <span style="background:var(--border); padding:2px 8px; border-radius:4px; font-size:0.72rem;">${safeKlassen}</span>
-                                    <span style="background:var(--border); padding:2px 8px; border-radius:4px; font-size:0.72rem;">${safeJahr}</span>
-                                    <span title="Kryptografischer SHA-256 Fingerabdruck" style="background:rgba(40,167,69,0.15); color:#28a745; border:1px solid rgba(40,167,69,0.3); padding:1px 6px; border-radius:4px; font-family:monospace; font-size:0.7rem; font-weight:bold;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle; margin-right:3px;"><path d="M21 2l-2 2m-1.5 1.5L14 9l-1.5-1.5L11 9l1.5 1.5L9 14l-1.5-1.5L6 14l1.5 1.5L4 19a2.828 2.828 0 0 0 4 4l1.5-1.5L11 20l-1.5-1.5L11 17l1.5 1.5L16 15l-1.5-1.5L16 12l1.5 1.5 3.5-3.5a2.828 2.828 0 0 0 0-4z"></path></svg>SHA: #${shortHash}</span>
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border:1px solid ${cardBorder}; border-radius:10px; background:${cardBg}; box-shadow:${shadow}; gap:14px;">
+                            <div style="flex:1; min-width:0;">
+                                <div style="display:flex; gap:6px; align-items:center; margin-bottom:6px; flex-wrap:wrap;">
+                                    <span style="background:#2563eb; color:white; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:700;">${safeTyp}</span>
+                                    <span style="background:${isDark ? '#334155' : '#e2e8f0'}; color:${textColor}; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:600;">${safeKlassen}</span>
+                                    <span style="background:${isDark ? '#334155' : '#e2e8f0'}; color:${textColor}; padding:2px 8px; border-radius:4px; font-size:0.72rem;">${safeJahr}</span>
+                                    <span title="SHA-256 Fingerabdruck" style="background:${isDark ? 'rgba(34,197,94,0.18)' : '#dcfce7'}; color:#16a34a; border:1px solid rgba(34,197,94,0.35); padding:1px 7px; border-radius:4px; font-family:monospace; font-size:0.72rem; font-weight:700;">SHA: #${shortHash}</span>
                                 </div>
-                                <h4 style="margin:0; color:var(--primary); font-size:0.95rem;">${safeThema}</h4>
-                                <div style="font-size:0.78rem; color:gray;">
-                                    Lektion: ${safeLektion} | Buch: ${safeBuch} | <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle; margin-right:2px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>${safeFileName}
+                                <h4 style="margin:0 0 4px 0; color:${isDark ? '#60a5fa' : '#1e3a8a'}; font-size:1rem; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${safeThema}</h4>
+                                <div style="font-size:0.78rem; color:${metaColor}; line-height:1.4;">
+                                    Lektion: <strong>${safeLektion}</strong> | Buch: <strong>${safeBuch}</strong> | 📄 ${safeFileName}
                                 </div>
                             </div>
-                            <button type="button" data-swarm-download="1" data-doc-id="${safeDocId}" data-peer-id="${safePeerId}" style="display:flex; align-items:center; gap:6px; padding:8px 14px; background:var(--accent); color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:0.82rem;">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> <span>Laden</span>
+                            <button type="button" data-swarm-download="1" data-doc-id="${safeDocId}" data-peer-id="${safePeerId}" style="display:flex; align-items:center; gap:8px; padding:10px 18px; background:#2563eb; color:#ffffff; border:none; border-radius:8px; font-weight:700; cursor:pointer; font-size:0.85rem; box-shadow:0 2px 6px rgba(37,99,235,0.35); flex-shrink:0;">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                <span>${i18n.download || 'Laden'}</span>
                             </button>
                         </div>
                     `;
@@ -1627,19 +1655,19 @@
         } else {
             if (localCatalog.length === 0) {
                 wrap.innerHTML = `
-                    <div style="text-align:center; padding: 40px 20px; color: gray;">
-                        <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" style="color:var(--primary); opacity:0.6; margin-bottom:10px;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-                        <h4 style="margin:0 0 8px 0; color:var(--text);">Sie teilen derzeit keine Dokumente</h4>
-                        <p style="margin:0; font-size:0.85rem; max-width:480px; margin:auto;">
-                            Um ein Dokument mit der Community zu teilen, öffnen Sie das Dokument in der Vollansicht und klicken Sie im Teilen-Menü auf „In Community-Schwarm teilen“.
+                    <div style="text-align:center; padding: 48px 20px; color: ${metaColor};">
+                        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="1.75" style="opacity:0.75; margin-bottom:12px;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                        <h4 style="margin:0 0 8px 0; color:${textColor}; font-size:1.05rem;">${i18n.noSharedLocal}</h4>
+                        <p style="margin:0; font-size:0.86rem; max-width:480px; margin:auto; line-height:1.5;">
+                            ${i18n.noSharedLocalHint}
                         </p>
                     </div>
                 `;
             } else {
                 let html = `
-                    <div style="display:flex; flex-direction:column; gap:10px;">
-                        <div style="font-size:0.85rem; color:gray; margin-bottom:4px;">
-                            Sie stellen ${localCatalog.length} Dokument(e) für andere Lehrkräfte bereit:
+                    <div style="display:flex; flex-direction:column; gap:12px;">
+                        <div style="font-size:0.85rem; color:${metaColor}; margin-bottom:2px; font-weight:600;">
+                            Vous partagez ${localCatalog.length} document(s) dans l'essaim :
                         </div>
                 `;
 
@@ -1653,19 +1681,19 @@
                     const shortHash = doc.fileHash ? escapeHtml(doc.fileHash.substring(0, 6).toUpperCase()) : 'LOCAL';
 
                     html += `
-                        <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border:1px solid var(--border); border-radius:8px; background:var(--surface);">
-                            <div>
-                                <div style="display:flex; gap:6px; align-items:center; margin-bottom:4px; flex-wrap:wrap;">
-                                    <span style="background:var(--primary); color:white; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:bold;">${safeTyp}</span>
-                                    <span style="background:var(--border); padding:2px 8px; border-radius:4px; font-size:0.72rem;">${safeKlassen}</span>
-                                    <span style="background:var(--border); padding:2px 8px; border-radius:4px; font-size:0.72rem;">${safeJahr}</span>
-                                    <span style="background:rgba(40,167,69,0.15); color:#28a745; padding:1px 6px; border-radius:4px; font-family:monospace; font-size:0.7rem; font-weight:bold;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle; margin-right:3px;"><path d="M21 2l-2 2m-1.5 1.5L14 9l-1.5-1.5L11 9l1.5 1.5L9 14l-1.5-1.5L6 14l1.5 1.5L4 19a2.828 2.828 0 0 0 4 4l1.5-1.5L11 20l-1.5-1.5L11 17l1.5 1.5L16 15l-1.5-1.5L16 12l1.5 1.5 3.5-3.5a2.828 2.828 0 0 0 0-4z"></path></svg>SHA: #${shortHash}</span>
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border:1px solid ${cardBorder}; border-radius:10px; background:${cardBg}; box-shadow:${shadow}; gap:14px;">
+                            <div style="flex:1; min-width:0;">
+                                <div style="display:flex; gap:6px; align-items:center; margin-bottom:6px; flex-wrap:wrap;">
+                                    <span style="background:#2563eb; color:white; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:700;">${safeTyp}</span>
+                                    <span style="background:${isDark ? '#334155' : '#e2e8f0'}; color:${textColor}; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:600;">${safeKlassen}</span>
+                                    <span style="background:${isDark ? '#334155' : '#e2e8f0'}; color:${textColor}; padding:2px 8px; border-radius:4px; font-size:0.72rem;">${safeJahr}</span>
+                                    <span style="background:${isDark ? 'rgba(34,197,94,0.18)' : '#dcfce7'}; color:#16a34a; border:1px solid rgba(34,197,94,0.35); padding:1px 7px; border-radius:4px; font-family:monospace; font-size:0.72rem; font-weight:700;">SHA: #${shortHash}</span>
                                 </div>
-                                <h4 style="margin:0; color:var(--primary); font-size:0.95rem;">${safeThema}</h4>
-                                <div style="font-size:0.78rem; color:gray;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle; margin-right:2px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>${safeFileName}</div>
+                                <h4 style="margin:0 0 4px 0; color:${isDark ? '#60a5fa' : '#1e3a8a'}; font-size:1rem; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${safeThema}</h4>
+                                <div style="font-size:0.78rem; color:${metaColor};">📄 ${safeFileName}</div>
                             </div>
-                            <button type="button" data-swarm-stop="1" data-doc-id="${safeDocId}" style="padding:6px 12px; background:#dc3545; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:0.8rem;">
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg> <span>Teilen beenden</span>
+                            <button type="button" data-swarm-stop="1" data-doc-id="${safeDocId}" style="padding:8px 14px; background:#dc2626; color:white; border:none; border-radius:6px; font-weight:700; cursor:pointer; font-size:0.8rem; flex-shrink:0;">
+                                <span>${i18n.stopShare || 'Teilen beenden'}</span>
                             </button>
                         </div>
                     `;
@@ -1683,7 +1711,6 @@
         }
     }
 
-    // Export both OsirisSecurity and EduHybridShare globally (Immutable / Frozen)
     const osirisSecurityApi = Object.freeze({
         escapeHtml: escapeHtml,
         clampString: clampString,

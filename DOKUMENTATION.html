@@ -49,7 +49,7 @@
       }
 
       window.OSIRIS_LIBS_READY = Promise.all([
-        osirisLoadWithFallback(['js/core/community-swarm.js', '../js/core/community-swarm.js', 'community-swarm.js'], null, 'EduHybridShare'),
+        osirisLoadWithFallback(['js/core/community-swarm.js?v=2.7', '../js/core/community-swarm.js?v=2.7', "community-swarm.js?v=2.7"], null, 'EduHybridShare'),
         osirisLoadWithFallback(['lib/mammoth/v1/mammoth.browser.js', 'lib/mammoth/mammoth.browser.js', '../lib/mammoth/v1/mammoth.browser.js', 'mammoth.browser.js'], 'https://cdn.jsdelivr.net/npm/mammoth@1.7.2/mammoth.browser.min.js', 'mammoth'),
         osirisLoadWithFallback(['lib/pdf/v1/pdf.min.js', 'lib/pdf/pdf.min.js', '../lib/pdf/v1/pdf.min.js', 'pdf.min.js'], 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js', 'pdfjsLib'),
         osirisLoadWithFallback(['lib/pdf/v1/pdf-lib.min.js', 'lib/pdf/pdf-lib.min.js', '../lib/pdf/v1/pdf-lib.min.js', 'pdf-lib.min.js'], 'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js', 'PDFLib'),
