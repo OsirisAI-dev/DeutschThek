@@ -1028,7 +1028,7 @@
         idb = e.target.result;
         renderResults();
         seedDictionaryFromDB(); seedDoktypDictionary();
-        window.OSIRIS_LIBS_READY.then(() => { window.OSIRIS_LIBS_READY.then(() => { if (window.EduHybridShare) EduHybridShare.init({ dbName: "DokumentationDB", storeName: "documents", docTypeLabel: "Doktyp", onDocImported: () => renderResults() }); }); });
+        window.OSIRIS_LIBS_READY.then(() => { if (window.EduHybridShare) EduHybridShare.init({ dbName: "DokumentationDB", storeName: "documents", docTypeLabel: "Doktyp", onDocImported: () => renderResults() }); });
     };
     request.onerror = (e) => { console.error("IndexedDB error:", e); };
 

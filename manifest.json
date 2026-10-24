@@ -1,0 +1,16 @@
+{
+  "name": "DeutschThek — Edu Hub",
+  "short_name": "DeutschThek",
+  "description": "Digitale Plattform für Deutschlehrer: Testbank, Dokumentation, Wiki und P2P-Austausch",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#007aff",
+  "categories": [
+    "education",
+    "productivity"
+  ],
+  "lang": "de"
+}

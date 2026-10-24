@@ -2,34 +2,40 @@
 <html lang="fr" data-theme="light">
 <head>
     <meta charset="UTF-8">
-    <link rel="manifest" href="../manifest.json">
+    <link rel="manifest" href="./manifest.json">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Editeur de Fiche de Cours Pro</title>
     
     <script>
-      function osirisLoadWithFallback(localSrc, cdnSrc, testGlobal) {
+      function osirisLoadWithFallback(localSources, cdnSrc, testGlobal) {
         return new Promise((resolve) => {
           if (testGlobal && window[testGlobal]) { resolve(true); return; }
-          const local = document.createElement('script');
-          local.src = localSrc;
-          local.onload = () => resolve(true);
-          local.onerror = () => {
-            console.warn('[Osiris] lokale Datei fehlt/fehlgeschlagen, versuche CDN:', localSrc);
-            const cdn = document.createElement('script');
-            cdn.src = cdnSrc;
-            cdn.onload = () => resolve(true);
-            cdn.onerror = () => {
-              console.error('[Osiris] CDN-Fallback ebenfalls fehlgeschlagen:', cdnSrc);
+          const sources = Array.isArray(localSources) ? [...localSources] : [localSources];
+          function tryNext() {
+            if (testGlobal && window[testGlobal]) { resolve(true); return; }
+            if (sources.length > 0) {
+              const src = sources.shift();
+              const script = document.createElement('script');
+              script.src = src;
+              script.onload = () => resolve(true);
+              script.onerror = () => { tryNext(); };
+              document.head.appendChild(script);
+            } else if (cdnSrc) {
+              const cdn = document.createElement('script');
+              cdn.src = cdnSrc;
+              cdn.onload = () => resolve(true);
+              cdn.onerror = () => { resolve(false); };
+              document.head.appendChild(cdn);
+            } else {
               resolve(false);
-            };
-            document.head.appendChild(cdn);
-          };
-          document.head.appendChild(local);
+            }
+          }
+          tryNext();
         });
       }
 
       window.OSIRIS_LIBS_READY = Promise.all([
-        osirisLoadWithFallback('../lib/htmldocx/v1/html-docx.js', 'https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.js', 'htmlDocx')
+        osirisLoadWithFallback(['lib/htmldocx/v1/html-docx.js', 'lib/htmldocx/html-docx.js', '../lib/htmldocx/v1/html-docx.js'], 'https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.js', 'htmlDocx')
       ]);
     </script>
     <script>

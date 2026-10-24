@@ -1316,45 +1316,15 @@
         if (modal) modal.style.display = 'none';
     }
 
-    function joinCustomRoom(roomName) {
-        const clean = (roomName || '').replace(/[^a-z0-9\-]/gi, '').toLowerCase().substring(0, 24);
-        if (!clean) return;
-        activeSwarmRoom = clean;
-        try { sessionStorage.setItem('osiris_swarm_room', clean); } catch (e) {}
-        remoteCatalog.clear();
-        webrtcConnections.forEach(c => { try { c.close(); } catch(e) {} });
-        webrtcConnections.clear();
-        peerToWebrtcMap.clear();
-        initWebRtcSwarm();
-    }
-
-    function connectDirectPeer(peerInput) {
-        const target = (peerInput || '').trim();
-        if (!target) return;
-        if (target.startsWith('osiris-') || target.startsWith('peer_')) {
-            connectToWebRtcPeer(target);
-            alert(`Verbindungsanfrage an ${target} gesendet.`);
-        } else {
-            joinCustomRoom(target);
-            alert(`Swarm-Raum gewechselt zu „${target}".`);
-        }
-    }
-
     
     const SWARM_STRINGS = {
         FR: {
             title: "Essaim Communautaire (P2P Décentralisé)",
             sub: "Partage direct navigateur-à-navigateur · Multi-appareils sur GitHub · Zéro compte",
-            directNotice: "✨ Connexion directe automatique : Tous les collègues ouvrant cette page partagent directement leurs documents !",
-            privateHint: "💡 Salon privé (Optionnel) : Entrez un nom de salon (ex: collège-paris) ou collez l'ID d'un collègue.",
-            roomLabel: "Salon",
+            directNotice: "✨ Connexion directe automatique : Tous les collègues ouvrant cette page partagent directement leurs documents !",ID d'un collègue.",
             activeP2p: "P2P Mondial actif",
             connecting: "Connexion à l'essaim P2P...",
             localOnly: "Essaim local (onglet)",
-            copyBtn: "Copier mon ID",
-            copied: "ID copié dans le presse-papier !",
-            directPh: "Nom de salon / Peer-ID...",
-            connectBtn: "Rejoindre",
             tabRemote: "Documents disponibles dans l'essaim",
             tabLocal: "Mes documents partagés",
             noPeers: "Aucun autre collègue actif dans cet essaim pour le moment",
@@ -1371,15 +1341,9 @@
             title: "Community Swarm (Decentralized P2P)",
             sub: "Direct Browser-to-Browser · Cross-Device on GitHub · Zero Accounts",
             directNotice: "✨ Automatic Direct Connection: All colleagues on this page can exchange files directly without any code!",
-            privateHint: "💡 Private Room (Optional): Type a room name (e.g. grade-8a) or paste a peer ID to connect privately.",
-            roomLabel: "Room",
             activeP2p: "Global P2P Active",
             connecting: "Connecting to P2P Swarm...",
             localOnly: "Local Browser Swarm",
-            copyBtn: "Copy my ID",
-            copied: "ID copied to clipboard!",
-            directPh: "Room name / Peer-ID...",
-            connectBtn: "Connect",
             tabRemote: "Available Documents in Swarm",
             tabLocal: "My Shared Documents",
             noPeers: "No other peers active in this swarm right now",
@@ -1396,15 +1360,9 @@
             title: "Community-Schwarm (Dezentrales WebRTC P2P)",
             sub: "Zero-Knowledge · Browser-to-Browser · Cross-Device auf GitHub Hosting",
             directNotice: "✨ Automatische Direktverbindung: Alle Kollegen auf dieser Seite tauschen Dokumente direkt ohne Code aus!",
-            privateHint: "💡 Privater Raum (Optional): Raum-Name (z.B. klasse-8a) eingeben oder Peer-ID einfügen.",
-            roomLabel: "Raum",
             activeP2p: "Global P2P aktiv",
             connecting: "Verbinde mit Globalem Swarm...",
             localOnly: "Lokaler Browser-Swarm",
-            copyBtn: "Kopieren",
-            copied: "Peer-ID in die Zwischenablage kopiert!",
-            directPh: "Raum-Code / Peer-ID...",
-            connectBtn: "Verbinden",
             tabRemote: "Verfügbare Dokumente im Schwarm",
             tabLocal: "Meine geteilten Dokumente",
             noPeers: "Keine weiteren Peers im Schwarm aktiv",
