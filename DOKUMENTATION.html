@@ -2875,7 +2875,17 @@ function saveEntry() {
         const editMode = document.getElementById('edit-mode-cb').checked;
         const filterOnlyUpdates = document.getElementById('filter-updates-cb') && document.getElementById('filter-updates-cb').checked;
 
-        const tx = idb.transaction(["documents"], "readonly");
+        let tx;
+        try {
+            tx = idb.transaction(["documents"], "readonly");
+        } catch (err) {
+            const req = indexedDB.open("DokumentationDB", 1);
+            req.onsuccess = (e) => {
+                idb = e.target.result;
+                renderResults();
+            };
+            return;
+        }
         const store = tx.objectStore("documents");
         const req = store.getAll();
 

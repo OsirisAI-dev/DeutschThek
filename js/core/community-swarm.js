@@ -180,14 +180,24 @@
             'data:image/jpg;base64,',
             'data:image/webp;base64,',
             'data:image/gif;base64,',
-            'data:text/plain;base64,'
+            'data:text/plain;base64,',
+            'data:application/octet-stream;base64,',
+            'data:binary/octet-stream;base64,'
         ];
         const lower = trimmed.substring(0, 100).toLowerCase();
-        if (allowedPrefixes.some(p => lower.startsWith(p))) {
+        if (allowedPrefixes.some(p => lower.startsWith(p)) || (lower.startsWith('data:') && lower.includes(';base64,'))) {
+            // Block dangerous web executable MIME types
+            if (lower.startsWith('data:text/html') ||
+                lower.startsWith('data:application/javascript') ||
+                lower.startsWith('data:text/javascript') ||
+                lower.startsWith('data:image/svg+xml')) {
+                return '';
+            }
             const commaIdx = trimmed.indexOf(',');
             if (commaIdx === -1) return '';
             const b64 = trimmed.substring(commaIdx + 1).replace(/\s+/g, '');
-            if (!/^[A-Za-z0-9+/=]+$/.test(b64)) return '';
+            // Verify base64 charset without regex stack explosion on multi-megabyte strings
+            if (!/^[A-Za-z0-9+/=]+$/.test(b64.substring(0, 500))) return '';
             return trimmed.substring(0, commaIdx + 1) + b64;
         }
         return '';
@@ -1220,26 +1230,34 @@
         });
     }
 
-    function sendOverConn(conn, packet) {
+    async function sendOverConn(conn, packet) {
         if (!conn || !conn.open) return;
         try {
             const jsonStr = JSON.stringify(packet);
             if (jsonStr.length <= CHUNK_SIZE) {
                 conn.send(packet);
-            } else {
-                // Chunk large packets (e.g. DELIVER_DOC with full PDF bytes)
-                const transferId = generateCryptoHex(8);
-                const totalChunks = Math.ceil(jsonStr.length / CHUNK_SIZE);
-                for (let i = 0; i < totalChunks; i++) {
-                    const chunkSlice = jsonStr.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-                    conn.send({
-                        type: 'SWARM_CHUNK',
-                        sender: myPeerId,
-                        transferId: transferId,
-                        chunkIndex: i,
-                        totalChunks: totalChunks,
-                        data: chunkSlice
-                    });
+                return;
+            }
+            // Chunk large packets (e.g. DELIVER_DOC with full PDF bytes)
+            const transferId = generateCryptoHex(8);
+            const totalChunks = Math.ceil(jsonStr.length / CHUNK_SIZE);
+            for (let i = 0; i < totalChunks; i++) {
+                if (!conn || !conn.open) break;
+                const chunkSlice = jsonStr.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+                conn.send({
+                    type: 'SWARM_CHUNK',
+                    sender: myPeerId,
+                    transferId: transferId,
+                    chunkIndex: i,
+                    totalChunks: totalChunks,
+                    data: chunkSlice
+                });
+                // Flow control / backpressure check to prevent RTCDataChannel buffer overflow
+                const dc = conn.dataChannel;
+                if (dc && dc.bufferedAmount > 64 * 1024) {
+                    await new Promise(r => setTimeout(r, 20));
+                } else if (i % 2 === 0) {
+                    await new Promise(r => setTimeout(r, 6));
                 }
             }
         } catch (e) {
@@ -1453,8 +1471,11 @@
                 if (msg.target === myPeerId) {
                     const reqDocId = Number(msg.docId);
                     const reqToken = typeof msg.requestToken === 'string' && /^[a-f0-9]{16,64}$/i.test(msg.requestToken) ? msg.requestToken : '';
-                    if (reqDocId && reqToken && isDocShared(reqDocId)) {
-                        serveDocToPeer(reqDocId, msg.sender, reqToken);
+                    if (reqDocId && reqToken) {
+                        const inCatalog = (localCatalog || []).some(d => d && (d.id == reqDocId || String(d.id) === String(reqDocId)));
+                        if (inCatalog || isDocShared(reqDocId)) {
+                            serveDocToPeer(reqDocId, msg.sender, reqToken);
+                        }
                     }
                 }
                 break;
@@ -1463,15 +1484,27 @@
                 if (msg.target === myPeerId && msg.payload) {
                     const deliveredId = Number(msg.payload.id);
                     const reqKey = `${msg.sender}:${deliveredId}`;
-                    const pending = pendingRequests.get(reqKey);
+                    let pending = pendingRequests.get(reqKey);
+
+                    // Robust fallback: also match pending requests by requestToken in case ID or sender formatting differs
+                    if (!pending && msg.requestToken) {
+                        for (const [k, v] of pendingRequests.entries()) {
+                            if (v && v.token === msg.requestToken && Date.now() <= v.expiresAt) {
+                                pending = v;
+                                pendingRequests.delete(k);
+                                break;
+                            }
+                        }
+                    } else {
+                        pendingRequests.delete(reqKey);
+                    }
+
                     // Block unsolicited, expired, or forged document pushes
                     if (!pending || Date.now() > pending.expiresAt || pending.token !== msg.requestToken) {
-                        pendingRequests.delete(reqKey);
                         console.warn('[Osiris Security] Blocked unsolicited or forged DELIVER_DOC from', msg.sender);
                         return;
                     }
                     const isAuto = !!(pending && pending.isAutoSync);
-                    pendingRequests.delete(reqKey);
                     receiveDocFromPeer(msg.payload, isAuto);
                 }
                 break;
@@ -1501,24 +1534,43 @@
 
     // Searches both DokumentationDB and TestBankDB to serve requested document
     function serveDocToPeer(docId, targetPeerId, requestToken) {
-        if (!isDocShared(docId)) return;
+        const inCatalog = (localCatalog || []).find(d => d && (d.id == docId || String(d.id) === String(docId)));
+        if (!inCatalog && !isDocShared(docId)) return;
+
         const dbsToTry = [currentConfig.dbName, currentConfig.dbName === 'DokumentationDB' ? 'TestBankDB' : 'DokumentationDB'];
 
         function tryDb(idx) {
-            if (idx >= dbsToTry.length) return;
+            if (idx >= dbsToTry.length) {
+                // In-memory fallback if IndexedDB search exhausted but fileData exists
+                if (inCatalog && inCatalog.fileData) {
+                    sendSwarmPacket({
+                        type: 'DELIVER_DOC',
+                        sender: myPeerId,
+                        target: targetPeerId,
+                        requestToken: requestToken,
+                        payload: sanitizeDocRecord(inCatalog)
+                    }, targetPeerId);
+                }
+                return;
+            }
             const dbName = dbsToTry[idx];
             try {
                 const req = indexedDB.open(dbName);
                 req.onsuccess = (e) => {
                     const db = e.target.result;
                     if (!db.objectStoreNames.contains('documents')) {
+                        db.close();
                         tryDb(idx + 1);
                         return;
                     }
                     const tx = db.transaction(['documents'], 'readonly');
                     const store = tx.objectStore('documents');
-                    store.get(Number(docId)).onsuccess = (ev) => {
-                        const item = ev.target.result;
+
+                    const numId = Number(docId);
+                    const strId = String(docId);
+
+                    function deliver(item) {
+                        db.close();
                         if (item) {
                             sendSwarmPacket({
                                 type: 'DELIVER_DOC',
@@ -1530,7 +1582,45 @@
                         } else {
                             tryDb(idx + 1);
                         }
-                    };
+                    }
+
+                    // Try numeric ID first
+                    const getReq = !isNaN(numId) ? store.get(numId) : null;
+                    if (getReq) {
+                        getReq.onsuccess = (ev) => {
+                            if (ev.target.result) {
+                                deliver(ev.target.result);
+                            } else {
+                                // Try string ID
+                                const getStrReq = store.get(strId);
+                                getStrReq.onsuccess = (ev2) => {
+                                    if (ev2.target.result) {
+                                        deliver(ev2.target.result);
+                                    } else {
+                                        fallbackScan();
+                                    }
+                                };
+                                getStrReq.onerror = () => fallbackScan();
+                            }
+                        };
+                        getReq.onerror = () => fallbackScan();
+                    } else {
+                        fallbackScan();
+                    }
+
+                    function fallbackScan() {
+                        const allReq = store.getAll();
+                        allReq.onsuccess = (evAll) => {
+                            const items = evAll.target.result || [];
+                            const match = items.find(it => 
+                                it && (it.id == docId || String(it.id) === strId ||
+                                (inCatalog && inCatalog.fileName && it.fileName === inCatalog.fileName) ||
+                                (inCatalog && inCatalog.fileHash && it.fileHash === inCatalog.fileHash))
+                            );
+                            deliver(match);
+                        };
+                        allReq.onerror = () => deliver(null);
+                    }
                 };
                 req.onerror = () => tryDb(idx + 1);
             } catch (err) {
@@ -1587,59 +1677,72 @@
         });
 
         if (alreadyExists) {
-            console.log(`[Osiris P2P Auto-Save] Dokument „${docItem.thema}" existiert bereits in der Datenbank. Kein Duplikat angelegt.`);
+            console.log(`[Osiris P2P Auto-Save] Dokument „${docItem.thema}" existiert bereits in der Datenbank.`);
+            if (window.knownLocalHashes) window.knownLocalHashes.add(computedHash);
+            trackUpdatedDoc(docItem.id, computedHash);
             if (!isAuto) {
-                showSwarmToast(`ℹ️ Das Dokument „${docItem.thema}" existiert bereits in Ihrer Datenbank.`, 'info');
+                showSwarmToast(`ℹ️ Das Dokument „${docItem.thema}" ist bereits in Ihrer Datenbank gespeichert.`, 'info');
             }
+            broadcastDataReload(docItem);
             renderSwarmModalContent();
             return;
         }
 
-        // 4. Save sanitized record into target IndexedDB
-        const targetDb = docItem.sourceDb || currentConfig.dbName;
+        // 4. Save sanitized record into target IndexedDB (both sourceDb and currentConfig.dbName so it shows immediately)
+        const primaryDb = docItem.sourceDb || currentConfig.dbName || 'DokumentationDB';
         const targetStore = currentConfig.storeName || 'documents';
 
-        try {
-            const req = indexedDB.open(targetDb);
-            req.onsuccess = (e) => {
-                const db = e.target.result;
-                if (!db.objectStoreNames.contains(targetStore)) {
-                    db.close();
-                    return;
-                }
-                const tx = db.transaction([targetStore], 'readwrite');
-                const store = tx.objectStore(targetStore);
+        const newItem = Object.assign({}, docItem, {
+            id: Date.now() + Math.floor(Math.random() * 1000),
+            fileHash: computedHash,
+            fileSize: u8.length,
+            date: new Date().toLocaleDateString(),
+            isSwarmImport: true,
+            isUpdated: true,
+            importedAt: Date.now()
+        });
 
-                const newItem = Object.assign({}, docItem, {
-                    id: Date.now() + Math.floor(Math.random() * 1000),
-                    fileHash: computedHash,
-                    fileSize: u8.length,
-                    date: new Date().toLocaleDateString(),
-                    isSwarmImport: true,
-                    isUpdated: true,
-                    importedAt: Date.now()
-                });
-
-                store.add(newItem);
-                tx.oncomplete = () => {
-                    db.close();
-                    const fp = computedHash.substring(0, 6).toUpperCase();
-                    if (window.knownLocalHashes) window.knownLocalHashes.add(computedHash);
-                    trackUpdatedDoc(newItem.id, computedHash);
-
-                    const toastMsg = isAuto
-                        ? `📥 P2P: „${newItem.thema}" automatisch in Datenbank gespeichert (SHA-256 #${fp})`
-                        : `✅ Dokument „${newItem.thema}" erfolgreich geprüft (SHA-256 #${fp}) und gespeichert!`;
-                    showSwarmToast(toastMsg, 'success');
-
-                    broadcastDataReload(newItem);
-                    renderSwarmModalContent();
-                };
-                tx.onerror = () => { db.close(); };
-            };
-        } catch (err) {
-            console.error('Save imported doc error:', err);
+        const dbsToSave = [primaryDb];
+        if (currentConfig.dbName && !dbsToSave.includes(currentConfig.dbName)) {
+            dbsToSave.push(currentConfig.dbName);
         }
+
+        let savedCount = 0;
+        dbsToSave.forEach(dbName => {
+            try {
+                const req = indexedDB.open(dbName);
+                req.onsuccess = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains(targetStore)) {
+                        db.close();
+                        return;
+                    }
+                    const tx = db.transaction([targetStore], 'readwrite');
+                    const store = tx.objectStore(targetStore);
+                    store.add(newItem);
+                    tx.oncomplete = () => {
+                        db.close();
+                        savedCount++;
+                        if (savedCount === 1) {
+                            const fp = computedHash.substring(0, 6).toUpperCase();
+                            if (window.knownLocalHashes) window.knownLocalHashes.add(computedHash);
+                            trackUpdatedDoc(newItem.id, computedHash);
+
+                            const toastMsg = isAuto
+                                ? `📥 P2P: „${newItem.thema}" automatisch in Datenbank gespeichert (SHA-256 #${fp})`
+                                : `✅ Dokument „${newItem.thema}" erfolgreich geprüft (SHA-256 #${fp}) und gespeichert!`;
+                            showSwarmToast(toastMsg, 'success');
+
+                            broadcastDataReload(newItem);
+                            renderSwarmModalContent();
+                        }
+                    };
+                    tx.onerror = () => { db.close(); };
+                };
+            } catch (err) {
+                console.error('Save imported doc error:', err);
+            }
+        });
     }
 
     function broadcastDataReload(savedDoc) {
@@ -1999,12 +2102,16 @@
                 const docId = Number(dlBtn.getAttribute('data-doc-id'));
                 const peerId = dlBtn.getAttribute('data-peer-id') || '';
                 dlBtn.disabled = true;
+                dlBtn.style.opacity = '0.8';
                 dlBtn.innerHTML = `<span>${i18n.downloading || 'Lade...'}</span>`;
                 requestDocDownload(docId, peerId);
                 setTimeout(() => {
-                    dlBtn.disabled = false;
-                    dlBtn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> <span>${i18n.download || 'Laden'}</span>`;
-                }, 3000);
+                    if (dlBtn && dlBtn.disabled && dlBtn.textContent.includes('Lade')) {
+                        dlBtn.disabled = false;
+                        dlBtn.style.opacity = '1';
+                        dlBtn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> <span>${i18n.download || 'Laden'}</span>`;
+                    }
+                }, 8000);
                 return;
             }
             const stopBtn = e.target.closest('[data-swarm-stop]');
@@ -2144,6 +2251,19 @@
                     const safeDocId = Number(doc.id) || 0;
                     const shortHash = doc.fileHash ? escapeHtml(doc.fileHash.substring(0, 6).toUpperCase()) : 'UNVERIFIED';
 
+                    const isAlreadySaved = (doc.fileHash && window.knownLocalHashes && window.knownLocalHashes.has(doc.fileHash.toLowerCase())) ||
+                                           (doc.fileName && doc.fileSize && window.knownLocalFileKeys && window.knownLocalFileKeys.has(String(doc.fileName).toLowerCase().trim() + '_' + doc.fileSize));
+
+                    const actionBtnHtml = isAlreadySaved
+                        ? `<button type="button" disabled style="display:flex; align-items:center; gap:8px; padding:10px 18px; background:#16a34a; color:#ffffff; border:none; border-radius:8px; font-weight:700; font-size:0.85rem; opacity:0.95; cursor:default; flex-shrink:0;">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                <span>In Datenbank</span>
+                           </button>`
+                        : `<button type="button" data-swarm-download="1" data-doc-id="${safeDocId}" data-peer-id="${safePeerId}" style="display:flex; align-items:center; gap:8px; padding:10px 18px; background:#2563eb; color:#ffffff; border:none; border-radius:8px; font-weight:700; cursor:pointer; font-size:0.85rem; box-shadow:0 2px 6px rgba(37,99,235,0.35); flex-shrink:0;">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                <span>${i18n.download || 'Laden'}</span>
+                           </button>`;
+
                     html += `
                         <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border:1px solid ${cardBorder}; border-radius:10px; background:${cardBg}; box-shadow:${shadow}; gap:14px;">
                             <div style="flex:1; min-width:0;">
@@ -2151,7 +2271,7 @@
                                     <span style="background:#2563eb; color:white; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:700;">${safeTyp}</span>
                                     <span style="background:${isDark ? '#334155' : '#e2e8f0'}; color:${textColor}; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:600;">${safeKlassen}</span>
                                     <span style="background:${isDark ? '#334155' : '#e2e8f0'}; color:${textColor}; padding:2px 8px; border-radius:4px; font-size:0.72rem;">${safeJahr}</span>
-                                    ${(doc.fileHash && window.knownLocalHashes && window.knownLocalHashes.has(doc.fileHash.toLowerCase())) ? `<span title="Bereits in Ihrer lokalen Datenbank vorhanden" style="background:${isDark ? "rgba(34,197,94,0.22)" : "#dcfce7"}; color:#16a34a; border:1px solid rgba(34,197,94,0.45); padding:1px 7px; border-radius:4px; font-size:0.72rem; font-weight:700;">✅ In Datenbank</span>` : ""}
+                                    ${isAlreadySaved ? `<span title="Bereits in Ihrer lokalen Datenbank vorhanden" style="background:${isDark ? "rgba(34,197,94,0.22)" : "#dcfce7"}; color:#16a34a; border:1px solid rgba(34,197,94,0.45); padding:1px 7px; border-radius:4px; font-size:0.72rem; font-weight:700;">✅ In Datenbank</span>` : ""}
                                     <span title="SHA-256 Fingerabdruck" style="background:${isDark ? 'rgba(34,197,94,0.18)' : '#dcfce7'}; color:#16a34a; border:1px solid rgba(34,197,94,0.35); padding:1px 7px; border-radius:4px; font-family:monospace; font-size:0.72rem; font-weight:700;">SHA: #${shortHash}</span>
                                 </div>
                                 <h4 style="margin:0 0 4px 0; color:${isDark ? '#60a5fa' : '#1e3a8a'}; font-size:1rem; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${safeThema}</h4>
@@ -2159,10 +2279,7 @@
                                     Lektion: <strong>${safeLektion}</strong> | Buch: <strong>${safeBuch}</strong> | 📄 ${safeFileName}
                                 </div>
                             </div>
-                            <button type="button" data-swarm-download="1" data-doc-id="${safeDocId}" data-peer-id="${safePeerId}" style="display:flex; align-items:center; gap:8px; padding:10px 18px; background:#2563eb; color:#ffffff; border:none; border-radius:8px; font-weight:700; cursor:pointer; font-size:0.85rem; box-shadow:0 2px 6px rgba(37,99,235,0.35); flex-shrink:0;">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                                <span>${i18n.download || 'Laden'}</span>
-                            </button>
+                            ${actionBtnHtml}
                         </div>
                     `;
                 });
@@ -2292,6 +2409,7 @@
         exportSinglePackage: exportSinglePackage,
         trackUpdatedDoc: trackUpdatedDoc,
         isDocAnUpdate: isDocAnUpdate,
+        receiveDocFromPeer: receiveDocFromPeer,
         broadcastDataReload: broadcastDataReload
     });
 
