@@ -562,7 +562,10 @@
 </div>
 
     <div style="margin-top: 15px;">
-        <label data-i18n="uploadFile">DATEI HOCHLADEN (PDF, DOC, DOCX...)</label>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <label data-i18n="uploadFile" style="margin-top:0;">DATEI HOCHLADEN (PDF, DOC, DOCX...)</label>
+            <span id="db-storage-capacity" style="font-size:0.75rem; font-weight:bold; color:var(--text-muted); background:var(--surface); border:1px solid var(--border); padding:2px 8px; border-radius:12px;">0 / 10 Dateien</span>
+        </div>
         <input type="file" id="inp-file" accept=".pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*,text/*,video/*" required style="padding: 10px; background: var(--bg);">
         <div id="file-dup-status" style="display:none; margin-top:8px; padding:10px 12px; border-radius:6px; font-size:0.85rem; align-items:center; gap:8px; border:1px solid var(--border); line-height:1.4;"></div>
     </div>
@@ -2078,7 +2081,7 @@
             pdfDoc.setModificationDate(new Date());
             const infoDict = pdfDoc.context.lookup(pdfDoc.context.trailerInfo.Info);
             infoDict.set(PDFLib.PDFName.of(OSIRIS_META_KEY), PDFLib.PDFHexString.fromText(buildMetaPayload(meta)));
-            const outBytes = await pdfDoc.save();
+            const outBytes = await pdfDoc.save({ useObjectStreams: false });
             return bytesToDataUrl(outBytes, 'application/pdf');
         } catch (err) {
             console.error('PDF-Metadaten-Einbettung fehlgeschlagen, Original wird gespeichert:', err);
@@ -2161,13 +2164,13 @@
     async function readEmbeddedMetaFromPdf(file, preloadedBuffer) {
         try {
             const buffer = preloadedBuffer || await file.arrayBuffer();
-            // Fast binary pre-scan: does the PDF even contain the byte sequence 'OsirisMeineBank'?
-            // If not, avoid loading the 1.08MB PDF.js worker and parsing the whole document!
+            // Fast binary pre-scan & ultra-fast direct extraction (< 2ms)
             const u8 = new Uint8Array(buffer);
             const keyBytes = [79, 115, 105, 114, 105, 115, 77, 101, 105, 110, 101, 66, 97, 110, 107]; // 'OsirisMeineBank'
             let hasKey = false;
+            let keyIdx = -1;
             const searchLimit = Math.min(u8.length - keyBytes.length, 300000);
-            const endStart = Math.max(0, u8.length - 150000);
+            const endStart = Math.max(0, u8.length - 200000);
             function checkRegion(start, end) {
                 for (let i = start; i < end; i++) {
                     if (u8[i] === keyBytes[0]) {
@@ -2175,22 +2178,49 @@
                         for (let k = 1; k < keyBytes.length; k++) {
                             if (u8[i + k] !== keyBytes[k]) { match = false; break; }
                         }
-                        if (match) return true;
+                        if (match) { keyIdx = i; return true; }
                     }
                 }
                 return false;
             }
-            hasKey = checkRegion(0, searchLimit) || checkRegion(endStart, u8.length - keyBytes.length);
+            hasKey = checkRegion(endStart, u8.length - keyBytes.length) || checkRegion(0, searchLimit);
             if (!hasKey) return null;
+
+            // Direct fast extraction from raw PDF trailer/object (< 2ms)
+            if (keyIdx !== -1) {
+                let tail = '';
+                const maxLen = Math.min(u8.length - keyIdx, 30000);
+                for (let i = 0; i < maxLen; i++) tail += String.fromCharCode(u8[keyIdx + i]);
+                const hexMatch = tail.match(/<([0-9a-fA-F\s]+)>/);
+                if (hexMatch) {
+                    const hex = hexMatch[1].replace(/\s+/g, '');
+                    if (hex.length >= 8) {
+                        let text = '';
+                        if (hex.startsWith('FEFF') || hex.startsWith('feff')) {
+                            for (let i = 4; i < hex.length; i += 4) {
+                                const code = parseInt(hex.substr(i, 4), 16);
+                                if (!isNaN(code)) text += String.fromCharCode(code);
+                            }
+                        } else {
+                            for (let i = 0; i < hex.length; i += 2) {
+                                const code = parseInt(hex.substr(i, 2), 16);
+                                if (!isNaN(code)) text += String.fromCharCode(code);
+                            }
+                        }
+                        const directMeta = parseMetaPayload(text);
+                        if (directMeta) return directMeta;
+                    }
+                }
+            }
 
             await window.OSIRIS_LIBS_READY;
             const pdfjsLib = window['pdfjs-dist/build/pdf'] || window.pdfjsLib;
             if (!pdfjsLib) return null;
             pdfjsLib.GlobalWorkerOptions.workerSrc = 'lib/pdf/v1/pdf.worker.min.js';
-            const loadingTask = pdfjsLib.getDocument({ data: buffer, isEvalSupported: false });
+            const loadingTask = pdfjsLib.getDocument({ data: buffer.slice(0), isEvalSupported: false });
             const pdf = await loadingTask.promise;
             const metadata = await pdf.getMetadata();
-            const raw = metadata && metadata.info && metadata.info[OSIRIS_META_KEY];
+            const raw = metadata && metadata.info && (metadata.info[OSIRIS_META_KEY] || (metadata.info.Custom && metadata.info.Custom[OSIRIS_META_KEY]));
             return raw ? parseMetaPayload(raw) : null;
         } catch (e) {
             return null;
@@ -2305,6 +2335,20 @@
 
         if (!file) { hideDuplicateNotice(statusEl); return; }
         if (!idb) return; // DB not ready yet, skip silently
+
+        // Storage capacity limit: max 10 files in IndexedDB to avoid storage bloating
+        if (!window.editingId) {
+            const currentDocCount = window._docMetaCache ? window._docMetaCache.length : 0;
+            if (currentDocCount >= 10) {
+                window.duplicateBlocked = true;
+                setSaveBtnEnabled(false);
+                statusEl.style.display = 'flex';
+                statusEl.style.background = 'rgba(220,53,69,0.12)';
+                statusEl.innerHTML = `<div style="color:#dc3545; font-weight:bold;">⚠️ Kapazitätsgrenze erreicht (10 / 10 Dateien): Um den Speicher nicht zu überlasten, können maximal 10 Dokumente gleichzeitig in der lokalen Datenbank gespeichert werden. Bitte löschen oder exportieren Sie ein Dokument vor dem Hochladen.</div>`;
+                e.target.value = '';
+                return;
+            }
+        }
 
         showCheckingNotice(statusEl);
         setSaveBtnEnabled(false);
@@ -2454,6 +2498,15 @@ function saveEntry() {
         if (window.duplicateBlocked && !window.editingId) {
             alert("Diese Datei ist bereits gespeichert. Bitte bearbeiten Sie den vorhandenen Eintrag, anstatt sie erneut hinzuzufügen.");
             return;
+        }
+
+        // Storage capacity limit safeguard (max 10 files)
+        if (!window.editingId) {
+            const currentDocCount = window._docMetaCache ? window._docMetaCache.length : 0;
+            if (currentDocCount >= 10) {
+                alert("Kapazitätsgrenze erreicht (Maximal 10 Dateien): Um den Browserspeicher nicht zu überlasten, können maximal 10 Dokumente gleichzeitig gespeichert werden. Bitte exportieren oder löschen Sie ältere Einträge.");
+                return;
+            }
         }
 
         let subTyp = [];
@@ -2913,6 +2966,26 @@ function saveEntry() {
                 jahr: item.jahr,
                 typ: item.typ
             }));
+
+            // Update storage capacity badge (max 10 files safeguard)
+            const capEl = document.getElementById('db-storage-capacity');
+            if (capEl) {
+                const count = db.length;
+                capEl.textContent = `${count} / 10 Dateien`;
+                if (count >= 10) {
+                    capEl.style.color = '#dc3545';
+                    capEl.style.borderColor = '#dc3545';
+                    capEl.style.background = 'rgba(220,53,69,0.08)';
+                } else if (count >= 8) {
+                    capEl.style.color = '#ff9800';
+                    capEl.style.borderColor = '#ff9800';
+                    capEl.style.background = 'rgba(255,152,0,0.08)';
+                } else {
+                    capEl.style.color = 'var(--text-muted)';
+                    capEl.style.borderColor = 'var(--border)';
+                    capEl.style.background = 'var(--surface)';
+                }
+            }
 
             // Dynamically refresh unique themes and lessons so updated files show in filters
             const dbThemes = new Set();
