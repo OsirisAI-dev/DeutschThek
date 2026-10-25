@@ -1,25 +1,7 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-25T19:30:00Z",
-  "totalDocuments": 1,
-  "generator": "Osiris Hybrid Swarm Admin v2.0",
-  "documents": [
-    {
-      "id": 9901,
-      "thema": "Offiziell: Passiv & Konjunktiv B2",
-      "typ": "Grammatik",
-      "klasse": "10",
-      "klassen": "10",
-      "schulart": "Gymnasium",
-      "jahr": "2026",
-      "lektion": "Lektion 5",
-      "buch": "Deutsch Plus",
-      "fileName": "Passiv_Konjunktiv_B2_Offiziell.pdf",
-      "fileSize": 54321,
-      "fileHash": "c0ffee1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
-      "sourceDb": "DokumentationDB",
-      "isOfficial": true,
-      "fileData": "data:application/pdf;base64,JVBERi0xLjQKJcTl8uXrp/Og0MTGCjEgMCBvYmoKPDwKL1R5cGUgL0NhdGFsb2cKL1BhZ2VzIDIgMCBSCj4+CmVuZG9iam8KMiAwIG9iaiA8PAovVHlwZSAvUGFnZXMKL0tpZHMgWzMgMCBSXQovQ291bnQgMQo+PgplbmRvYmoKMyAwIG9iaiA8PAovVHlwZSAvUGFnZQovUGFyZW50IDIgMCBSCi9NZWRpYUJveCBbMCAwIDYxMiA3OTJdCj4+CmVuZG9iam8KeHJlZgowIDQKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDE4IDAwMDAwIG4gCjDAwMDAwMDA2NiAwMDAwMCBuIAowMDAwMDAwMTIxIDAwMDAwIG4gCnRyYWlsZXIKPDwKL1NpemUgNAovUm9vdCAxIDAgUgo+PgpzdGFydHhyZWYKMTc4CiUlRU9G"
-    }
-  ]
+  "updatedAt": "2026-10-25T21:00:00Z",
+  "totalDocuments": 0,
+  "generator": "Osiris Hybrid Swarm Official Catalog",
+  "documents": []
 }
