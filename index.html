@@ -1437,7 +1437,8 @@ function loadPrefs() {
   window.addEventListener('message', function (e) {
     if (!isTrustedFrameMessage(e)) return;
     if (e.data && e.data.type === 'RELOAD_DATA') {
-      pushToFrame('RELOAD_DATA');
+      pushToFrame('RELOAD_DATA', e.data.payload);
+      if (typeof refreshBackupCounts === 'function') refreshBackupCounts();
       return;
     }
     if (e.data && (e.data.type === 'THEME_CHANGED' || e.data.type === 'SET_THEME')) {
@@ -1601,10 +1602,18 @@ function loadPrefs() {
     pushToFrame('RELOAD_DATA');
 
     setTimeout(function() {
+      pushToFrame('RELOAD_DATA');
       if (window.EduHybridShare && typeof window.EduHybridShare.updateSwarmBadge === 'function') {
         window.EduHybridShare.updateSwarmBadge();
       }
-    }, 600);
+    }, 1000);
+
+    setTimeout(function() {
+      pushToFrame('RELOAD_DATA');
+      if (window.EduHybridShare && typeof window.EduHybridShare.updateSwarmBadge === 'function') {
+        window.EduHybridShare.updateSwarmBadge();
+      }
+    }, 2500);
   }
 
   function executeSwarmOpenMenu() {
@@ -2191,7 +2200,15 @@ function loadPrefs() {
   
   // Initialize Swarm directly in Hub for instant cross-device discovery
   if (window.EduHybridShare) {
-    EduHybridShare.init({ dbName: 'DokumentationDB', storeName: 'documents', docTypeLabel: 'Doktyp' });
+    EduHybridShare.init({
+      dbName: 'DokumentationDB',
+      storeName: 'documents',
+      docTypeLabel: 'Doktyp',
+      onDocImported: function (savedDoc) {
+        pushToFrame('RELOAD_DATA', { updatedDoc: savedDoc });
+        if (typeof refreshBackupCounts === 'function') refreshBackupCounts();
+      }
+    });
   }
   applyTheme(appState.theme, false);
   applyLang();

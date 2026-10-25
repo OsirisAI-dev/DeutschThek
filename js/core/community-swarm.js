@@ -736,6 +736,33 @@
         }
     }
 
+    function trackUpdatedDoc(id, hash) {
+        try {
+            const stored = JSON.parse(localStorage.getItem('p2p_updated_docs') || '[]');
+            const cleanHash = (hash || '').toLowerCase().trim();
+            const cleanId = Number(id) || 0;
+            const exists = stored.some(s => (cleanId > 0 && Number(s.id) === cleanId) || (cleanHash && s.hash && s.hash.toLowerCase() === cleanHash));
+            if (!exists) {
+                stored.unshift({ id: cleanId, hash: cleanHash, time: Date.now() });
+                if (stored.length > 200) stored.splice(200);
+                localStorage.setItem('p2p_updated_docs', JSON.stringify(stored));
+            }
+        } catch (e) {}
+    }
+
+    function isDocAnUpdate(doc) {
+        if (!doc) return false;
+        if (doc.isSwarmImport || doc.isUpdated) return true;
+        try {
+            const stored = JSON.parse(localStorage.getItem('p2p_updated_docs') || '[]');
+            const docHash = (doc.fileHash || '').toLowerCase().trim();
+            const docId = Number(doc.id) || 0;
+            return stored.some(s => (docId > 0 && Number(s.id) === docId) || (docHash && s.hash && s.hash.toLowerCase() === docHash));
+        } catch (e) {
+            return false;
+        }
+    }
+
     async function refreshLocalDbHashes() {
         window.knownLocalHashes = window.knownLocalHashes || new Set();
         window.knownLocalFileKeys = window.knownLocalFileKeys || new Set();
@@ -1448,6 +1475,27 @@
                     receiveDocFromPeer(msg.payload, isAuto);
                 }
                 break;
+
+            case 'BROADCAST_RELOAD_DATA':
+                if (msg.payload && msg.payload.updatedDoc) {
+                    trackUpdatedDoc(msg.payload.updatedDoc.id, msg.payload.updatedDoc.fileHash);
+                }
+                if (typeof currentConfig.onDocImported === 'function') {
+                    try { currentConfig.onDocImported(msg.payload && msg.payload.updatedDoc); } catch (e) {}
+                }
+                if (typeof window.renderResults === 'function') {
+                    try { window.renderResults(); } catch (e) {}
+                }
+                try {
+                    const frames = document.querySelectorAll('iframe');
+                    frames.forEach(f => {
+                        if (f && f.contentWindow) {
+                            f.contentWindow.postMessage({ type: 'RELOAD_DATA', payload: msg.payload }, '*');
+                        }
+                    });
+                } catch (e) {}
+                updateSwarmBadge();
+                break;
         }
     }
 
@@ -1566,7 +1614,10 @@
                     id: Date.now() + Math.floor(Math.random() * 1000),
                     fileHash: computedHash,
                     fileSize: u8.length,
-                    date: new Date().toLocaleDateString()
+                    date: new Date().toLocaleDateString(),
+                    isSwarmImport: true,
+                    isUpdated: true,
+                    importedAt: Date.now()
                 });
 
                 store.add(newItem);
@@ -1574,19 +1625,14 @@
                     db.close();
                     const fp = computedHash.substring(0, 6).toUpperCase();
                     if (window.knownLocalHashes) window.knownLocalHashes.add(computedHash);
+                    trackUpdatedDoc(newItem.id, computedHash);
 
                     const toastMsg = isAuto
                         ? `📥 P2P: „${newItem.thema}" automatisch in Datenbank gespeichert (SHA-256 #${fp})`
                         : `✅ Dokument „${newItem.thema}" erfolgreich geprüft (SHA-256 #${fp}) und gespeichert!`;
                     showSwarmToast(toastMsg, 'success');
 
-                    if (typeof currentConfig.onDocImported === 'function') {
-                        currentConfig.onDocImported();
-                    }
-                    if (window.parent && window.parent !== window) {
-                        window.parent.postMessage({ type: 'RELOAD_DATA' }, '*');
-                    }
-                    window.postMessage({ type: 'RELOAD_DATA' }, '*');
+                    broadcastDataReload(newItem);
                     renderSwarmModalContent();
                 };
                 tx.onerror = () => { db.close(); };
@@ -1594,6 +1640,47 @@
         } catch (err) {
             console.error('Save imported doc error:', err);
         }
+    }
+
+    function broadcastDataReload(savedDoc) {
+        if (savedDoc) {
+            trackUpdatedDoc(savedDoc.id, savedDoc.fileHash);
+        }
+
+        if (typeof currentConfig.onDocImported === 'function') {
+            try { currentConfig.onDocImported(savedDoc); } catch (e) {}
+        }
+
+        if (typeof window.renderResults === 'function') {
+            try { window.renderResults(); } catch (e) {}
+        }
+
+        if (window.parent && window.parent !== window) {
+            try {
+                window.parent.postMessage({ type: 'RELOAD_DATA', payload: { updatedDoc: savedDoc } }, '*');
+            } catch (e) {}
+        }
+
+        try {
+            const frames = document.querySelectorAll('iframe');
+            frames.forEach(f => {
+                if (f && f.contentWindow) {
+                    f.contentWindow.postMessage({ type: 'RELOAD_DATA', payload: { updatedDoc: savedDoc } }, '*');
+                }
+            });
+        } catch (e) {}
+
+        try {
+            if (broadcastChannel) {
+                broadcastChannel.postMessage({ type: 'BROADCAST_RELOAD_DATA', payload: { updatedDoc: savedDoc } });
+            }
+        } catch (e) {}
+
+        try {
+            window.postMessage({ type: 'RELOAD_DATA', payload: { updatedDoc: savedDoc } }, '*');
+        } catch (e) {}
+
+        updateSwarmBadge();
     }
 
     function requestDocDownload(docId, peerId, isAutoSync) {
@@ -2160,7 +2247,9 @@
         getTargetOrigin: getTargetOrigin,
         computeSHA256: computeSHA256,
         MAX_FILE_BYTES: MAX_FILE_BYTES,
-        MAX_P2P_SHARE_BYTES: MAX_P2P_SHARE_BYTES
+        MAX_P2P_SHARE_BYTES: MAX_P2P_SHARE_BYTES,
+        trackUpdatedDoc: trackUpdatedDoc,
+        isDocAnUpdate: isDocAnUpdate
     });
 
     function isAutoShareImportEnabled() {
@@ -2201,6 +2290,9 @@
         validateMagicBytes: validateMagicBytes,
         computeSHA256: computeSHA256,
         exportSinglePackage: exportSinglePackage,
+        trackUpdatedDoc: trackUpdatedDoc,
+        isDocAnUpdate: isDocAnUpdate,
+        broadcastDataReload: broadcastDataReload
     });
 
     try {

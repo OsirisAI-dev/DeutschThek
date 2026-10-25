@@ -603,10 +603,14 @@
         
         <input type="text" id="search-input" data-i18n-ph="searchPh" placeholder="Schlüsselwörter suchen..." oninput="renderResults()">
         
-        <div style="margin-top: 15px; display: flex; align-items: center; gap: 8px;">
+        <div style="margin-top: 15px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <input type="checkbox" id="toggle-filters-cb" onchange="document.getElementById('filters-bar').style.display = this.checked ? 'flex' : 'none';" style="width: auto; margin: 0; cursor: pointer;">
             <label for="toggle-filters-cb" style="margin: 0; cursor: pointer; color: var(--primary); font-weight: bold; font-size: 0.9rem;" data-i18n="showFilters">FILTER ANZEIGEN</label>
             <button id="reset-filters-btn" onclick="resetFilters()" title="Filter zurücksetzen">↺</button>
+            <div id="filter-updates-wrap" style="display: none; align-items: center; gap: 6px; margin-left: auto; background: rgba(22, 163, 74, 0.12); border: 1px solid rgba(22, 163, 74, 0.35); border-radius: 20px; padding: 3px 11px;">
+                <input type="checkbox" id="filter-updates-cb" onchange="renderResults()" style="width: auto; margin: 0; cursor: pointer;">
+                <label for="filter-updates-cb" style="margin: 0; cursor: pointer; color: #16a34a; font-weight: bold; font-size: 0.82rem; user-select: none; display: flex; align-items: center; gap: 4px;">⚡ NUR UPDATES (<span id="updates-count-badge">0</span>)</label>
+            </div>
         </div>
 
         <div class="filters-container" id="filters-bar" style="display: none;">
@@ -1003,6 +1007,7 @@
         document.getElementById('filter-klassen').value = '';
         document.getElementById('filter-thema').value = '';
         document.getElementById('filter-typ').value = '';
+        if (document.getElementById('filter-updates-cb')) document.getElementById('filter-updates-cb').checked = false;
         document.getElementById('toggle-filters-cb').checked = false;
         document.getElementById('filters-bar').style.display = 'none';
         renderResults();
@@ -2804,8 +2809,28 @@ function saveEntry() {
         renderResults();
     }
 
+    function isDocAnUpdate(doc) {
+        if (!doc) return false;
+        if (doc.isSwarmImport || doc.isUpdated) return true;
+        try {
+            const stored = JSON.parse(localStorage.getItem('p2p_updated_docs') || '[]');
+            const docHash = (doc.fileHash || '').toLowerCase().trim();
+            const docId = Number(doc.id) || 0;
+            return stored.some(s => (docId > 0 && Number(s.id) === docId) || (docHash && s.hash && s.hash.toLowerCase() === docHash));
+        } catch (e) {
+            return false;
+        }
+    }
+
     function renderResults() {
-        if (!idb) return;
+        if (!idb) {
+            const req = indexedDB.open("TestBankDB", 1);
+            req.onsuccess = (e) => {
+                idb = e.target.result;
+                renderResults();
+            };
+            return;
+        }
 
         const q = document.getElementById('search-input').value.toLowerCase().trim();
         const fBuch = document.getElementById('filter-buch') ? document.getElementById('filter-buch').value.trim() : '';
@@ -2816,7 +2841,7 @@ function saveEntry() {
         const fTyp = document.getElementById('filter-typ') ? document.getElementById('filter-typ').value : '';
         const deleteMode = document.getElementById('delete-mode-cb').checked;
         const editMode = document.getElementById('edit-mode-cb').checked;
-
+        const filterOnlyUpdates = document.getElementById('filter-updates-cb') && document.getElementById('filter-updates-cb').checked;
 
         const tx = idb.transaction(["documents"], "readonly");
         const store = tx.objectStore("documents");
@@ -2824,22 +2849,35 @@ function saveEntry() {
 
         req.onsuccess = (e) => {
             const db = e.target.result.reverse(); // newest first
-            if (!window._filterThemenInitDone) {
-                window._filterThemenInitDone = true;
-                const dbThemes = new Set();
-                const dbLessons = new Set();
-                db.forEach(item => {
-                    if (item.thema && item.thema.trim()) dbThemes.add(item.thema.trim());
-                    if (item.lektion && item.lektion.trim()) dbLessons.add(item.lektion.trim());
-                });
-                window._dbUniqueThemes = Array.from(dbThemes);
-                window._dbUniqueLessons = Array.from(dbLessons);
+
+            // Dynamically refresh unique themes and lessons so updated files show in filters
+            const dbThemes = new Set();
+            const dbLessons = new Set();
+            let updatesCount = 0;
+            db.forEach(item => {
+                if (item.thema && item.thema.trim()) dbThemes.add(item.thema.trim());
+                if (item.lektion && item.lektion.trim()) dbLessons.add(item.lektion.trim());
+                if (isDocAnUpdate(item)) updatesCount++;
+            });
+            window._dbUniqueThemes = Array.from(dbThemes);
+            window._dbUniqueLessons = Array.from(dbLessons);
+            if (typeof updateFilterThemenUndLektionen === 'function') {
                 updateFilterThemenUndLektionen();
             }
+
+            // Update badge & visibility for update filter
+            const updatesWrap = document.getElementById('filter-updates-wrap');
+            const updatesBadge = document.getElementById('updates-count-badge');
+            if (updatesWrap && updatesBadge) {
+                updatesBadge.textContent = updatesCount;
+                updatesWrap.style.display = updatesCount > 0 ? 'inline-flex' : 'none';
+            }
+
             const container = document.getElementById('results-container');
             container.innerHTML = '';
 
             const filtered = db.filter(item => {
+                if (filterOnlyUpdates && !isDocAnUpdate(item)) return false;
                 const searchTxt = `${item.thema} ${item.lektion} ${item.buch} ${item.fileName}`.toLowerCase();
                 if (q && !searchTxt.includes(q)) return false;
                 if (fBuch && item.buch !== fBuch) return false;
@@ -2865,10 +2903,17 @@ function saveEntry() {
                 const editBtnHtml = editMode ? `<button onclick="editEntry(${safeId}); event.stopPropagation();" style="background:var(--accent); color:white; border:none; padding:6px 12px; border-radius:5px; cursor:pointer; font-size:0.8rem; font-weight:bold; margin-right:6px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle; margin-right:3px;"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>BEARBEITEN</button>` : '';
                 const shortSha = item.fileHash ? `<span title="SHA-256 Integritäts-Hash" style="font-family:monospace; font-size:0.72rem; color:#28a745; margin-left:4px;">#${escapeHtml(String(item.fileHash).substring(0, 6).toUpperCase())}</span>` : '';
 
+                const isUpdate = isDocAnUpdate(item);
+                if (isUpdate) {
+                    card.style.borderLeft = '4px solid #16a34a';
+                }
+                const updatePill = isUpdate ? `<span class="pill" style="background:#16a34a; color:white; font-weight:bold; box-shadow:0 0 6px rgba(22,163,74,0.35); display:inline-flex; align-items:center; gap:3px;" title="Über P2P-Schwarm aktualisiert">⚡ UPDATE</span>` : '';
+
                 card.innerHTML = `
                     <div style="display:flex; justify-content:space-between; align-items:flex-start;">
                         <div>
                             <div class="pill-container">
+                                ${updatePill}
                                 <span class="pill">${escapeHtml(item.typ)}</span>
                                 <span class="pill" style="background:var(--primary); color:white;">${escapeHtml(item.klassen)}</span>
                                 <span class="pill" style="background:var(--border);">${escapeHtml(item.jahr)}</span>
