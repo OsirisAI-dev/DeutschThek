@@ -2685,8 +2685,8 @@
             inboxWaiting: "Dokument(e) im Vorab-Puffer bereit zur Übernahme :",
             noPeers: "Keine weiteren Peers im Schwarm aktiv",
             noPeersHint: "Sobald sich andere Lehrkräfte auf GitHub Pages befinden und Dokumente bereitstellen, erscheinen diese hier automatisch in Echtzeit.",
-            download: "Laden",
-            downloading: "Lade...",
+            download: "Herunterladen",
+            downloading: "Wird geladen...",
             noSharedLocal: "Sie teilen derzeit keine Dokumente",
             noSharedLocalHint: "Um ein Dokument mit der Community zu teilen, öffnen Sie das Dokument in der Vollansicht und klicken Sie auf „In Community-Schwarm teilen“.",
             stopShare: "Teilen beenden",
@@ -2717,7 +2717,7 @@
             tabRemote: "Verfügbare Dokumente im Schwarm",
             tabLocal: "Meine geteilten Dokumente",
             close: "Schließen",
-            download: "Laden",
+            download: "Herunterladen",
             stopShare: "Teilen beenden"
         };
 
@@ -2918,25 +2918,40 @@
                 const peerId = dlBtn.getAttribute('data-peer-id') || '';
                 dlBtn.disabled = true;
                 dlBtn.style.opacity = '0.8';
-                dlBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle; margin-right:6px; animation:osirisToastSpin 0.85s linear infinite;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg><span>${i18n.downloading || 'Lade...'}</span>`;
+                dlBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle; margin-right:6px; animation:osirisToastSpin 0.85s linear infinite;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg><span>${i18n.downloading || 'Wird geladen...'}</span>`;
                 
                 if (peerId === 'official') {
                     await downloadOfficialCatalogDoc(docId);
                     return;
                 }
 
-                // Track user intent for browser file download upon arrival
+                // Check if doc has fileData available directly in memory or catalog
+                const remotePeerData = remoteCatalog.get(peerId);
+                const memDoc = remotePeerData && (remotePeerData.docs || []).find(d => Number(d.id) === docId);
+                if (memDoc && memDoc.fileData) {
+                    triggerBrowserFileDownload(memDoc.fileName || 'Dokument.pdf', memDoc.fileData);
+                    stageDocumentInInbox(memDoc);
+                    updateSwarmBadge();
+                    if (isAutoSaveToDbEnabled()) {
+                        await importStagedDocToDb(memDoc.id, true);
+                    }
+                    showSwarmToast(`📥 Datei „${memDoc.fileName}“ heruntergeladen & im Posteingang/DB bereitgestellt!`, 'info');
+                    renderSwarmModalContent();
+                    return;
+                }
+
+                // Track user intent for browser file download upon arrival via P2P
                 userDownloadRequests.add(docId);
                 requestDocDownload(docId, peerId);
 
                 setTimeout(() => {
-                    if (dlBtn && dlBtn.disabled && dlBtn.textContent.includes('Lade')) {
+                    if (dlBtn && dlBtn.disabled && (dlBtn.textContent.includes('Lade') || dlBtn.textContent.includes('geladen'))) {
                         dlBtn.disabled = false;
                         dlBtn.style.opacity = '1';
-                        dlBtn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> <span>${i18n.download || 'Laden'}</span>`;
-                        showSwarmToast('💡 P2P-Verbindung verzögert. Tipp: Kollege kann die Datei im Tab „Meine geteilten Dokumente“ direkt herunterladen und per Bluetooth/WhatsApp senden.', 'info');
+                        dlBtn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> <span>${i18n.download || 'Herunterladen'}</span>`;
+                        showSwarmToast('⚠️ P2P-Direktübertragung wird durch Browser/Netzwerk-Sicherheit blockiert. Bitte Dokument als offiziellen Katalog auf GitHub veröffentlichen oder per Bluetooth/Mail senden.', 'warning');
                     }
-                }, 7000);
+                }, 4000);
                 return;
             }
             const stopBtn = e.target.closest('[data-swarm-stop]');
@@ -3013,7 +3028,7 @@
             importAll: "Alle übernehmen",
             dismiss: "Verwerfen",
             inboxWaiting: "Dokument(e) im Vorab-Puffer bereit zur Übernahme :",
-            download: "Laden",
+            download: "Herunterladen",
             stopShare: "Teilen beenden",
             noPeers: "Keine weiteren Peers im Schwarm aktiv",
             noPeersHint: "Sobald sich andere Lehrkräfte auf GitHub Pages befinden und Dokumente bereitstellen, erscheinen diese hier automatisch in Echtzeit.",
@@ -3275,7 +3290,7 @@
                     <div style="display:flex; flex-direction:column; gap:12px;">
                         <div style="background:${isDark ? 'rgba(37,99,235,0.12)' : '#eff6ff'}; border:1px solid ${isDark ? 'rgba(37,99,235,0.25)' : '#bfdbfe'}; border-radius:8px; padding:10px 14px; font-size:0.8rem; color:${isDark ? '#93c5fd' : '#1e40af'}; display:flex; align-items:center; gap:8px;">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-                            <span><strong>Hinweis für Mobilgeräte & andere Netze:</strong> Sie können Dokumente per 1-Klick „Laden“ direkt auf Ihr Gerät speichern. Falls P2P verzögert ist, kann die Datei im Tab „Meine geteilten Dokumente“ direkt heruntergeladen und via Bluetooth/WhatsApp geteilt werden (alle Metadaten bleiben erhalten).</span>
+                            <span><strong>Hinweis:</strong> Sie können Dokumente per 1-Klick „Herunterladen“ direkt auf Ihr Gerät speichern und in Ihre Datenbank übernehmen.</span>
                         </div>
                         <div style="font-size:0.85rem; color:${metaColor}; margin-bottom:2px; font-weight:600;">
                             ${allRemoteDocs.length} ${i18n.docsAvailable}
@@ -3303,9 +3318,9 @@
                                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
                                 <span>In Datenbank</span>
                            </button>`
-                        : `<button type="button" data-swarm-download="1" data-doc-id="${safeDocId}" data-peer-id="${safePeerId}" style="display:flex; align-items:center; gap:8px; padding:10px 18px; background:#2563eb; color:#ffffff; border:none; border-radius:8px; font-weight:700; cursor:pointer; font-size:0.85rem; box-shadow:0 2px 6px rgba(37,99,235,0.35); flex-shrink:0;">
+                        : `<button type="button" data-swarm-download="1" data-doc-id="${safeDocId}" data-peer-id="${safePeerId}" style="display:flex; align-items:center; gap:8px; padding:10px 18px; background:#2563eb; color:#ffffff; border:none; border-radius:8px; font-weight:700; cursor:pointer; font-size:0.85rem; box-shadow:0 2px 6px rgba(37,99,235,0.35); flex-shrink:0;" title="Datei herunterladen & in Datenbank übernehmen">
                                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                                <span>${i18n.download || 'Laden'}</span>
+                                <span>${i18n.download || 'Herunterladen'}</span>
                            </button>`;
 
                     html += `
@@ -3375,11 +3390,7 @@
                                 <div style="font-size:0.78rem; color:${metaColor};">📄 ${safeFileName}</div>
                             </div>
                             <div class="swarm-doc-actions" style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
-                                <button type="button" data-swarm-download-local="${safeDocId}" style="display:inline-flex; align-items:center; gap:6px; padding:8px 13px; background:#2563eb; color:white; border:none; border-radius:6px; font-weight:700; cursor:pointer; font-size:0.8rem; box-shadow:0 1px 4px rgba(37,99,235,0.25);" title="Datei mit Metadaten auf Gerät herunterladen (z.B. zum manuellen Teilen)">
-                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                                    <span>Herunterladen</span>
-                                </button>
-                                <button type="button" data-swarm-stop="1" data-doc-id="${safeDocId}" style="padding:8px 14px; background:#dc2626; color:white; border:none; border-radius:6px; font-weight:700; cursor:pointer; font-size:0.8rem;">
+                                <button type="button" data-swarm-stop="1" data-doc-id="${safeDocId}" style="padding:9px 16px; background:#dc2626; color:white; border:none; border-radius:8px; font-weight:700; cursor:pointer; font-size:0.84rem; box-shadow:0 1px 4px rgba(220,38,38,0.25);">
                                     <span>${i18n.stopShare || 'Teilen beenden'}</span>
                                 </button>
                             </div>
