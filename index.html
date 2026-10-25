@@ -232,16 +232,88 @@
     gap: 8px;
     flex-shrink: 0;
   }
-  .conn-dot {
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    background: #999;
-    flex: none;
-    transition: background-color 0.2s ease;
+  /* Modern Swarm Control Group (1-Click Reload + Modern Arrow for Swarm Menu) */
+  .swarm-btn-group {
+    display: inline-flex;
+    align-items: stretch;
+    border-radius: 8px;
+    border: 1px solid var(--hub-border);
+    overflow: hidden;
+    transition: all 0.25s ease;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+    vertical-align: middle;
   }
-  .conn-dot.is-online { background: #2f8f6f; }
-  .conn-dot.is-offline { background: #a33b46; }
+  .swarm-btn-group:hover {
+    box-shadow: 0 2px 7px rgba(0,0,0,0.22);
+  }
+  .swarm-hub-btn {
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 6px 11px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 7px !important;
+    cursor: pointer !important;
+    color: #ffffff !important;
+    background: #505864; /* Standby default */
+    transition: background-color 0.25s ease, opacity 0.2s ease !important;
+    font-size: 0.8rem !important;
+    font-weight: 600 !important;
+  }
+  .swarm-hub-btn:hover {
+    filter: brightness(1.08);
+  }
+  .swarm-hub-btn:active .reload-icon {
+    transform: rotate(180deg);
+  }
+  .reload-icon {
+    transition: transform 0.4s ease;
+    flex-shrink: 0;
+  }
+  .swarm-arrow-btn {
+    border: none !important;
+    border-radius: 0 !important;
+    border-left: 1px solid rgba(255,255,255,0.22) !important;
+    padding: 6px 9px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
+    color: #ffffff !important;
+    background: #424953;
+    transition: background-color 0.25s ease, transform 0.15s ease !important;
+  }
+  .swarm-arrow-btn:hover {
+    filter: brightness(1.15);
+    background: #334155 !important;
+  }
+  .swarm-arrow-btn:active .swarm-arrow-icon {
+    transform: translateY(2px);
+  }
+  .swarm-arrow-icon {
+    transition: transform 0.2s ease;
+  }
+  
+  /* Online Status Indicator Colors applied directly to the Schwarm button group */
+  .swarm-btn-group.status-online .swarm-hub-btn { background: #16a34a !important; }
+  .swarm-btn-group.status-online .swarm-arrow-btn { background: #15803d !important; }
+  .swarm-btn-group.status-online { border-color: #15803d !important; }
+
+  .swarm-btn-group.status-inbox .swarm-hub-btn { background: #059669 !important; }
+  .swarm-btn-group.status-inbox .swarm-arrow-btn { background: #047857 !important; }
+  .swarm-btn-group.status-inbox { border-color: #047857 !important; }
+
+  .swarm-btn-group.status-connecting .swarm-hub-btn { background: #2563eb !important; }
+  .swarm-btn-group.status-connecting .swarm-arrow-btn { background: #1d4ed8 !important; }
+  .swarm-btn-group.status-connecting { border-color: #1d4ed8 !important; }
+
+  .swarm-btn-group.status-standby .swarm-hub-btn { background: #505864 !important; }
+  .swarm-btn-group.status-standby .swarm-arrow-btn { background: #404752 !important; }
+  .swarm-btn-group.status-standby { border-color: #404752 !important; }
+
+  .swarm-btn-group.status-offline .swarm-hub-btn { background: #64748b !important; }
+  .swarm-btn-group.status-offline .swarm-arrow-btn { background: #475569 !important; }
+  .swarm-btn-group.status-offline { border-color: #475569 !important; }
 
   .hub-btn {
     background: var(--hub-surface);
@@ -320,30 +392,19 @@
     transform: rotate(20deg);
   }
   .swarm-pill {
-    background: #505864;
+    background: transparent !important;
     color: #ffffff !important;
-    font-size: 0.72rem;
+    font-size: 0.76rem;
     font-weight: 700;
-    padding: 3px 10px;
-    border-radius: 12px;
-    letter-spacing: 0.02em;
+    padding: 0 !important;
+    letter-spacing: 0.01em;
     white-space: nowrap;
-    transition: background-color 0.25s ease;
-  }
-  .swarm-pill.has-new {
-    background: #2563eb !important;
-    animation: pulseNewBadge 2.2s infinite ease-in-out;
-  }
-  @keyframes pulseNewBadge {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.65); }
-    50% { box-shadow: 0 0 0 6px rgba(37, 99, 235, 0); }
+    display: inline-flex;
+    align-items: center;
   }
   @keyframes osirisSpin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
-  }
-  .swarm-pill.is-active {
-    background: #28a745 !important;
   }
   .icon-btn {
     padding: 6px 9px !important;
@@ -847,18 +908,22 @@
     </nav>
 
         <div class="toolbar">
-      <!-- P2P Community Swarm Button in Header -->
-      <button class="hub-btn swarm-hub-btn" id="swarmBtn" title="Dezentraler P2P Community-Schwarm" aria-label="Community-Schwarm">
-        <svg class="globe-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="2" y1="12" x2="22" y2="12"></line>
-          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10z"></path>
-          <path d="M12 2a15.3 15.3 0 0 0-4 10 15.3 15.3 0 0 0 4 10z"></path>
-        </svg>
-        <span class="swarm-pill" id="headerSwarmBadge">● Schwarm (0 geteilt)</span>
-      </button>
-
-      <span class="conn-dot" id="connDot" title="—" aria-hidden="false"></span>
+      <!-- P2P Community Swarm Button Group (1-Click Reload + Modern Arrow for Menu) -->
+      <div class="swarm-btn-group" id="swarmBtnGroup">
+        <button class="hub-btn swarm-hub-btn" id="swarmBtn" title="1 Klick: Schwarm & Dokumente aktualisieren" aria-label="Schwarm aktualisieren">
+          <svg class="reload-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <polyline points="1 20 1 14 7 14"></polyline>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          </svg>
+          <span class="swarm-pill" id="headerSwarmBadge">Schwarm (0 geteilt)</span>
+        </button>
+        <button class="hub-btn swarm-arrow-btn" id="connDot" title="Schwarm-Menü öffnen" aria-label="Schwarm-Menü öffnen">
+          <svg class="swarm-arrow-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
+      </div>
 
       <button class="hub-btn" id="fontBtn" title="Schriftart wechseln (zufällig)" aria-label="Schriftart wechseln">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>
@@ -1403,11 +1468,7 @@ function loadPrefs() {
   }
 
   function updateConnDot() {
-    var dot = document.getElementById('connDot');
-    var online = navigator.onLine;
-    dot.classList.toggle('is-online', online);
-    dot.classList.toggle('is-offline', !online);
-    dot.title = online ? I18N.connOnline : I18N.connOffline;
+    updateSwarmUiStatus();
   }
   window.addEventListener('online', updateConnDot);
   window.addEventListener('offline', updateConnDot);
@@ -1585,9 +1646,53 @@ function loadPrefs() {
     }
   } catch (e) {}
 
-    // Swarm button multi-tap detector: 1 click = Update/Sync, 3 clicks = Open Menu (Touch & Mouse compatible)
-  var swarmTapCount = 0;
-  var swarmTapTimer = null;
+  // Swarm Hub Control: 1-Click Reload on Button & 1-Click Menu on Arrow
+  function updateSwarmUiStatus(activePeers, totalShared, stagedCount, isSyncing) {
+    var btn = document.getElementById('swarmBtn');
+    var arrow = document.getElementById('connDot');
+    var group = document.getElementById('swarmBtnGroup');
+    var badge = document.getElementById('headerSwarmBadge');
+    if (!badge) return;
+
+    var isOnline = navigator.onLine;
+    activePeers = activePeers !== undefined ? activePeers : (window._lastActivePeers || 0);
+    totalShared = totalShared !== undefined ? totalShared : (window._lastTotalShared || 0);
+    stagedCount = stagedCount !== undefined ? stagedCount : (window._lastStagedCount || 0);
+    window._lastActivePeers = activePeers;
+    window._lastTotalShared = totalShared;
+    window._lastStagedCount = stagedCount;
+
+    // Reset status classes
+    ['status-online', 'status-connecting', 'status-inbox', 'status-standby', 'status-offline'].forEach(function(cls) {
+      if (group) group.classList.remove(cls);
+    });
+
+    if (!isOnline) {
+      if (group) group.classList.add('status-offline');
+      badge.textContent = 'Schwarm (Offline)';
+      if (btn) btn.title = 'Offline – Keine Internetverbindung';
+      if (arrow) arrow.title = 'Schwarm-Menü öffnen (Offline)';
+    } else if (isSyncing) {
+      if (group) group.classList.add('status-connecting');
+      badge.innerHTML = '<span style="display:inline-flex; align-items:center; gap:4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="animation:osirisSpin 0.8s linear infinite;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg> <span>Aktualisiere...</span></span>';
+      if (btn) btn.title = 'Aktualisierung läuft...';
+    } else if (stagedCount > 0) {
+      if (group) group.classList.add('status-inbox');
+      badge.innerHTML = '<span style="display:inline-flex; align-items:center; gap:5px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg> <strong>Posteingang (' + stagedCount + ')</strong></span>';
+      if (btn) btn.title = stagedCount + ' neue Datei(en) im Posteingang! (Klick zum Öffnen/Übernehmen)';
+      if (arrow) arrow.title = 'Schwarm-Menü öffnen';
+    } else if (activePeers > 0) {
+      if (group) group.classList.add('status-online');
+      badge.textContent = 'Schwarm online (' + activePeers + ')';
+      if (btn) btn.title = '1 Klick: P2P-Schwarm aktualisieren (' + activePeers + ' Peers aktiv)';
+      if (arrow) arrow.title = 'Schwarm-Menü öffnen';
+    } else {
+      if (group) group.classList.add('status-standby');
+      badge.textContent = 'Schwarm (' + totalShared + ' geteilt)';
+      if (btn) btn.title = '1 Klick: Schwarm aktualisieren (Bereit)';
+      if (arrow) arrow.title = 'Schwarm-Menü öffnen';
+    }
+  }
 
   async function executeSwarmQuickUpdate() {
     var stagedCount = 0;
@@ -1610,11 +1715,7 @@ function loadPrefs() {
       return;
     }
 
-    var badge = document.getElementById('headerSwarmBadge');
-    if (badge) {
-      badge.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle; margin-right:5px; animation:osirisSpin 0.8s linear infinite;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg><span>Aktualisiere...</span>';
-      badge.style.background = '#3b82f6';
-    }
+    updateSwarmUiStatus(undefined, undefined, undefined, true);
 
     var updatedCount = 0;
     if (window.EduHybridShare && typeof window.EduHybridShare.syncAllAvailableDocs === 'function') {
@@ -1629,20 +1730,24 @@ function loadPrefs() {
       pushToFrame('RELOAD_DATA');
       if (window.EduHybridShare && typeof window.EduHybridShare.updateSwarmBadge === 'function') {
         window.EduHybridShare.updateSwarmBadge();
+      } else {
+        updateSwarmUiStatus();
       }
-    }, 1000);
+    }, 600);
 
     setTimeout(function() {
       pushToFrame('RELOAD_DATA');
       if (window.EduHybridShare && typeof window.EduHybridShare.updateSwarmBadge === 'function') {
         window.EduHybridShare.updateSwarmBadge();
+      } else {
+        updateSwarmUiStatus();
       }
-    }, 2500);
+    }, 1800);
   }
 
   function executeSwarmOpenMenu() {
     if (navigator.vibrate) {
-      try { navigator.vibrate([30, 40, 30]); } catch(e) {}
+      try { navigator.vibrate([25, 30]); } catch(e) {}
     }
     if (window.EduHybridShare && typeof window.EduHybridShare.openSwarmModal === 'function') {
       window.EduHybridShare.openSwarmModal('remote');
@@ -1654,33 +1759,24 @@ function loadPrefs() {
     pushToFrame('OPEN_SWARM_MODAL');
   }
 
+  // 1-Click Reload on Schwarm button (No triple click!)
   if (swarmBtnEl) {
     swarmBtnEl.style.touchAction = 'manipulation';
-    swarmBtnEl.title = 'P2P-Schwarm (1 Klick: Aktualisieren & Posteingang / 3 Klicks: Menü öffnen)';
-
     swarmBtnEl.addEventListener('click', function(e) {
       e.preventDefault();
       e.stopPropagation();
+      executeSwarmQuickUpdate();
+    });
+  }
 
-      swarmTapCount++;
-
-      if (swarmTapCount === 1) {
-        swarmTapTimer = setTimeout(function() {
-          var finalCount = swarmTapCount;
-          swarmTapCount = 0;
-          swarmTapTimer = null;
-          if (finalCount < 3) {
-            executeSwarmQuickUpdate();
-          }
-        }, 360);
-      } else if (swarmTapCount >= 3) {
-        if (swarmTapTimer) {
-          clearTimeout(swarmTapTimer);
-          swarmTapTimer = null;
-        }
-        swarmTapCount = 0;
-        executeSwarmOpenMenu();
-      }
+  // 1-Click Open Menu on Arrow button (Modern look replaces the old dot!)
+  var connDotEl = document.getElementById('connDot');
+  if (connDotEl) {
+    connDotEl.style.touchAction = 'manipulation';
+    connDotEl.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      executeSwarmOpenMenu();
     });
   }
 
@@ -1695,35 +1791,11 @@ function loadPrefs() {
       return;
     }
     if (e.data && e.data.type === 'SWARM_BADGE_UPDATE') {
-      var badge = document.getElementById('headerSwarmBadge');
-      if (badge) {
-        var activePeers = Math.max(0, Math.min(999, Number(e.data.activePeers) || 0));
-        var totalShared = Math.max(0, Math.min(9999, Number(e.data.totalShared) || 0));
-        var newFilesCount = Math.max(0, Math.min(999, Number(e.data.newFilesCount) || 0));
-        var stagedCount = Math.max(0, Math.min(999, Number(e.data.stagedCount) || 0));
-
-        if (stagedCount > 0) {
-          badge.className = 'swarm-pill is-active has-inbox';
-          badge.style.background = '#16a34a';
-          badge.innerHTML = '<span style="display:inline-flex; align-items:center; gap:5px;"><span style="font-size:0.85rem;">📥</span> <strong>Posteingang (' + stagedCount + ' neu)</strong></span>';
-          badge.title = stagedCount + ' neue Datei(en) im Posteingang! (1 Klick: Öffnen & Übernehmen)';
-        } else if (newFilesCount > 0) {
-          badge.className = 'swarm-pill is-active has-new';
-          badge.style.background = '#2563eb';
-          badge.textContent = '● Schwarm (+' + newFilesCount + ' neu)';
-          badge.title = newFilesCount + ' neue Dokumente im Schwarm (1 Klick: Aktualisieren / 3 Klicks: Menü)';
-        } else if (activePeers > 0) {
-          badge.className = 'swarm-pill is-active';
-          badge.style.background = '#28a745';
-          badge.textContent = '● Schwarm aktuell (' + activePeers + ')';
-          badge.title = 'P2P-Schwarm aktuell (1 Klick: Aktualisieren / 3 Klicks: Menü)';
-        } else {
-          badge.className = 'swarm-pill';
-          badge.style.background = '#505864';
-          badge.textContent = '● Schwarm (' + totalShared + ' geteilt)';
-          badge.title = 'P2P-Schwarm bereit (1 Klick: Aktualisieren / 3 Klicks: Menü)';
-        }
-      }
+      var activePeers = Math.max(0, Math.min(999, Number(e.data.activePeers) || 0));
+      var totalShared = Math.max(0, Math.min(9999, Number(e.data.totalShared) || 0));
+      var newFilesCount = Math.max(0, Math.min(999, Number(e.data.newFilesCount) || 0));
+      var stagedCount = Math.max(0, Math.min(999, Number(e.data.stagedCount) || 0));
+      updateSwarmUiStatus(activePeers, totalShared, stagedCount, false);
     }
   });
 

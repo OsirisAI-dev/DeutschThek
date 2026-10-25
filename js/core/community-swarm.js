@@ -71,6 +71,25 @@
     let peerToWebrtcMap = new Map();    // osirisPeerId -> webrtcPeerId
     let incomingChunks = new Map();     // transferId -> { chunks: Map(idx->str), total, sender, token, startedAt }
     let activeSwarmRoom = 'global';
+    const userDownloadRequests = new Set(); // Tracks doc IDs explicitly requested for browser disk download
+
+    function triggerBrowserFileDownload(fileName, dataUrl) {
+        if (!dataUrl || !fileName) return false;
+        try {
+            const a = document.createElement('a');
+            a.href = dataUrl;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+                if (a && a.parentNode) a.parentNode.removeChild(a);
+            }, 300);
+            return true;
+        } catch (e) {
+            console.warn('[Osiris Swarm] Browser file download failed:', e);
+            return false;
+        }
+    }
 
     function generateCryptoHex(byteLen) {
         const buf = new Uint8Array(byteLen || 16);
@@ -1289,6 +1308,15 @@
     }
 
     async function initWebRtcSwarm() {
+        // If running inside a subframe (e.g. iframe under index.html), let the top/parent frame manage the WebRTC mesh
+        if (window.parent && window.parent !== window && window.parent.EduHybridShare && window.parent.EduHybridShare !== window.EduHybridShare) {
+            console.log('[Osiris Swarm] Subframe detected: delegating WebRTC mesh to parent hub window.');
+            webrtcStatus = 'connected';
+            updateSwarmBadge();
+            renderSwarmModalContent();
+            return;
+        }
+
         const loaded = await ensurePeerJsLoaded();
         if (!loaded || typeof window.Peer === 'undefined') {
             console.warn('[Osiris Swarm] PeerJS could not be loaded; running on BroadcastChannel only.');
@@ -1343,7 +1371,8 @@
                     {
                         urls: [
                             'stun:stun.l.google.com:19302',
-                            'stun:stun1.l.google.com:19302'
+                            'stun:stun1.l.google.com:19302',
+                            'stun:stun.cloudflare.com:3478'
                         ]
                     }
                 ],
@@ -1925,14 +1954,88 @@
         stageDocumentInInbox(newItem);
         updateSwarmBadge();
 
+        // Check if user initiated a manual "Laden" download: trigger physical file download to device storage
+        const requestedId = Number(rawDocItem.id) || Number(docItem.id);
+        const wasUserDownload = userDownloadRequests.has(requestedId) || !isAuto;
+        if (wasUserDownload) {
+            userDownloadRequests.delete(requestedId);
+            triggerBrowserFileDownload(newItem.fileName, newItem.fileData);
+            showSwarmToast(`📥 Datei „${newItem.fileName}“ wird heruntergeladen & im Posteingang/DB gespeichert!`, 'info');
+        }
+
         if (isAutoSaveToDbEnabled()) {
             // Auto-save is enabled: attempt immediate import into DB
             importStagedDocToDb(newItem.id, true);
         } else {
             // Auto-save is off: keep in staged inbox and alert the user with interactive notification
             const fp = computedHash.substring(0, 6).toUpperCase();
-            showSwarmToast(`📥 Neuer Schwarm-Inhalt im Posteingang: „${newItem.thema}" (SHA-256 #${fp}) – Klicken zum Übernehmen`, 'info');
+            if (!wasUserDownload) {
+                showSwarmToast(`📥 Neuer Schwarm-Inhalt im Posteingang: „${newItem.thema}" (SHA-256 #${fp}) – Klicken zum Übernehmen`, 'info');
+            }
             renderSwarmModalContent();
+        }
+    }
+
+    // Fetches full doc payload with fileData from any available IndexedDB
+    async function getLocalDocWithData(docId) {
+        const cleanId = Number(docId);
+        if (!cleanId) return null;
+        const dbs = [currentConfig.dbName, 'DokumentationDB', 'TestBankDB'].filter(Boolean);
+        for (const dbName of dbs) {
+            const found = await new Promise(resolve => {
+                try {
+                    const req = indexedDB.open(dbName);
+                    req.onsuccess = (e) => {
+                        const db = e.target.result;
+                        if (!db.objectStoreNames.contains('documents')) {
+                            db.close();
+                            resolve(null);
+                            return;
+                        }
+                        const tx = db.transaction(['documents'], 'readonly');
+                        const store = tx.objectStore('documents');
+                        const getReq = store.get(cleanId);
+                        getReq.onsuccess = (ev) => {
+                            db.close();
+                            resolve(ev.target.result || null);
+                        };
+                        getReq.onerror = () => { db.close(); resolve(null); };
+                    };
+                    req.onerror = () => resolve(null);
+                } catch (err) {
+                    resolve(null);
+                }
+            });
+            if (found && found.fileData) return found;
+        }
+        // Fallback to in-memory localCatalog
+        const mem = (localCatalog || []).find(d => Number(d.id) === cleanId);
+        if (mem && mem.fileData) return mem;
+        return null;
+    }
+
+    async function downloadLocalSharedDocFile(docId) {
+        const doc = await getLocalDocWithData(docId);
+        if (!doc || !doc.fileData) {
+            showSwarmToast('⚠️ Dokumentinhalt konnte nicht aus der lokalen Datenbank geladen werden.', 'warning');
+            return;
+        }
+        const success = triggerBrowserFileDownload(doc.fileName || 'Dokument.pdf', doc.fileData);
+        if (success) {
+            showSwarmToast(`📥 Datei „${doc.fileName}“ wird mit allen Metadaten auf Ihr Gerät heruntergeladen.`, 'info');
+        }
+    }
+
+    function downloadStagedInboxDocFile(docId) {
+        const staged = getStagedInboxDocuments();
+        const doc = staged.find(d => Number(d.id) === Number(docId));
+        if (!doc || !doc.fileData) {
+            showSwarmToast('⚠️ Dokument im Posteingang nicht gefunden.', 'warning');
+            return;
+        }
+        const success = triggerBrowserFileDownload(doc.fileName || 'Dokument.pdf', doc.fileData);
+        if (success) {
+            showSwarmToast(`📥 Datei „${doc.fileName}“ wird heruntergeladen.`, 'info');
         }
     }
 
@@ -2074,23 +2177,23 @@
             if (stagedCount > 0) {
                 badge.className = 'swarm-pill is-active has-inbox';
                 badge.style.background = '#16a34a';
-                badge.innerHTML = `<span style="display:inline-flex; align-items:center; gap:5px;"><span style="font-size:0.85rem;">📥</span> <strong>Posteingang (${stagedCount} neu)</strong></span>`;
-                badge.title = `${stagedCount} neue Datei(en) im Posteingang bereit! (1 Klick: Öffnen & Übernehmen)`;
+                badge.innerHTML = `<span style="display:inline-flex; align-items:center; gap:5px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg> <strong>Posteingang (${stagedCount})</strong></span>`;
+                badge.title = `${stagedCount} neue Datei(en) im Posteingang bereit! (Klick zum Öffnen/Übernehmen)`;
             } else if (newFilesCount > 0) {
                 badge.className = 'swarm-pill is-active has-new';
                 badge.style.background = '#2563eb';
-                badge.textContent = `● Schwarm (+${newFilesCount} neu)`;
-                badge.title = `${newFilesCount} neue Dokumente im Schwarm (1 Klick: Aktualisieren / 3 Klicks: Menü)`;
+                badge.textContent = `Schwarm (+${newFilesCount} neu)`;
+                badge.title = `${newFilesCount} neue Dokumente im Schwarm verfügbar`;
             } else if (activePeers > 0) {
                 badge.className = 'swarm-pill is-active';
                 badge.style.background = '#28a745';
-                badge.textContent = `● Schwarm aktuell (${activePeers})`;
-                badge.title = `P2P-Schwarm aktuell (1 Klick: Aktualisieren / 3 Klicks: Menü)`;
+                badge.textContent = `Schwarm online (${activePeers})`;
+                badge.title = `P2P-Schwarm aktiv (${activePeers} Peers verbunden)`;
             } else {
                 badge.className = 'swarm-pill';
                 badge.style.background = '#505864';
-                badge.textContent = `● Schwarm (${totalShared} geteilt)`;
-                badge.title = `P2P-Schwarm bereit (1 Klick: Aktualisieren / 3 Klicks: Menü)`;
+                badge.textContent = `Schwarm (${totalShared} geteilt)`;
+                badge.title = `P2P-Schwarm bereit (${totalShared} geteilt)`;
             }
         });
 
@@ -2134,14 +2237,18 @@
             const staged = getStagedInboxDocuments();
             if (staged.length > 0) currentSwarmTab = 'inbox';
         }
-        await refreshLocalCatalog();
         let modal = document.getElementById('swarm-modal');
         if (!modal) {
             createSwarmModalDom();
             modal = document.getElementById('swarm-modal');
         }
-        modal.style.display = 'flex';
-        switchSwarmTab(currentSwarmTab);
+        if (modal) {
+            modal.style.display = 'flex';
+            switchSwarmTab(currentSwarmTab);
+        }
+        refreshLocalCatalog().then(() => {
+            renderSwarmModalContent();
+        });
     }
 
     function closeSwarmModal() {
@@ -2308,11 +2415,20 @@
                     </div>
                 </div>
 
-                <!-- Tabs -->
+                <!-- Tabs with Modern Sleek Icons -->
                 <div style="display:flex; border-bottom: 1px solid ${borderColor}; background: ${headerBg};">
-                    <button id="swarm-tab-inbox" style="flex:1; padding:13px; border:none; background:transparent; border-bottom:3px solid transparent; font-weight:600; cursor:pointer; color:${isDark ? '#94a3b8' : '#64748b'}; font-size:0.9rem;">📥 ${i18n.tabInbox || 'Posteingang'}</button>
-                    <button id="swarm-tab-remote" style="flex:1; padding:13px; border:none; background:transparent; border-bottom:3px solid #2563eb; font-weight:700; cursor:pointer; color:#2563eb; font-size:0.9rem;">🌐 ${i18n.tabRemote || 'Verfügbare Dokumente'}</button>
-                    <button id="swarm-tab-local" style="flex:1; padding:13px; border:none; background:transparent; border-bottom:3px solid transparent; font-weight:600; cursor:pointer; color:${isDark ? '#94a3b8' : '#64748b'}; font-size:0.9rem;">📤 ${i18n.tabLocal || 'Meine geteilten'}</button>
+                    <button id="swarm-tab-inbox" style="flex:1; padding:13px; border:none; background:transparent; border-bottom:3px solid transparent; font-weight:600; cursor:pointer; color:${isDark ? '#94a3b8' : '#64748b'}; font-size:0.9rem; display:inline-flex; align-items:center; justify-content:center; gap:8px;">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>
+                        <span>${i18n.tabInbox || 'Posteingang'}</span>
+                    </button>
+                    <button id="swarm-tab-remote" style="flex:1; padding:13px; border:none; background:transparent; border-bottom:3px solid #2563eb; font-weight:700; cursor:pointer; color:#2563eb; font-size:0.9rem; display:inline-flex; align-items:center; justify-content:center; gap:8px;">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10z"></path><path d="M12 2a15.3 15.3 0 0 0-4 10 15.3 15.3 0 0 0 4 10z"></path></svg>
+                        <span>${i18n.tabRemote || 'Verfügbare Dokumente'}</span>
+                    </button>
+                    <button id="swarm-tab-local" style="flex:1; padding:13px; border:none; background:transparent; border-bottom:3px solid transparent; font-weight:600; cursor:pointer; color:${isDark ? '#94a3b8' : '#64748b'}; font-size:0.9rem; display:inline-flex; align-items:center; justify-content:center; gap:8px;">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg>
+                        <span>${i18n.tabLocal || 'Meine geteilten'}</span>
+                    </button>
                 </div>
 
                 <!-- Tab Content Area (Solid Opaque Background, Zero Bleed-Through) -->
@@ -2346,6 +2462,18 @@
                 await importStagedDocToDb(docId, false);
                 return;
             }
+            const dlLocalBtn = e.target.closest('[data-swarm-download-local]');
+            if (dlLocalBtn) {
+                const docId = Number(dlLocalBtn.getAttribute('data-swarm-download-local'));
+                downloadLocalSharedDocFile(docId);
+                return;
+            }
+            const dlStagedBtn = e.target.closest('[data-swarm-download-staged]');
+            if (dlStagedBtn) {
+                const docId = Number(dlStagedBtn.getAttribute('data-swarm-download-staged'));
+                downloadStagedInboxDocFile(docId);
+                return;
+            }
             const dismissBtn = e.target.closest('[data-swarm-dismiss]');
             if (dismissBtn) {
                 const docId = dismissBtn.getAttribute('data-swarm-dismiss');
@@ -2369,14 +2497,19 @@
                 dlBtn.disabled = true;
                 dlBtn.style.opacity = '0.8';
                 dlBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle; margin-right:6px; animation:osirisToastSpin 0.85s linear infinite;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg><span>${i18n.downloading || 'Lade...'}</span>`;
+                
+                // Track user intent for browser file download upon arrival
+                userDownloadRequests.add(docId);
                 requestDocDownload(docId, peerId);
+
                 setTimeout(() => {
                     if (dlBtn && dlBtn.disabled && dlBtn.textContent.includes('Lade')) {
                         dlBtn.disabled = false;
                         dlBtn.style.opacity = '1';
                         dlBtn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> <span>${i18n.download || 'Laden'}</span>`;
+                        showSwarmToast('💡 P2P-Verbindung verzögert. Tipp: Kollege kann die Datei im Tab „Meine geteilten Dokumente“ direkt herunterladen und per Bluetooth/WhatsApp senden.', 'info');
                     }
-                }, 8000);
+                }, 7000);
                 return;
             }
             const stopBtn = e.target.closest('[data-swarm-stop]');
@@ -2502,18 +2635,22 @@
             });
         });
 
-        // Update tab buttons text and counts
+        // Update tab buttons text, modern SVG icons and counts
         const btnInboxTab = document.getElementById('swarm-tab-inbox');
         const btnRemoteTab = document.getElementById('swarm-tab-remote');
         const btnLocalTab = document.getElementById('swarm-tab-local');
 
         if (btnInboxTab) {
-            btnInboxTab.innerHTML = `📥 ${i18n.tabInbox}` + (stagedDocs.length > 0 
-                ? ` <span style="background:#16a34a; color:#ffffff; padding:1px 7px; border-radius:10px; font-size:0.75rem; font-weight:700; margin-left:5px;">${stagedDocs.length} neu</span>` 
+            btnInboxTab.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg><span>${i18n.tabInbox}</span>` + (stagedDocs.length > 0 
+                ? ` <span style="background:#16a34a; color:#ffffff; padding:1px 7px; border-radius:10px; font-size:0.75rem; font-weight:700; margin-left:4px;">${stagedDocs.length} neu</span>` 
                 : ` (0)`);
         }
-        if (btnRemoteTab) btnRemoteTab.textContent = `🌐 ${i18n.tabRemote} (${allRemoteDocs.length})`;
-        if (btnLocalTab) btnLocalTab.textContent = `📤 ${i18n.tabLocal} (${localCatalog.length})`;
+        if (btnRemoteTab) {
+            btnRemoteTab.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10z"></path><path d="M12 2a15.3 15.3 0 0 0-4 10 15.3 15.3 0 0 0 4 10z"></path></svg><span>${i18n.tabRemote} (${allRemoteDocs.length})</span>`;
+        }
+        if (btnLocalTab) {
+            btnLocalTab.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg><span>${i18n.tabLocal} (${localCatalog.length})</span>`;
+        }
 
         // --- Render Tab 1: INBOX ---
         if (currentSwarmTab === 'inbox') {
@@ -2562,7 +2699,7 @@
                         <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border:1px solid ${isDark ? 'rgba(34,197,94,0.3)' : '#86efac'}; border-radius:10px; background:${isDark ? 'rgba(34,197,94,0.06)' : '#f0fdf4'}; box-shadow:${shadow}; gap:14px;">
                             <div style="flex:1; min-width:0;">
                                 <div style="display:flex; gap:6px; align-items:center; margin-bottom:6px; flex-wrap:wrap;">
-                                    <span style="background:#16a34a; color:white; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:700;">📥 Posteingang</span>
+                                    <span style="background:#16a34a; color:white; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:700; display:inline-flex; align-items:center; gap:4px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg> Posteingang</span>
                                     <span style="background:#2563eb; color:white; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:700;">${safeTyp}</span>
                                     <span style="background:${isDark ? '#334155' : '#e2e8f0'}; color:${textColor}; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:600;">${safeKlassen}</span>
                                     <span style="background:${isDark ? '#334155' : '#e2e8f0'}; color:${textColor}; padding:2px 8px; border-radius:4px; font-size:0.72rem;">${safeJahr}</span>
@@ -2578,6 +2715,9 @@
                                 <button type="button" data-swarm-import="${safeDocId}" style="display:inline-flex; align-items:center; gap:6px; padding:10px 16px; background:#16a34a; color:#ffffff; border:none; border-radius:8px; font-weight:700; cursor:pointer; font-size:0.85rem; box-shadow:0 2px 6px rgba(22,163,74,0.35); transition:transform 0.15s ease;">
                                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                                     <span>${i18n.import1Click}</span>
+                                </button>
+                                <button type="button" data-swarm-download-staged="${safeDocId}" style="display:inline-flex; align-items:center; justify-content:center; padding:10px 12px; background:#2563eb; color:#ffffff; border:none; border-radius:8px; font-weight:700; cursor:pointer; font-size:0.82rem; box-shadow:0 2px 6px rgba(37,99,235,0.3);" title="Datei direkt auf Gerät herunterladen">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                                 </button>
                                 <button type="button" data-swarm-dismiss="${safeDocId}" style="padding:10px 12px; background:transparent; color:${metaColor}; border:1px solid ${cardBorder}; border-radius:8px; font-weight:600; cursor:pointer; font-size:0.82rem;" title="${i18n.dismiss}">
                                     ✕
@@ -2634,12 +2774,6 @@
                 });
             });
 
-                    // Update tab buttons with dynamic item counts
-        const btnRemoteTab = document.getElementById('swarm-tab-remote');
-        const btnLocalTab = document.getElementById('swarm-tab-local');
-        if (btnRemoteTab) btnRemoteTab.textContent = `${i18n.tabRemote} (${allRemoteDocs.length})`;
-        if (btnLocalTab) btnLocalTab.textContent = `${i18n.tabLocal} (${localCatalog.length})`;
-
             if (allRemoteDocs.length === 0) {
                 wrap.innerHTML = `
                     <div style="text-align:center; padding: 48px 20px; color: ${metaColor};">
@@ -2653,6 +2787,10 @@
             } else {
                 let html = `
                     <div style="display:flex; flex-direction:column; gap:12px;">
+                        <div style="background:${isDark ? 'rgba(37,99,235,0.12)' : '#eff6ff'}; border:1px solid ${isDark ? 'rgba(37,99,235,0.25)' : '#bfdbfe'}; border-radius:8px; padding:10px 14px; font-size:0.8rem; color:${isDark ? '#93c5fd' : '#1e40af'}; display:flex; align-items:center; gap:8px;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                            <span><strong>Hinweis für Mobilgeräte & andere Netze:</strong> Sie können Dokumente per 1-Klick „Laden“ direkt auf Ihr Gerät speichern. Falls P2P verzögert ist, kann die Datei im Tab „Meine geteilten Dokumente“ direkt heruntergeladen und via Bluetooth/WhatsApp geteilt werden (alle Metadaten bleiben erhalten).</span>
+                        </div>
                         <div style="font-size:0.85rem; color:${metaColor}; margin-bottom:2px; font-weight:600;">
                             ${allRemoteDocs.length} ${i18n.docsAvailable}
                         </div>
@@ -2746,9 +2884,15 @@
                                 <h4 style="margin:0 0 4px 0; color:${isDark ? '#60a5fa' : '#1e3a8a'}; font-size:1rem; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${safeThema}</h4>
                                 <div style="font-size:0.78rem; color:${metaColor};">📄 ${safeFileName}</div>
                             </div>
-                            <button type="button" data-swarm-stop="1" data-doc-id="${safeDocId}" style="padding:8px 14px; background:#dc2626; color:white; border:none; border-radius:6px; font-weight:700; cursor:pointer; font-size:0.8rem; flex-shrink:0;">
-                                <span>${i18n.stopShare || 'Teilen beenden'}</span>
-                            </button>
+                            <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+                                <button type="button" data-swarm-download-local="${safeDocId}" style="display:inline-flex; align-items:center; gap:6px; padding:8px 13px; background:#2563eb; color:white; border:none; border-radius:6px; font-weight:700; cursor:pointer; font-size:0.8rem; box-shadow:0 1px 4px rgba(37,99,235,0.25);" title="Datei mit Metadaten auf Gerät herunterladen (z.B. zum manuellen Teilen)">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                    <span>Herunterladen</span>
+                                </button>
+                                <button type="button" data-swarm-stop="1" data-doc-id="${safeDocId}" style="padding:8px 14px; background:#dc2626; color:white; border:none; border-radius:6px; font-weight:700; cursor:pointer; font-size:0.8rem;">
+                                    <span>${i18n.stopShare || 'Teilen beenden'}</span>
+                                </button>
+                            </div>
                         </div>
                     `;
                 });
