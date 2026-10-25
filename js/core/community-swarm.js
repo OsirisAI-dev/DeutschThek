@@ -1120,12 +1120,20 @@
             debug: 1,
             config: {
                 iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                    { urls: 'stun:stun2.l.google.com:19302' },
-                    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelay', credential: 'openrelay' },
-                    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelay', credential: 'openrelay' },
-                    { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelay', credential: 'openrelay' }
+                    {
+                        urls: [
+                            'stun:stun.l.google.com:19302',
+                            'stun:stun1.l.google.com:19302'
+                        ]
+                    },
+                    {
+                        urls: [
+                            'turn:openrelay.metered.ca:443',
+                            'turns:openrelay.metered.ca:443?transport=tcp'
+                        ],
+                        username: 'openrelay',
+                        credential: 'openrelay'
+                    }
                 ]
             }
         });
