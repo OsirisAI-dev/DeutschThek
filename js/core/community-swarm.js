@@ -671,6 +671,230 @@
     }
 
     
+    let cachedOfficialCatalog = null;
+    let lastOfficialCatalogFetchTime = 0;
+
+    async function fetchOfficialCatalog(force) {
+        const now = Date.now();
+        if (!force && cachedOfficialCatalog && (now - lastOfficialCatalogFetchTime < 30000)) {
+            return cachedOfficialCatalog;
+        }
+
+        const candidates = [
+            'data/official-catalog.json?t=' + now,
+            './data/official-catalog.json?t=' + now,
+            '../data/official-catalog.json?t=' + now
+        ];
+
+        for (const url of candidates) {
+            try {
+                const resp = await fetch(url, { cache: 'no-cache' });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data && Array.isArray(data.documents)) {
+                        cachedOfficialCatalog = data;
+                        lastOfficialCatalogFetchTime = now;
+                        return data;
+                    }
+                }
+            } catch (e) {}
+        }
+
+        if (window.OFFICIAL_CATALOG_DATA && Array.isArray(window.OFFICIAL_CATALOG_DATA.documents)) {
+            cachedOfficialCatalog = window.OFFICIAL_CATALOG_DATA;
+            lastOfficialCatalogFetchTime = now;
+            return cachedOfficialCatalog;
+        }
+
+        return cachedOfficialCatalog || { version: 1, documents: [] };
+    }
+
+    async function syncOfficialCatalog(isAuto) {
+        const catalog = await fetchOfficialCatalog(true);
+        if (!catalog || !Array.isArray(catalog.documents) || catalog.documents.length === 0) {
+            return 0;
+        }
+
+        await refreshLocalCatalog();
+        let newCount = 0;
+
+        for (const doc of catalog.documents) {
+            if (!doc) continue;
+            const docHash = doc.fileHash ? String(doc.fileHash).toLowerCase().trim() : '';
+            const docKey = `${(doc.fileName || '').toLowerCase().trim()}_${doc.fileSize || 0}`;
+
+            const exists = await checkDocExistsInDatabases(doc);
+            if (exists) continue;
+
+            const stagedList = getStagedInboxDocuments();
+            const alreadyStaged = stagedList.some(d => 
+                (docHash && d.fileHash && String(d.fileHash).toLowerCase() === docHash) ||
+                (d.fileName && String(d.fileName).toLowerCase() === String(doc.fileName).toLowerCase() && Number(d.fileSize) === Number(doc.fileSize))
+            );
+            if (alreadyStaged) continue;
+
+            let fileData = doc.fileData;
+            if (!fileData && doc.filePath) {
+                try {
+                    const fileResp = await fetch(doc.filePath);
+                    if (fileResp.ok) {
+                        const blob = await fileResp.blob();
+                        fileData = await new Promise((resolve) => {
+                            const reader = new FileReader();
+                            reader.onloadend = () => resolve(reader.result);
+                            reader.onerror = () => resolve('');
+                            reader.readAsDataURL(blob);
+                        });
+                    }
+                } catch (err) {
+                    console.warn('[Osiris Hybrid] Could not fetch file from filePath:', doc.filePath, err);
+                }
+            }
+
+            const primaryDb = doc.sourceDb || currentConfig.dbName || 'DokumentationDB';
+            const docRecord = Object.assign({}, doc, {
+                id: Number(doc.id) || (Date.now() + Math.floor(Math.random() * 1000)),
+                fileData: fileData || '',
+                fileHash: docHash,
+                isOfficial: true,
+                isSwarmImport: true,
+                importedAt: Date.now(),
+                sourceDb: primaryDb
+            });
+
+            if (isAutoSaveToDbEnabled()) {
+                const storeName = currentConfig.storeName || 'documents';
+                try {
+                    const db = await openDatabaseWithStore(primaryDb, storeName);
+                    await new Promise((resolve) => {
+                        const tx = db.transaction([storeName], 'readwrite');
+                        const store = tx.objectStore(storeName);
+                        const countReq = store.count();
+                        countReq.onsuccess = (ev) => {
+                            if (ev.target.result >= 10) {
+                                stageDocumentInInbox(docRecord);
+                                resolve(false);
+                            } else {
+                                store.put(docRecord);
+                                tx.oncomplete = () => {
+                                    db.close();
+                                    if (docHash && window.knownLocalHashes) window.knownLocalHashes.add(docHash);
+                                    trackUpdatedDoc(docRecord.id, docHash);
+                                    broadcastDataReload(docRecord);
+                                    resolve(true);
+                                };
+                                tx.onerror = () => { db.close(); resolve(false); };
+                            }
+                        };
+                        countReq.onerror = () => { db.close(); resolve(false); };
+                    });
+                    newCount++;
+                } catch (e) {
+                    stageDocumentInInbox(docRecord);
+                    newCount++;
+                }
+            } else {
+                stageDocumentInInbox(docRecord);
+                newCount++;
+            }
+        }
+
+        if (newCount > 0) {
+            updateSwarmBadge();
+            renderSwarmModalContent();
+        }
+        return newCount;
+    }
+
+    async function exportOfficialCatalogJson() {
+        await refreshLocalCatalog();
+        const exportDocs = [];
+        const dbs = ['DokumentationDB', 'TestBankDB'];
+
+        for (const dbName of dbs) {
+            try {
+                const dbDocs = await new Promise((resolve) => {
+                    const req = indexedDB.open(dbName);
+                    req.onsuccess = (e) => {
+                        const db = e.target.result;
+                        if (!db.objectStoreNames.contains('documents')) {
+                            db.close();
+                            return resolve([]);
+                        }
+                        const tx = db.transaction(['documents'], 'readonly');
+                        const store = tx.objectStore('documents');
+                        const getAllReq = store.getAll();
+                        getAllReq.onsuccess = () => {
+                            db.close();
+                            resolve(getAllReq.result || []);
+                        };
+                        getAllReq.onerror = () => { db.close(); resolve([]); };
+                    };
+                    req.onerror = () => resolve([]);
+                });
+
+                for (const doc of dbDocs) {
+                    if (!doc) continue;
+                    const isShared = isDocShared(doc.id) || (localCatalog || []).some(d => d && (d.id == doc.id || d.fileHash === doc.fileHash));
+                    if (isShared) {
+                        exportDocs.push({
+                            id: Number(doc.id) || Date.now(),
+                            thema: doc.thema || 'Unbenannt',
+                            typ: doc.typ || (dbName === 'TestBankDB' ? 'Schulaufgabe' : 'Unterrichtsmaterial'),
+                            subTyp: doc.subTyp || [],
+                            niveau: doc.niveau || '',
+                            klasse: doc.klasse || doc.klassen || '',
+                            klassen: doc.klassen || doc.klasse || '',
+                            schulart: doc.schulart || '',
+                            jahr: doc.jahr || new Date().getFullYear().toString(),
+                            lektion: doc.lektion || '',
+                            buch: doc.buch || '',
+                            seiten: doc.seiten || '',
+                            kommentar: doc.kommentar || '',
+                            date: doc.date || new Date().toLocaleDateString(),
+                            fileName: doc.fileName || 'Dokument.pdf',
+                            fileType: doc.fileType || 'application/pdf',
+                            fileSize: Number(doc.fileSize) || 0,
+                            fileHash: doc.fileHash || '',
+                            sourceDb: dbName,
+                            isOfficial: true,
+                            fileData: doc.fileData || ''
+                        });
+                    }
+                }
+            } catch (e) {
+                console.warn('[Osiris Admin] Error collecting docs from', dbName, e);
+            }
+        }
+
+        if (exportDocs.length === 0) {
+            showSwarmToast('⚠️ Keine geteilten Dokumente zum Exportieren gefunden. Bitte teilen Sie zuerst Dokumente über das Menü „Teilen“.', 'warning');
+            return null;
+        }
+
+        const catalogPayload = {
+            version: 1,
+            updatedAt: new Date().toISOString(),
+            totalDocuments: exportDocs.length,
+            generator: 'Osiris Hybrid Swarm Admin v2.0',
+            documents: exportDocs
+        };
+
+        const jsonString = JSON.stringify(catalogPayload, null, 2);
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'official-catalog.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        showSwarmToast(`🏛️ Offizieller Katalog mit ${exportDocs.length} Dokument(en) exportiert! Kopieren Sie die Datei nach data/official-catalog.json und committen Sie auf GitHub.`, 'info');
+        return catalogPayload;
+    }
+    
     async function getNewRemoteFiles() {
         const newFiles = [];
         const seen = new Set();
@@ -685,6 +909,34 @@
             (localCatalog || []).map(d => d ? Number(d.id) : 0).filter(Boolean)
         );
 
+        // 1. Official Git catalog documents
+        try {
+            const officialCat = await fetchOfficialCatalog();
+            for (const doc of (officialCat.documents || [])) {
+                if (!doc) continue;
+                const docHash = doc.fileHash ? String(doc.fileHash).toLowerCase().trim() : '';
+                const docKey = `${(doc.fileName || '').toLowerCase().trim()}_${doc.fileSize || 0}`;
+                const docId = Number(doc.id);
+
+                if (docHash && localSharedHashes.has(docHash)) continue;
+                if (localSharedKeys.has(docKey)) continue;
+                if (docId > 0 && localSharedIds.has(docId)) continue;
+                if (isDocShared(docId)) continue;
+
+                const dedupeKey = docHash || docKey || `official:${docId}`;
+                if (seen.has(dedupeKey)) continue;
+                seen.add(dedupeKey);
+
+                const exists = await checkDocExistsInDatabases(doc);
+                if (!exists) {
+                    newFiles.push({ peerId: 'official', doc: doc, isOfficial: true });
+                }
+            }
+        } catch (e) {
+            console.warn('[Osiris Hybrid] Error checking official catalog in getNewRemoteFiles:', e);
+        }
+
+        // 2. Remote P2P peers
         const peers = Array.from(remoteCatalog.entries());
         for (const [peerId, peerData] of peers) {
             if (!PEER_ID_REGEX.test(peerId) || peerId === myPeerId) continue;
@@ -705,7 +957,7 @@
 
                 const exists = await checkDocExistsInDatabases(doc);
                 if (!exists) {
-                    newFiles.push({ peerId, doc });
+                    newFiles.push({ peerId, doc, isOfficial: false });
                 }
             }
         }
@@ -714,16 +966,38 @@
 
     async function syncAllAvailableDocs() {
         await refreshLocalCatalog();
+
+        // 1. Sync official Git catalog first
+        let officialCount = 0;
+        try {
+            officialCount = await syncOfficialCatalog(false);
+        } catch (e) {
+            console.warn('[Osiris Swarm] Git catalog sync error:', e);
+        }
+
+        // 2. Discover remaining new remote files from P2P peers
         const newFiles = await getNewRemoteFiles();
-        if (newFiles.length === 0) {
+        const p2pFiles = newFiles.filter(item => item.peerId !== 'official');
+
+        const totalCount = officialCount + p2pFiles.length;
+
+        if (totalCount === 0) {
             showSwarmToast('✓ Datenbank ist auf dem neuesten Stand. Keine neuen Dokumente im Schwarm.', 'info');
             updateSwarmBadge();
             return 0;
         }
 
-        showSwarmToast(`🔄 Aktualisiere ${newFiles.length} neue(s) Dokument(e) aus dem Schwarm...`, 'info');
+        let toastText = `🔄 Aktualisiere ${totalCount} neue(s) Dokument(e)`;
+        if (officialCount > 0 && p2pFiles.length > 0) {
+            toastText += ` (${officialCount} offiziell, ${p2pFiles.length} Schwarm)...`;
+        } else if (officialCount > 0) {
+            toastText += ` aus dem offiziellen Katalog...`;
+        } else {
+            toastText += ` aus dem Schwarm...`;
+        }
+        showSwarmToast(toastText, 'info');
 
-        for (const item of newFiles) {
+        for (const item of p2pFiles) {
             const doc = item.doc;
             const peerId = item.peerId;
             const docHash = doc.fileHash ? String(doc.fileHash).toLowerCase().trim() : '';
@@ -741,7 +1015,8 @@
         }
 
         processAutoSyncQueue();
-        return newFiles.length;
+        updateSwarmBadge();
+        return totalCount;
     }
 
     function setAutoSaveToDbEnabled(enabled) {
@@ -1633,6 +1908,13 @@
         // 2. Init WebRTC PeerJS Mesh (Global cross-device mesh)
         initWebRtcSwarm();
 
+        // 3. Initial & periodic sync of official Git catalog (fresh updates on startup)
+        syncOfficialCatalog(true).catch(e => console.warn('[Osiris Hybrid] Initial catalog sync error:', e));
+
+        setInterval(() => {
+            syncOfficialCatalog(true).catch(e => {});
+        }, 60000);
+
         // Periodic presence broadcast & mesh reconnection every 15s
         setInterval(() => {
             broadcastPresence();
@@ -2036,6 +2318,81 @@
         const success = triggerBrowserFileDownload(doc.fileName || 'Dokument.pdf', doc.fileData);
         if (success) {
             showSwarmToast(`📥 Datei „${doc.fileName}“ wird heruntergeladen.`, 'info');
+        }
+    }
+
+    async function downloadOfficialCatalogDoc(docId) {
+        const catalog = await fetchOfficialCatalog();
+        const doc = (catalog.documents || []).find(d => Number(d.id) === Number(docId));
+        if (!doc) {
+            showSwarmToast('⚠️ Offizielles Dokument nicht im Katalog gefunden.', 'warning');
+            return;
+        }
+
+        let fileData = doc.fileData;
+        if (!fileData && doc.filePath) {
+            try {
+                showSwarmToast(`📥 Lade offizielle Datei herunter: ${doc.fileName}...`, 'info');
+                const resp = await fetch(doc.filePath);
+                if (resp.ok) {
+                    const blob = await resp.blob();
+                    fileData = await new Promise((resolve) => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => resolve(reader.result);
+                        reader.onerror = () => resolve('');
+                        reader.readAsDataURL(blob);
+                    });
+                }
+            } catch (e) {
+                console.warn('[Osiris Hybrid] Error downloading official file from filePath:', e);
+            }
+        }
+
+        if (!fileData) {
+            showSwarmToast('⚠️ Datei-Inhalt des Dokuments konnte nicht geladen werden.', 'warning');
+            return;
+        }
+
+        // Trigger immediate browser download
+        triggerBrowserFileDownload(doc.fileName || 'Dokument.pdf', fileData);
+
+        const primaryDb = doc.sourceDb || currentConfig.dbName || 'DokumentationDB';
+        const docRecord = Object.assign({}, doc, {
+            id: Number(doc.id) || (Date.now() + Math.floor(Math.random() * 1000)),
+            fileData: fileData,
+            isOfficial: true,
+            isSwarmImport: true,
+            importedAt: Date.now(),
+            sourceDb: primaryDb
+        });
+
+        if (isAutoSaveToDbEnabled()) {
+            const storeName = currentConfig.storeName || 'documents';
+            try {
+                const db = await openDatabaseWithStore(primaryDb, storeName);
+                const tx = db.transaction([storeName], 'readwrite');
+                const store = tx.objectStore(storeName);
+                store.put(docRecord);
+                tx.oncomplete = () => {
+                    db.close();
+                    if (doc.fileHash && window.knownLocalHashes) window.knownLocalHashes.add(doc.fileHash.toLowerCase());
+                    trackUpdatedDoc(docRecord.id, doc.fileHash);
+                    broadcastDataReload(docRecord);
+                    showSwarmToast(`✅ Datei „${doc.fileName}“ heruntergeladen & in Datenbank gespeichert!`, 'info');
+                    renderSwarmModalContent();
+                    updateSwarmBadge();
+                };
+            } catch (e) {
+                stageDocumentInInbox(docRecord);
+                showSwarmToast(`📥 Datei „${doc.fileName}“ heruntergeladen & im Posteingang bereitgestellt!`, 'info');
+                renderSwarmModalContent();
+                updateSwarmBadge();
+            }
+        } else {
+            stageDocumentInInbox(docRecord);
+            showSwarmToast(`📥 Datei „${doc.fileName}“ heruntergeladen & im Posteingang bereitgestellt!`, 'info');
+            renderSwarmModalContent();
+            updateSwarmBadge();
         }
     }
 
@@ -2490,6 +2847,15 @@
                 await importAllStagedDocsToDb();
                 return;
             }
+            const adminExportBtn = e.target.closest('#btn-admin-export-catalog');
+            if (adminExportBtn) {
+                adminExportBtn.disabled = true;
+                adminExportBtn.style.opacity = '0.7';
+                await exportOfficialCatalogJson();
+                adminExportBtn.disabled = false;
+                adminExportBtn.style.opacity = '1';
+                return;
+            }
             const dlBtn = e.target.closest('[data-swarm-download]');
             if (dlBtn) {
                 const docId = Number(dlBtn.getAttribute('data-doc-id'));
@@ -2498,6 +2864,11 @@
                 dlBtn.style.opacity = '0.8';
                 dlBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle; margin-right:6px; animation:osirisToastSpin 0.85s linear infinite;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg><span>${i18n.downloading || 'Lade...'}</span>`;
                 
+                if (peerId === 'official') {
+                    await downloadOfficialCatalogDoc(docId);
+                    return;
+                }
+
                 // Track user intent for browser file download upon arrival
                 userDownloadRequests.add(docId);
                 requestDocDownload(docId, peerId);
@@ -2595,7 +2966,7 @@
 
         const stagedDocs = getStagedInboxDocuments();
 
-        // Calculate allRemoteDocs
+        // Calculate allRemoteDocs (combining Official Git catalog + P2P peers)
         const allRemoteDocs = [];
         const seenRemoteKeys = new Set();
         const localSharedHashes = new Set(
@@ -2614,6 +2985,30 @@
                 .filter(Boolean)
         );
 
+        // 1. Include official Git catalog documents into allRemoteDocs
+        try {
+            if (cachedOfficialCatalog && Array.isArray(cachedOfficialCatalog.documents)) {
+                cachedOfficialCatalog.documents.forEach(doc => {
+                    if (!doc) return;
+                    const docHash = doc.fileHash ? String(doc.fileHash).toLowerCase().trim() : '';
+                    const docKey = `${(doc.fileName || '').toLowerCase().trim()}_${doc.fileSize || 0}`;
+                    const docId = Number(doc.id);
+
+                    if (docHash && localSharedHashes.has(docHash)) return;
+                    if (localSharedKeys.has(docKey)) return;
+                    if (docId > 0 && localSharedIds.has(docId)) return;
+                    if (isDocShared(docId)) return;
+
+                    const dedupeKey = docHash || docKey || `official:${docId}`;
+                    if (seenRemoteKeys.has(dedupeKey)) return;
+                    seenRemoteKeys.add(dedupeKey);
+
+                    allRemoteDocs.push({ peerId: 'official', doc, isOfficial: true });
+                });
+            }
+        } catch (e) {}
+
+        // 2. Include P2P peers into allRemoteDocs
         remoteCatalog.forEach((peerData, peerId) => {
             if (!PEER_ID_REGEX.test(peerId) || peerId === myPeerId) return;
             (peerData.docs || []).forEach(doc => {
@@ -2631,7 +3026,7 @@
                 if (seenRemoteKeys.has(dedupeKey)) return;
                 seenRemoteKeys.add(dedupeKey);
 
-                allRemoteDocs.push({ peerId, doc });
+                allRemoteDocs.push({ peerId, doc, isOfficial: false });
             });
         });
 
@@ -2751,6 +3146,30 @@
                     .filter(Boolean)
             );
 
+            // 1. Include official Git catalog documents
+            try {
+                if (cachedOfficialCatalog && Array.isArray(cachedOfficialCatalog.documents)) {
+                    cachedOfficialCatalog.documents.forEach(doc => {
+                        if (!doc) return;
+                        const docHash = doc.fileHash ? String(doc.fileHash).toLowerCase().trim() : '';
+                        const docKey = `${(doc.fileName || '').toLowerCase().trim()}_${doc.fileSize || 0}`;
+                        const docId = Number(doc.id);
+
+                        if (docHash && localSharedHashes.has(docHash)) return;
+                        if (localSharedKeys.has(docKey)) return;
+                        if (docId > 0 && localSharedIds.has(docId)) return;
+                        if (isDocShared(docId)) return;
+
+                        const dedupeKey = docHash || docKey || `official:${docId}`;
+                        if (seenRemoteKeys.has(dedupeKey)) return;
+                        seenRemoteKeys.add(dedupeKey);
+
+                        allRemoteDocs.push({ peerId: 'official', doc, isOfficial: true });
+                    });
+                }
+            } catch (e) {}
+
+            // 2. Include P2P peers
             remoteCatalog.forEach((peerData, peerId) => {
                 if (!PEER_ID_REGEX.test(peerId) || peerId === myPeerId) return;
                 (peerData.docs || []).forEach(doc => {
@@ -2770,7 +3189,7 @@
                     if (seenRemoteKeys.has(dedupeKey)) return;
                     seenRemoteKeys.add(dedupeKey);
 
-                    allRemoteDocs.push({ peerId, doc });
+                    allRemoteDocs.push({ peerId, doc, isOfficial: false });
                 });
             });
 
@@ -2796,7 +3215,8 @@
                         </div>
                 `;
 
-                allRemoteDocs.forEach(({ peerId, doc }) => {
+                allRemoteDocs.forEach(({ peerId, doc, isOfficial }) => {
+                    const isDocOfficial = !!isOfficial || doc.isOfficial || peerId === 'official';
                     const safeTyp = escapeHtml(doc.typ);
                     const safeKlassen = escapeHtml(doc.klassen);
                     const safeJahr = escapeHtml(doc.jahr);
@@ -2825,6 +3245,7 @@
                         <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border:1px solid ${cardBorder}; border-radius:10px; background:${cardBg}; box-shadow:${shadow}; gap:14px;">
                             <div style="flex:1; min-width:0;">
                                 <div style="display:flex; gap:6px; align-items:center; margin-bottom:6px; flex-wrap:wrap;">
+                                    ${isDocOfficial ? `<span title="Offizielles Dokument (GitHub Repository)" style="background:#4f46e5; color:white; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:700; display:inline-flex; align-items:center; gap:4px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg> 🏛️ Offiziell</span>` : ''}
                                     <span style="background:#2563eb; color:white; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:700;">${safeTyp}</span>
                                     <span style="background:${isDark ? '#334155' : '#e2e8f0'}; color:${textColor}; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:600;">${safeKlassen}</span>
                                     <span style="background:${isDark ? '#334155' : '#e2e8f0'}; color:${textColor}; padding:2px 8px; border-radius:4px; font-size:0.72rem;">${safeJahr}</span>
@@ -2845,8 +3266,25 @@
                 wrap.innerHTML = html;
             }
         } else {
+            const adminBarHtml = `
+                <div style="display:flex; justify-content:space-between; align-items:center; background:${isDark ? '#1e293b' : '#f8fafc'}; border:1px solid ${cardBorder}; padding:10px 14px; border-radius:8px; margin-bottom:12px; gap:10px; flex-wrap:wrap;">
+                    <div style="font-size:0.82rem; color:${textColor};">
+                        <strong style="color:#4f46e5;">🏛️ Admin-Bereich:</strong> Exportieren Sie Ihre freigegebenen Dokumente als <code>official-catalog.json</code> für GitHub.
+                    </div>
+                    <div style="display:flex; gap:8px;">
+                        <a href="ADMIN_CATALOG.html" target="_blank" style="display:inline-flex; align-items:center; gap:5px; padding:6px 12px; background:transparent; color:${isDark ? '#93c5fd' : '#2563eb'}; border:1px solid ${isDark ? '#3b82f6' : '#93c5fd'}; border-radius:6px; font-weight:600; text-decoration:none; font-size:0.78rem;">
+                            <span>Admin-Konsole ↗</span>
+                        </a>
+                        <button type="button" id="btn-admin-export-catalog" style="display:inline-flex; align-items:center; gap:6px; padding:6px 14px; background:#4f46e5; color:white; border:none; border-radius:6px; font-weight:700; cursor:pointer; font-size:0.8rem; box-shadow:0 2px 5px rgba(79,70,229,0.3);" title="Exportiert official-catalog.json für Git Commits">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                            <span>Katalog exportieren (Git)</span>
+                        </button>
+                    </div>
+                </div>
+            `;
+
             if (localCatalog.length === 0) {
-                wrap.innerHTML = `
+                wrap.innerHTML = adminBarHtml + `
                     <div style="text-align:center; padding: 48px 20px; color: ${metaColor};">
                         <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="1.75" style="opacity:0.75; margin-bottom:12px;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
                         <h4 style="margin:0 0 8px 0; color:${textColor}; font-size:1.05rem;">${i18n.noSharedLocal}</h4>
@@ -2856,7 +3294,7 @@
                     </div>
                 `;
             } else {
-                let html = `
+                let html = adminBarHtml + `
                     <div style="display:flex; flex-direction:column; gap:12px;">
                         <div style="font-size:0.85rem; color:${metaColor}; margin-bottom:2px; font-weight:600;">
                             Sie teilen ${localCatalog.length} Dokument(e) im Schwarm :
@@ -2978,7 +3416,13 @@
         importStagedDocToDb: importStagedDocToDb,
         importAllStagedDocsToDb: importAllStagedDocsToDb,
         receiveDocFromPeer: receiveDocFromPeer,
-        broadcastDataReload: broadcastDataReload
+        broadcastDataReload: broadcastDataReload,
+        fetchOfficialCatalog: fetchOfficialCatalog,
+        syncOfficialCatalog: syncOfficialCatalog,
+        exportOfficialCatalogJson: exportOfficialCatalogJson,
+        downloadOfficialCatalogDoc: downloadOfficialCatalogDoc,
+        downloadLocalSharedDocFile: downloadLocalSharedDocFile,
+        downloadStagedInboxDocFile: downloadStagedInboxDocFile
     });
 
     try {
