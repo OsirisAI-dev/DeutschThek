@@ -2736,10 +2736,75 @@
         `;
 
         modal.innerHTML = `
+            <style id="swarm-responsive-styles">
+                #swarm-tabs-container::-webkit-scrollbar {
+                    height: 4px;
+                }
+                #swarm-tabs-container::-webkit-scrollbar-track {
+                    background: transparent;
+                }
+                #swarm-tabs-container::-webkit-scrollbar-thumb {
+                    background: ${isDark ? 'rgba(148, 163, 184, 0.35)' : 'rgba(100, 116, 139, 0.35)'};
+                    border-radius: 4px;
+                }
+                #swarm-tabs-container::-webkit-scrollbar-thumb:hover {
+                    background: ${isDark ? 'rgba(148, 163, 184, 0.65)' : 'rgba(100, 116, 139, 0.65)'};
+                }
+                @media (max-width: 640px) {
+                    #swarm-modal {
+                        padding: 8px !important;
+                    }
+                    #swarm-modal-dialog {
+                        max-height: 96vh !important;
+                        border-radius: 12px !important;
+                        width: 100% !important;
+                    }
+                    #swarm-modal-header {
+                        padding: 12px 14px !important;
+                    }
+                    #swarm-ui-title {
+                        font-size: 1.05rem !important;
+                    }
+                    #swarm-status-banner {
+                        padding: 10px 14px !important;
+                        gap: 8px !important;
+                    }
+                    #swarm-tabs-container {
+                        padding: 0 4px !important;
+                        -webkit-overflow-scrolling: touch !important;
+                    }
+                    .swarm-tab-item {
+                        padding: 11px 14px !important;
+                        font-size: 0.84rem !important;
+                    }
+                    #swarm-tab-content {
+                        padding: 14px 10px !important;
+                    }
+                    #swarm-modal-footer {
+                        padding: 10px 14px !important;
+                    }
+                    .swarm-doc-card {
+                        flex-direction: column !important;
+                        align-items: stretch !important;
+                        gap: 12px !important;
+                        padding: 12px 14px !important;
+                    }
+                    .swarm-doc-actions {
+                        display: flex !important;
+                        justify-content: flex-end !important;
+                        width: 100% !important;
+                        gap: 8px !important;
+                    }
+                    .swarm-doc-actions button {
+                        flex: 1 1 auto !important;
+                        justify-content: center !important;
+                    }
+                }
+            </style>
             <div id="swarm-modal-dialog" style="background: ${dialogBg}; color: ${dialogText}; border: 1px solid ${borderColor}; border-radius: 14px; width: 100%; max-width: 860px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,0.45); opacity: 1 !important;">
                 
                 <!-- Header (Solid Opaque Background) -->
-                <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 22px; border-bottom: 1px solid ${borderColor}; background: ${headerBg};">
+                <div id="swarm-modal-header" style="display: flex; justify-content: space-between; align-items: center; padding: 16px 22px; border-bottom: 1px solid ${borderColor}; background: ${headerBg};">
                     <div style="display:flex; align-items:center; gap:12px;">
                         <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
                             <circle cx="12" cy="12" r="10"></circle>
@@ -2758,7 +2823,7 @@
                 </div>
 
                 <!-- Clean Status Banner (Pure Direct Exchange - No Private Keys or Codes) -->
-                <div style="padding: 12px 22px; background: ${isDark ? 'rgba(34, 197, 94, 0.12)' : 'rgba(34, 197, 94, 0.08)'}; border-bottom: 1px solid ${isDark ? 'rgba(34, 197, 94, 0.25)' : 'rgba(34, 197, 94, 0.2)'}; font-size: 0.84rem; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap:wrap;">
+                <div id="swarm-status-banner" style="padding: 12px 22px; background: ${isDark ? 'rgba(34, 197, 94, 0.12)' : 'rgba(34, 197, 94, 0.08)'}; border-bottom: 1px solid ${isDark ? 'rgba(34, 197, 94, 0.25)' : 'rgba(34, 197, 94, 0.2)'}; font-size: 0.84rem; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap:wrap;">
                     <div style="display:flex; align-items:center; gap:9px;">
                         <span id="swarm-net-dot" style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#22c55e; box-shadow:0 0 8px rgba(34, 197, 94, 0.7); flex-shrink:0;"></span>
                         <span id="swarm-net-status-text" style="color:${isDark ? '#bbf7d0' : '#166534'};"><strong>Automatische Direktverbindung:</strong> Alle Kollegen auf dieser Seite tauschen Dokumente direkt ohne Code aus.</span>
@@ -2772,17 +2837,17 @@
                     </div>
                 </div>
 
-                <!-- Tabs with Modern Sleek Icons -->
-                <div style="display:flex; border-bottom: 1px solid ${borderColor}; background: ${headerBg};">
-                    <button id="swarm-tab-inbox" style="flex:1; padding:13px; border:none; background:transparent; border-bottom:3px solid transparent; font-weight:600; cursor:pointer; color:${isDark ? '#94a3b8' : '#64748b'}; font-size:0.9rem; display:inline-flex; align-items:center; justify-content:center; gap:8px;">
+                <!-- Tabs with Modern Sleek Icons and Horizontal Scrollability on Mobile -->
+                <div id="swarm-tabs-container" style="display:flex; overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch; border-bottom: 1px solid ${borderColor}; background: ${headerBg}; scrollbar-width:thin;">
+                    <button id="swarm-tab-inbox" class="swarm-tab-item" style="flex:1 0 auto; min-width:max-content; padding:13px 18px; border:none; background:transparent; border-bottom:3px solid transparent; font-weight:600; cursor:pointer; color:${isDark ? '#94a3b8' : '#64748b'}; font-size:0.9rem; display:inline-flex; align-items:center; justify-content:center; gap:8px; white-space:nowrap; -webkit-tap-highlight-color:transparent;">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>
                         <span>${i18n.tabInbox || 'Posteingang'}</span>
                     </button>
-                    <button id="swarm-tab-remote" style="flex:1; padding:13px; border:none; background:transparent; border-bottom:3px solid #2563eb; font-weight:700; cursor:pointer; color:#2563eb; font-size:0.9rem; display:inline-flex; align-items:center; justify-content:center; gap:8px;">
+                    <button id="swarm-tab-remote" class="swarm-tab-item" style="flex:1 0 auto; min-width:max-content; padding:13px 18px; border:none; background:transparent; border-bottom:3px solid #2563eb; font-weight:700; cursor:pointer; color:#2563eb; font-size:0.9rem; display:inline-flex; align-items:center; justify-content:center; gap:8px; white-space:nowrap; -webkit-tap-highlight-color:transparent;">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10z"></path><path d="M12 2a15.3 15.3 0 0 0-4 10 15.3 15.3 0 0 0 4 10z"></path></svg>
                         <span>${i18n.tabRemote || 'Verfügbare Dokumente'}</span>
                     </button>
-                    <button id="swarm-tab-local" style="flex:1; padding:13px; border:none; background:transparent; border-bottom:3px solid transparent; font-weight:600; cursor:pointer; color:${isDark ? '#94a3b8' : '#64748b'}; font-size:0.9rem; display:inline-flex; align-items:center; justify-content:center; gap:8px;">
+                    <button id="swarm-tab-local" class="swarm-tab-item" style="flex:1 0 auto; min-width:max-content; padding:13px 18px; border:none; background:transparent; border-bottom:3px solid transparent; font-weight:600; cursor:pointer; color:${isDark ? '#94a3b8' : '#64748b'}; font-size:0.9rem; display:inline-flex; align-items:center; justify-content:center; gap:8px; white-space:nowrap; -webkit-tap-highlight-color:transparent;">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg>
                         <span>${i18n.tabLocal || 'Meine geteilten'}</span>
                     </button>
@@ -2792,7 +2857,7 @@
                 <div id="swarm-tab-content" style="padding: 22px; overflow-y: auto; flex: 1; background: ${dialogBg}; min-height: 260px;"></div>
 
                 <!-- Footer -->
-                <div style="padding: 14px 22px; border-top: 1px solid ${borderColor}; display: flex; justify-content: space-between; align-items: center; background: ${headerBg}; font-size: 0.82rem;">
+                <div id="swarm-modal-footer" style="padding: 14px 22px; border-top: 1px solid ${borderColor}; display: flex; justify-content: space-between; align-items: center; background: ${headerBg}; font-size: 0.82rem;">
                     <span id="swarm-footer-stats" style="color:${isDark ? '#94a3b8' : '#64748b'};">Status: P2P-Schwarm aktiv</span>
                     <button id="swarm-close-btn" style="padding: 8px 18px; border: 1px solid ${borderColor}; border-radius: 6px; background: ${dialogBg}; color: ${dialogText}; font-weight: 600; cursor: pointer; font-size:0.84rem;">${i18n.close}</button>
                 </div>
@@ -2921,6 +2986,17 @@
             btnLocal.style.color = currentSwarmTab === 'local' ? '#2563eb' : inactiveColor;
             btnLocal.style.fontWeight = currentSwarmTab === 'local' ? '700' : '600';
         }
+
+        // Auto-scroll active tab into view smoothly on mobile/narrow viewports
+        const activeBtn = currentSwarmTab === 'inbox' ? btnInbox : (currentSwarmTab === 'local' ? btnLocal : btnRemote);
+        if (activeBtn && typeof activeBtn.scrollIntoView === 'function') {
+            try {
+                activeBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+            } catch (e) {
+                try { activeBtn.scrollIntoView(false); } catch (e2) {}
+            }
+        }
+
         renderSwarmModalContent();
     }
 
@@ -3091,7 +3167,7 @@
                     const sizeMb = doc.fileSize ? (doc.fileSize / (1024 * 1024)).toFixed(2) + ' MB' : '';
 
                     html += `
-                        <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border:1px solid ${isDark ? 'rgba(34,197,94,0.3)' : '#86efac'}; border-radius:10px; background:${isDark ? 'rgba(34,197,94,0.06)' : '#f0fdf4'}; box-shadow:${shadow}; gap:14px;">
+                        <div class="swarm-doc-card" style="display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border:1px solid ${isDark ? 'rgba(34,197,94,0.3)' : '#86efac'}; border-radius:10px; background:${isDark ? 'rgba(34,197,94,0.06)' : '#f0fdf4'}; box-shadow:${shadow}; gap:14px;">
                             <div style="flex:1; min-width:0;">
                                 <div style="display:flex; gap:6px; align-items:center; margin-bottom:6px; flex-wrap:wrap;">
                                     <span style="background:#16a34a; color:white; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:700; display:inline-flex; align-items:center; gap:4px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg> Posteingang</span>
@@ -3106,7 +3182,7 @@
                                     Lektion: <strong>${safeLektion}</strong> | Buch: <strong>${safeBuch}</strong> | 📄 ${safeFileName}
                                 </div>
                             </div>
-                            <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+                            <div class="swarm-doc-actions" style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
                                 <button type="button" data-swarm-import="${safeDocId}" style="display:inline-flex; align-items:center; gap:6px; padding:10px 16px; background:#16a34a; color:#ffffff; border:none; border-radius:8px; font-weight:700; cursor:pointer; font-size:0.85rem; box-shadow:0 2px 6px rgba(22,163,74,0.35); transition:transform 0.15s ease;">
                                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                                     <span>${i18n.import1Click}</span>
@@ -3242,7 +3318,7 @@
                            </button>`;
 
                     html += `
-                        <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border:1px solid ${cardBorder}; border-radius:10px; background:${cardBg}; box-shadow:${shadow}; gap:14px;">
+                        <div class="swarm-doc-card" style="display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border:1px solid ${cardBorder}; border-radius:10px; background:${cardBg}; box-shadow:${shadow}; gap:14px;">
                             <div style="flex:1; min-width:0;">
                                 <div style="display:flex; gap:6px; align-items:center; margin-bottom:6px; flex-wrap:wrap;">
                                     ${isDocOfficial ? `<span title="Offizielles Dokument (GitHub Repository)" style="background:#4f46e5; color:white; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:700; display:inline-flex; align-items:center; gap:4px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg> 🏛️ Offiziell</span>` : ''}
@@ -3257,7 +3333,9 @@
                                     Lektion: <strong>${safeLektion}</strong> | Buch: <strong>${safeBuch}</strong> | 📄 ${safeFileName}
                                 </div>
                             </div>
-                            ${actionBtnHtml}
+                            <div class="swarm-doc-actions" style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+                                ${actionBtnHtml}
+                            </div>
                         </div>
                     `;
                 });
@@ -3311,7 +3389,7 @@
                     const shortHash = doc.fileHash ? escapeHtml(doc.fileHash.substring(0, 6).toUpperCase()) : 'LOCAL';
 
                     html += `
-                        <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border:1px solid ${cardBorder}; border-radius:10px; background:${cardBg}; box-shadow:${shadow}; gap:14px;">
+                        <div class="swarm-doc-card" style="display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border:1px solid ${cardBorder}; border-radius:10px; background:${cardBg}; box-shadow:${shadow}; gap:14px;">
                             <div style="flex:1; min-width:0;">
                                 <div style="display:flex; gap:6px; align-items:center; margin-bottom:6px; flex-wrap:wrap;">
                                     <span style="background:#2563eb; color:white; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:700;">${safeTyp}</span>
@@ -3322,7 +3400,7 @@
                                 <h4 style="margin:0 0 4px 0; color:${isDark ? '#60a5fa' : '#1e3a8a'}; font-size:1rem; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${safeThema}</h4>
                                 <div style="font-size:0.78rem; color:${metaColor};">📄 ${safeFileName}</div>
                             </div>
-                            <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+                            <div class="swarm-doc-actions" style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
                                 <button type="button" data-swarm-download-local="${safeDocId}" style="display:inline-flex; align-items:center; gap:6px; padding:8px 13px; background:#2563eb; color:white; border:none; border-radius:6px; font-weight:700; cursor:pointer; font-size:0.8rem; box-shadow:0 1px 4px rgba(37,99,235,0.25);" title="Datei mit Metadaten auf Gerät herunterladen (z.B. zum manuellen Teilen)">
                                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                                     <span>Herunterladen</span>
