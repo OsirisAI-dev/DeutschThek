@@ -62,10 +62,10 @@
     </script>
     <script>
       // Pre-paint hub prefs read (font + lang) — same osiris_hub_prefs key
-      // EDU_HUB.html reads/writes, so this app opens already matching the
+      // index.html (Edu-Hub) reads/writes, so this app opens already matching the
       // hub's current font/language instead of flashing its own defaults
       // first. Live changes while this tool stays open arrive separately
-      // via the SET_FONT/SET_LANG postMessage listener below (EDU_HUB
+      // via the SET_FONT/SET_LANG postMessage listener below (Edu-Hub
       // pushes those directly to the embedded iframe on every toggle).
       (function () {
         try {
@@ -879,7 +879,7 @@
         return JSON.parse(raw, (k, v) => (k === '__proto__' || k === 'constructor' || k === 'prototype') ? undefined : v);
     }
 
-    // Live updates from EDU_HUB.html (Verified Origin + Sanitized Payloads)
+    // Live updates from index.html Edu-Hub (Verified Origin + Sanitized Payloads)
     window.addEventListener('message', function (e) {
         if (window.OsirisSecurity && window.OsirisSecurity.isTrustedOrigin && !window.OsirisSecurity.isTrustedOrigin(e)) return;
         if (window.parent && e.source && e.source !== window.parent && e.source !== window) return;
