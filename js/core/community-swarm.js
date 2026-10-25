@@ -840,10 +840,134 @@
 
     function removeStagedInboxDocument(docIdOrHash) {
         try {
-            const list = getStagedInboxDocuments().filter(d => d.id !== docIdOrHash && d.fileHash !== docIdOrHash);
+            const list = getStagedInboxDocuments().filter(d => String(d.id) !== String(docIdOrHash) && d.fileHash !== docIdOrHash);
             localStorage.setItem('swarm_staged_inbox', JSON.stringify(list));
             updateSwarmBadge();
         } catch (e) {}
+    }
+
+    function openDatabaseWithStore(dbName, storeName) {
+        return new Promise((resolve, reject) => {
+            const initialReq = indexedDB.open(dbName);
+            initialReq.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains(storeName)) {
+                    db.createObjectStore(storeName, { keyPath: 'id' });
+                }
+            };
+            initialReq.onsuccess = (e) => {
+                const db = e.target.result;
+                if (db.objectStoreNames.contains(storeName)) {
+                    resolve(db);
+                } else {
+                    const nextVersion = (db.version || 1) + 1;
+                    db.close();
+                    const upgradeReq = indexedDB.open(dbName, nextVersion);
+                    upgradeReq.onupgradeneeded = (ev) => {
+                        const upgradedDb = ev.target.result;
+                        if (!upgradedDb.objectStoreNames.contains(storeName)) {
+                            upgradedDb.createObjectStore(storeName, { keyPath: 'id' });
+                        }
+                    };
+                    upgradeReq.onsuccess = (ev) => resolve(ev.target.result);
+                    upgradeReq.onerror = (ev) => reject(ev.target.error);
+                }
+            };
+            initialReq.onerror = (e) => reject(e.target.error);
+        });
+    }
+
+    async function importStagedDocToDb(docIdOrHash, isSilentAuto) {
+        const stagedList = getStagedInboxDocuments();
+        const targetDoc = stagedList.find(d => 
+            d && (String(d.id) === String(docIdOrHash) || (d.fileHash && String(d.fileHash).toLowerCase() === String(docIdOrHash).toLowerCase()))
+        );
+        if (!targetDoc) {
+            console.warn('[Osiris Swarm] Document to import not found in staged inbox:', docIdOrHash);
+            return false;
+        }
+
+        const primaryDb = targetDoc.sourceDb || currentConfig.dbName || 'DokumentationDB';
+        const targetStore = currentConfig.storeName || 'documents';
+
+        try {
+            const db = await openDatabaseWithStore(primaryDb, targetStore);
+            return new Promise((resolve) => {
+                const tx = db.transaction([targetStore], 'readwrite');
+                const store = tx.objectStore(targetStore);
+
+                tx.oncomplete = () => {
+                    db.close();
+
+                    // Remove from staged inbox once successfully stored in IndexedDB
+                    removeStagedInboxDocument(targetDoc.id);
+
+                    if (targetDoc.fileHash && window.knownLocalHashes) {
+                        window.knownLocalHashes.add(targetDoc.fileHash.toLowerCase());
+                    }
+                    trackUpdatedDoc(targetDoc.id, targetDoc.fileHash);
+
+                    const fp = (targetDoc.fileHash || '').substring(0, 6).toUpperCase();
+                    if (!isSilentAuto) {
+                        showSwarmToast(`✅ „${targetDoc.thema}“ (SHA-256 #${fp}) erfolgreich in lokale Bibliothek importiert!`, 'success');
+                    }
+
+                    broadcastDataReload(targetDoc);
+                    updateSwarmBadge();
+                    renderSwarmModalContent();
+                    resolve(true);
+                };
+
+                tx.onerror = (err) => {
+                    db.close();
+                    console.error('[Osiris Swarm] Transaction error:', err);
+                    resolve(false);
+                };
+
+                const countReq = store.count();
+                countReq.onsuccess = (ev) => {
+                    const currentCount = ev.target.result;
+                    if (currentCount >= 10) {
+                        db.close();
+                        const msg = `⚠️ Kapazitätsgrenze (10 Dateien) in ${primaryDb} erreicht. Dokument verbleibt im Posteingang.`;
+                        console.warn('[Osiris Swarm]', msg);
+                        showSwarmToast(msg, 'warning');
+                        resolve(false);
+                        return;
+                    }
+
+                    const cleanDoc = sanitizeDocRecord(targetDoc);
+                    if (!cleanDoc) {
+                        db.close();
+                        resolve(false);
+                        return;
+                    }
+                    store.put(cleanDoc);
+                };
+                countReq.onerror = () => {
+                    db.close();
+                    resolve(false);
+                };
+            });
+        } catch (err) {
+            console.error('[Osiris Swarm] importStagedDocToDb exception:', err);
+            return false;
+        }
+    }
+
+    async function importAllStagedDocsToDb() {
+        const stagedList = getStagedInboxDocuments();
+        if (stagedList.length === 0) return;
+        let successCount = 0;
+        for (const doc of stagedList) {
+            const ok = await importStagedDocToDb(doc.id, true);
+            if (ok) successCount++;
+        }
+        if (successCount > 0) {
+            showSwarmToast(`✅ ${successCount} Dokument(e) erfolgreich in Ihre lokale Bibliothek übernommen!`, 'success');
+        }
+        updateSwarmBadge();
+        renderSwarmModalContent();
     }
 
     function isDocAnUpdate(doc) {
@@ -1775,10 +1899,8 @@
             return;
         }
 
-        // 4. Save sanitized record into target IndexedDB (both sourceDb and currentConfig.dbName so it shows immediately)
+        // 4. Staged Precache Buffer (Sandbox) & Storage
         const primaryDb = docItem.sourceDb || currentConfig.dbName || 'DokumentationDB';
-        const targetStore = currentConfig.storeName || 'documents';
-
         const newItem = Object.assign({}, docItem, {
             id: Date.now() + Math.floor(Math.random() * 1000),
             fileHash: computedHash,
@@ -1786,62 +1908,22 @@
             date: new Date().toLocaleDateString(),
             isSwarmImport: true,
             isUpdated: true,
-            importedAt: Date.now()
+            importedAt: Date.now(),
+            sourceDb: primaryDb
         });
 
-        const dbsToSave = [primaryDb];
-        if (currentConfig.dbName && !dbsToSave.includes(currentConfig.dbName)) {
-            dbsToSave.push(currentConfig.dbName);
+        stageDocumentInInbox(newItem);
+        updateSwarmBadge();
+
+        if (isAutoSaveToDbEnabled()) {
+            // Auto-save is enabled: attempt immediate import into DB
+            importStagedDocToDb(newItem.id, true);
+        } else {
+            // Auto-save is off: keep in staged inbox and alert the user with interactive notification
+            const fp = computedHash.substring(0, 6).toUpperCase();
+            showSwarmToast(`📥 Neuer Schwarm-Inhalt im Posteingang: „${newItem.thema}" (SHA-256 #${fp}) – Klicken zum Übernehmen`, 'info');
+            renderSwarmModalContent();
         }
-
-        let savedCount = 0;
-        dbsToSave.forEach(dbName => {
-            try {
-                const req = indexedDB.open(dbName);
-                req.onsuccess = (e) => {
-                    const db = e.target.result;
-                    if (!db.objectStoreNames.contains(targetStore)) {
-                        db.close();
-                        return;
-                    }
-                    const tx = db.transaction([targetStore], 'readwrite');
-                    const store = tx.objectStore(targetStore);
-                    const countReq = store.count();
-                    countReq.onsuccess = (ev) => {
-                        const currentCount = ev.target.result;
-                        if (currentCount >= 10) {
-                            db.close();
-                            console.warn(`[Osiris Swarm] Kapazitätsgrenze (10 Dateien) in ${dbName} erreicht. Dokument „${newItem.thema}“ wird im Posteingang gepuffert.`);
-                            stageDocumentInInbox(newItem);
-                            showSwarmToast(`⚠️ Schwarm-Datei „${newItem.thema}“ empfangen, aber lokale Datenbank hat das Limit von 10 Dateien erreicht.`, 'warning');
-                            return;
-                        }
-                        store.add(newItem);
-                        tx.oncomplete = () => {
-                            db.close();
-                            savedCount++;
-                            if (savedCount === 1) {
-                                const fp = computedHash.substring(0, 6).toUpperCase();
-                                if (window.knownLocalHashes) window.knownLocalHashes.add(computedHash);
-                                trackUpdatedDoc(newItem.id, computedHash);
-
-                                const toastMsg = isAuto
-                                    ? `📥 P2P: „${newItem.thema}" automatisch in Datenbank gespeichert (SHA-256 #${fp})`
-                                    : `✅ Dokument „${newItem.thema}" erfolgreich geprüft (SHA-256 #${fp}) und gespeichert!`;
-                                showSwarmToast(toastMsg, 'success');
-
-                                broadcastDataReload(newItem);
-                                renderSwarmModalContent();
-                            }
-                        };
-                        tx.onerror = () => { db.close(); };
-                    };
-                    countReq.onerror = () => { db.close(); };
-                };
-            } catch (err) {
-                console.error('Save imported doc error:', err);
-            }
-        });
     }
 
     function broadcastDataReload(savedDoc) {
@@ -1977,18 +2059,14 @@
     // 4. UI: ZERO-TRUST SWARM MODAL RENDERING
     // =========================================================================
 
-    async function updateSwarmBadge() {
-        const activePeers = remoteCatalog.size;
-        const totalShared = localCatalog.length;
-
-        let newFilesCount = 0;
-        try {
-            const newFiles = await getNewRemoteFiles();
-            newFilesCount = newFiles.length;
-        } catch (e) {}
-
+    function applyBadgeDom(stagedCount, newFilesCount, activePeers, totalShared) {
         document.querySelectorAll('#swarm-status-badge, #headerSwarmBadge').forEach(badge => {
-            if (newFilesCount > 0) {
+            if (stagedCount > 0) {
+                badge.className = 'swarm-pill is-active has-inbox';
+                badge.style.background = '#16a34a';
+                badge.innerHTML = `<span style="display:inline-flex; align-items:center; gap:5px;"><span style="font-size:0.85rem;">📥</span> <strong>Posteingang (${stagedCount} neu)</strong></span>`;
+                badge.title = `${stagedCount} neue Datei(en) im Posteingang bereit! (1 Klick: Öffnen & Übernehmen)`;
+            } else if (newFilesCount > 0) {
                 badge.className = 'swarm-pill is-active has-new';
                 badge.style.background = '#2563eb';
                 badge.textContent = `● Schwarm (+${newFilesCount} neu)`;
@@ -2013,14 +2091,39 @@
                     type: 'SWARM_BADGE_UPDATE',
                     activePeers: activePeers,
                     totalShared: totalShared,
-                    newFilesCount: newFilesCount
+                    newFilesCount: newFilesCount,
+                    stagedCount: stagedCount
                 }, getTargetOrigin());
             } catch (e) {}
         }
     }
 
+    async function updateSwarmBadge() {
+        const stagedDocs = getStagedInboxDocuments();
+        const stagedCount = stagedDocs.length;
+        const activePeers = remoteCatalog.size;
+        const totalShared = localCatalog.length;
+
+        // 1. Immediately apply DOM badge update so there is 0ms UI lag
+        applyBadgeDom(stagedCount, 0, activePeers, totalShared);
+
+        // 2. Query remote files asynchronously
+        let newFilesCount = 0;
+        try {
+            const newFiles = await getNewRemoteFiles();
+            newFilesCount = newFiles.length;
+        } catch (e) {}
+
+        applyBadgeDom(stagedCount, newFilesCount, activePeers, totalShared);
+    }
+
     async function openSwarmModal(tab) {
-        if (tab) currentSwarmTab = tab === 'local' ? 'local' : 'remote';
+        if (tab) {
+            currentSwarmTab = (tab === 'local' || tab === 'inbox') ? tab : 'remote';
+        } else {
+            const staged = getStagedInboxDocuments();
+            if (staged.length > 0) currentSwarmTab = 'inbox';
+        }
         await refreshLocalCatalog();
         let modal = document.getElementById('swarm-modal');
         if (!modal) {
@@ -2045,8 +2148,15 @@
             activeP2p: "P2P Mondial actif",
             connecting: "Connexion à l'essaim P2P...",
             localOnly: "Essaim local (onglet)",
+            tabInbox: "Boîte de réception",
             tabRemote: "Documents disponibles dans l'essaim",
             tabLocal: "Mes documents partagés",
+            inboxEmpty: "Votre boîte de réception est vide",
+            inboxEmptyHint: "Dès que de nouveaux fichiers sont reçus ou synchronisés depuis l'essaim, ils sont pré-mis en cache ici en toute sécurité. Cliquez sur « Importer » pour les ajouter à votre liste de documents.",
+            import1Click: "Importer (1 clic)",
+            importAll: "Tout importer",
+            dismiss: "Ignorer",
+            inboxWaiting: "document(s) en attente d'importation dans votre base locale :",
             noPeers: "Aucun autre collègue actif dans cet essaim pour le moment",
             noPeersHint: "Dès qu'un collègue ouvre DeutschThek et clique sur « Partager dans l'essaim », son document apparaît ici en direct !",
             download: "Télécharger",
@@ -2064,8 +2174,15 @@
             activeP2p: "Global P2P Active",
             connecting: "Connecting to P2P Swarm...",
             localOnly: "Local Browser Swarm",
+            tabInbox: "Staged Inbox",
             tabRemote: "Available Documents in Swarm",
             tabLocal: "My Shared Documents",
+            inboxEmpty: "Your staged inbox is empty",
+            inboxEmptyHint: "As soon as new files arrive from peers, they are safely precached here. Click 'Import' to write them to your local database.",
+            import1Click: "Import (1 click)",
+            importAll: "Import All",
+            dismiss: "Dismiss",
+            inboxWaiting: "document(s) precached and waiting to be imported:",
             noPeers: "No other peers active in this swarm right now",
             noPeersHint: "As soon as a colleague opens DeutschThek and shares a document, it will appear here in real time!",
             download: "Download",
@@ -2083,8 +2200,15 @@
             activeP2p: "Global P2P aktiv",
             connecting: "Verbinde mit Globalem Swarm...",
             localOnly: "Lokaler Browser-Swarm",
+            tabInbox: "Posteingang",
             tabRemote: "Verfügbare Dokumente im Schwarm",
             tabLocal: "Meine geteilten Dokumente",
+            inboxEmpty: "Ihr Posteingang ist leer",
+            inboxEmptyHint: "Sobald neue Dateien von Kollegen über den Schwarm empfangen oder synchronisiert werden, landen sie sicher hier im Vorab-Puffer (Sandbox). Klicken Sie auf „Übernehmen“, um sie mit 1 Klick in Ihre Dokumentenliste einzutragen.",
+            import1Click: "Übernehmen (1 Klick)",
+            importAll: "Alle übernehmen",
+            dismiss: "Verwerfen",
+            inboxWaiting: "Dokument(e) im Vorab-Puffer bereit zur Übernahme :",
             noPeers: "Keine weiteren Peers im Schwarm aktiv",
             noPeersHint: "Sobald sich andere Lehrkräfte auf GitHub Pages befinden und Dokumente bereitstellen, erscheinen diese hier automatisch in Echtzeit.",
             download: "Laden",
@@ -2098,6 +2222,11 @@
     };
 
     function getSwarmLang() {
+        try {
+            const l = (document.documentElement.lang || localStorage.getItem('wiki_lang') || 'DE').toUpperCase();
+            if (l.startsWith('FR')) return 'FR';
+            if (l.startsWith('EN')) return 'EN';
+        } catch (e) {}
         return 'DE';
     }
 
@@ -2171,8 +2300,9 @@
 
                 <!-- Tabs -->
                 <div style="display:flex; border-bottom: 1px solid ${borderColor}; background: ${headerBg};">
-                    <button id="swarm-tab-remote" style="flex:1; padding:13px; border:none; background:transparent; border-bottom:3px solid #2563eb; font-weight:700; cursor:pointer; color:#2563eb; font-size:0.9rem;">${i18n.tabRemote}</button>
-                    <button id="swarm-tab-local" style="flex:1; padding:13px; border:none; background:transparent; border-bottom:3px solid transparent; font-weight:600; cursor:pointer; color:${isDark ? '#94a3b8' : '#64748b'}; font-size:0.9rem;">${i18n.tabLocal}</button>
+                    <button id="swarm-tab-inbox" style="flex:1; padding:13px; border:none; background:transparent; border-bottom:3px solid transparent; font-weight:600; cursor:pointer; color:${isDark ? '#94a3b8' : '#64748b'}; font-size:0.9rem;">📥 ${i18n.tabInbox || 'Posteingang'}</button>
+                    <button id="swarm-tab-remote" style="flex:1; padding:13px; border:none; background:transparent; border-bottom:3px solid #2563eb; font-weight:700; cursor:pointer; color:#2563eb; font-size:0.9rem;">🌐 ${i18n.tabRemote || 'Verfügbare Dokumente'}</button>
+                    <button id="swarm-tab-local" style="flex:1; padding:13px; border:none; background:transparent; border-bottom:3px solid transparent; font-weight:600; cursor:pointer; color:${isDark ? '#94a3b8' : '#64748b'}; font-size:0.9rem;">📤 ${i18n.tabLocal || 'Meine geteilten'}</button>
                 </div>
 
                 <!-- Tab Content Area (Solid Opaque Background, Zero Bleed-Through) -->
@@ -2190,12 +2320,38 @@
 
         document.getElementById('swarm-close-x').addEventListener('click', closeSwarmModal);
         document.getElementById('swarm-close-btn').addEventListener('click', closeSwarmModal);
+        document.getElementById('swarm-tab-inbox').addEventListener('click', () => switchSwarmTab('inbox'));
         document.getElementById('swarm-tab-remote').addEventListener('click', () => switchSwarmTab('remote'));
         document.getElementById('swarm-tab-local').addEventListener('click', () => switchSwarmTab('local'));
 
-        // Event delegation for Download and Stop sharing buttons
+        // Event delegation for Download, 1-Click Import, Dismiss, and Stop sharing buttons
         const contentWrap = document.getElementById('swarm-tab-content');
-        contentWrap.addEventListener('click', (e) => {
+        contentWrap.addEventListener('click', async (e) => {
+            const importBtn = e.target.closest('[data-swarm-import]');
+            if (importBtn) {
+                const docId = importBtn.getAttribute('data-swarm-import');
+                importBtn.disabled = true;
+                importBtn.style.opacity = '0.75';
+                importBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle; margin-right:6px; animation:osirisToastSpin 0.85s linear infinite;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg><span>Wird übernommen...</span>`;
+                await importStagedDocToDb(docId, false);
+                return;
+            }
+            const dismissBtn = e.target.closest('[data-swarm-dismiss]');
+            if (dismissBtn) {
+                const docId = dismissBtn.getAttribute('data-swarm-dismiss');
+                removeStagedInboxDocument(docId);
+                renderSwarmModalContent();
+                updateSwarmBadge();
+                return;
+            }
+            const importAllBtn = e.target.closest('#btn-import-all-staged');
+            if (importAllBtn) {
+                importAllBtn.disabled = true;
+                importAllBtn.style.opacity = '0.75';
+                importAllBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle; margin-right:6px; animation:osirisToastSpin 0.85s linear infinite;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg><span>Übernehme alle...</span>`;
+                await importAllStagedDocsToDb();
+                return;
+            }
             const dlBtn = e.target.closest('[data-swarm-download]');
             if (dlBtn) {
                 const docId = Number(dlBtn.getAttribute('data-doc-id'));
@@ -2228,19 +2384,33 @@
     let currentSwarmTab = 'remote';
 
     function switchSwarmTab(tab) {
-        currentSwarmTab = tab === 'local' ? 'local' : 'remote';
+        currentSwarmTab = (tab === 'local' || tab === 'inbox') ? tab : 'remote';
+        const isDark = isDarkThemeActive();
+        const inactiveColor = isDark ? '#94a3b8' : '#64748b';
+
+        const btnInbox = document.getElementById('swarm-tab-inbox');
         const btnRemote = document.getElementById('swarm-tab-remote');
         const btnLocal = document.getElementById('swarm-tab-local');
-        if (btnRemote && btnLocal) {
-            btnRemote.style.borderBottomColor = currentSwarmTab === 'remote' ? 'var(--primary)' : 'transparent';
-            btnRemote.style.color = currentSwarmTab === 'remote' ? 'var(--primary)' : 'gray';
-            btnLocal.style.borderBottomColor = currentSwarmTab === 'local' ? 'var(--primary)' : 'transparent';
-            btnLocal.style.color = currentSwarmTab === 'local' ? 'var(--primary)' : 'gray';
+
+        if (btnInbox) {
+            btnInbox.style.borderBottomColor = currentSwarmTab === 'inbox' ? '#16a34a' : 'transparent';
+            btnInbox.style.color = currentSwarmTab === 'inbox' ? '#16a34a' : inactiveColor;
+            btnInbox.style.fontWeight = currentSwarmTab === 'inbox' ? '700' : '600';
+        }
+        if (btnRemote) {
+            btnRemote.style.borderBottomColor = currentSwarmTab === 'remote' ? '#2563eb' : 'transparent';
+            btnRemote.style.color = currentSwarmTab === 'remote' ? '#2563eb' : inactiveColor;
+            btnRemote.style.fontWeight = currentSwarmTab === 'remote' ? '700' : '600';
+        }
+        if (btnLocal) {
+            btnLocal.style.borderBottomColor = currentSwarmTab === 'local' ? '#2563eb' : 'transparent';
+            btnLocal.style.color = currentSwarmTab === 'local' ? '#2563eb' : inactiveColor;
+            btnLocal.style.fontWeight = currentSwarmTab === 'local' ? '700' : '600';
         }
         renderSwarmModalContent();
     }
 
-        function renderSwarmModalContent() {
+    function renderSwarmModalContent() {
         const wrap = document.getElementById('swarm-tab-content');
         if (!wrap) return;
 
@@ -2251,7 +2421,17 @@
         const metaColor = isDark ? '#94a3b8' : '#64748b';
         const shadow = isDark ? '0 3px 10px rgba(0,0,0,0.35)' : '0 2px 6px rgba(0,0,0,0.06)';
 
-        const i18n = (typeof SWARM_STRINGS !== 'undefined' && SWARM_STRINGS.DE) || {
+        const langKey = getSwarmLang();
+        const i18n = (typeof SWARM_STRINGS !== 'undefined' && SWARM_STRINGS[langKey]) || (SWARM_STRINGS && SWARM_STRINGS.DE) || {
+            tabInbox: "Posteingang",
+            tabRemote: "Verfügbare Dokumente im Schwarm",
+            tabLocal: "Meine geteilten Dokumente",
+            inboxEmpty: "Ihr Posteingang ist leer",
+            inboxEmptyHint: "Sobald neue Dateien empfangen werden, landen sie sicher hier im Vorab-Puffer. Klicken Sie auf „Übernehmen“, um sie mit 1 Klick in Ihre Dokumentenliste einzutragen.",
+            import1Click: "Übernehmen (1 Klick)",
+            importAll: "Alle übernehmen",
+            dismiss: "Verwerfen",
+            inboxWaiting: "Dokument(e) im Vorab-Puffer bereit zur Übernahme :",
             download: "Laden",
             stopShare: "Teilen beenden",
             noPeers: "Keine weiteren Peers im Schwarm aktiv",
@@ -2270,7 +2450,137 @@
             netBadge.textContent = isConn ? `● WebRTC Mesh (${webrtcConnections.size} Peers)` : (webrtcStatus === 'connecting' ? '● Verbinde...' : '● Lokal');
         }
 
-        if (currentSwarmTab === 'remote') {
+        const stagedDocs = getStagedInboxDocuments();
+
+        // Calculate allRemoteDocs
+        const allRemoteDocs = [];
+        const seenRemoteKeys = new Set();
+        const localSharedHashes = new Set(
+            (localCatalog || [])
+                .map(d => d && d.fileHash ? String(d.fileHash).toLowerCase().trim() : '')
+                .filter(Boolean)
+        );
+        const localSharedKeys = new Set(
+            (localCatalog || [])
+                .map(d => d ? `${(d.fileName || '').toLowerCase().trim()}_${d.fileSize || 0}` : '')
+                .filter(Boolean)
+        );
+        const localSharedIds = new Set(
+            (localCatalog || [])
+                .map(d => d ? Number(d.id) : 0)
+                .filter(Boolean)
+        );
+
+        remoteCatalog.forEach((peerData, peerId) => {
+            if (!PEER_ID_REGEX.test(peerId) || peerId === myPeerId) return;
+            (peerData.docs || []).forEach(doc => {
+                if (!doc) return;
+                const docHash = doc.fileHash ? String(doc.fileHash).toLowerCase().trim() : '';
+                const docKey = `${(doc.fileName || '').toLowerCase().trim()}_${doc.fileSize || 0}`;
+                const docId = Number(doc.id);
+
+                if (docHash && localSharedHashes.has(docHash)) return;
+                if (localSharedKeys.has(docKey)) return;
+                if (docId > 0 && localSharedIds.has(docId)) return;
+                if (isDocShared(docId)) return;
+
+                const dedupeKey = docHash || docKey || `${peerId}:${docId}`;
+                if (seenRemoteKeys.has(dedupeKey)) return;
+                seenRemoteKeys.add(dedupeKey);
+
+                allRemoteDocs.push({ peerId, doc });
+            });
+        });
+
+        // Update tab buttons text and counts
+        const btnInboxTab = document.getElementById('swarm-tab-inbox');
+        const btnRemoteTab = document.getElementById('swarm-tab-remote');
+        const btnLocalTab = document.getElementById('swarm-tab-local');
+
+        if (btnInboxTab) {
+            btnInboxTab.innerHTML = `📥 ${i18n.tabInbox}` + (stagedDocs.length > 0 
+                ? ` <span style="background:#16a34a; color:#ffffff; padding:1px 7px; border-radius:10px; font-size:0.75rem; font-weight:700; margin-left:5px;">${stagedDocs.length} neu</span>` 
+                : ` (0)`);
+        }
+        if (btnRemoteTab) btnRemoteTab.textContent = `🌐 ${i18n.tabRemote} (${allRemoteDocs.length})`;
+        if (btnLocalTab) btnLocalTab.textContent = `📤 ${i18n.tabLocal} (${localCatalog.length})`;
+
+        // --- Render Tab 1: INBOX ---
+        if (currentSwarmTab === 'inbox') {
+            if (stagedDocs.length === 0) {
+                wrap.innerHTML = `
+                    <div style="text-align:center; padding: 48px 20px; color: ${metaColor};">
+                        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="1.75" style="opacity:0.85; margin-bottom:12px;">
+                            <path d="M22 12h-6l-2 3h-4l-2-3H2"></path>
+                            <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path>
+                        </svg>
+                        <h4 style="margin:0 0 8px 0; color:${textColor}; font-size:1.05rem;">${i18n.inboxEmpty}</h4>
+                        <p style="margin:0; font-size:0.86rem; max-width:480px; margin:auto; line-height:1.5;">
+                            ${i18n.inboxEmptyHint}
+                        </p>
+                    </div>
+                `;
+            } else {
+                let html = `
+                    <div style="display:flex; flex-direction:column; gap:12px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px; flex-wrap:wrap; gap:8px;">
+                            <div style="font-size:0.85rem; color:${metaColor}; font-weight:600;">
+                                <strong style="color:#16a34a;">${stagedDocs.length}</strong> ${i18n.inboxWaiting}
+                            </div>
+                            ${stagedDocs.length > 1 ? `
+                                <button type="button" id="btn-import-all-staged" style="display:inline-flex; align-items:center; gap:6px; padding:6px 14px; background:#16a34a; color:#ffffff; border:none; border-radius:6px; font-weight:700; cursor:pointer; font-size:0.8rem; box-shadow:0 2px 5px rgba(22,163,74,0.25);">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                    <span>${i18n.importAll} (${stagedDocs.length})</span>
+                                </button>
+                            ` : ''}
+                        </div>
+                `;
+
+                stagedDocs.forEach(doc => {
+                    const safeTyp = escapeHtml(doc.typ || currentConfig.docTypeLabel);
+                    const safeKlassen = escapeHtml(doc.klassen || 'Alle');
+                    const safeJahr = escapeHtml(doc.jahr || '2026');
+                    const safeThema = escapeHtml(doc.thema || 'Unbenannt');
+                    const safeLektion = escapeHtml(doc.lektion || '—');
+                    const safeBuch = escapeHtml(doc.buch || '—');
+                    const safeFileName = escapeHtml(doc.fileName || 'Dokument.pdf');
+                    const safeDocId = Number(doc.id) || doc.id;
+                    const shortHash = doc.fileHash ? escapeHtml(doc.fileHash.substring(0, 6).toUpperCase()) : 'VERIFIED';
+                    const sizeMb = doc.fileSize ? (doc.fileSize / (1024 * 1024)).toFixed(2) + ' MB' : '';
+
+                    html += `
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border:1px solid ${isDark ? 'rgba(34,197,94,0.3)' : '#86efac'}; border-radius:10px; background:${isDark ? 'rgba(34,197,94,0.06)' : '#f0fdf4'}; box-shadow:${shadow}; gap:14px;">
+                            <div style="flex:1; min-width:0;">
+                                <div style="display:flex; gap:6px; align-items:center; margin-bottom:6px; flex-wrap:wrap;">
+                                    <span style="background:#16a34a; color:white; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:700;">📥 Posteingang</span>
+                                    <span style="background:#2563eb; color:white; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:700;">${safeTyp}</span>
+                                    <span style="background:${isDark ? '#334155' : '#e2e8f0'}; color:${textColor}; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:600;">${safeKlassen}</span>
+                                    <span style="background:${isDark ? '#334155' : '#e2e8f0'}; color:${textColor}; padding:2px 8px; border-radius:4px; font-size:0.72rem;">${safeJahr}</span>
+                                    <span title="SHA-256 Fingerabdruck" style="background:${isDark ? 'rgba(34,197,94,0.18)' : '#dcfce7'}; color:#16a34a; border:1px solid rgba(34,197,94,0.35); padding:1px 7px; border-radius:4px; font-family:monospace; font-size:0.72rem; font-weight:700;">SHA: #${shortHash}</span>
+                                    ${sizeMb ? `<span style="font-size:0.72rem; color:${metaColor};">(${sizeMb})</span>` : ''}
+                                </div>
+                                <h4 style="margin:0 0 4px 0; color:${isDark ? '#4ade80' : '#15803d'}; font-size:1.02rem; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${safeThema}</h4>
+                                <div style="font-size:0.78rem; color:${metaColor}; line-height:1.4;">
+                                    Lektion: <strong>${safeLektion}</strong> | Buch: <strong>${safeBuch}</strong> | 📄 ${safeFileName}
+                                </div>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+                                <button type="button" data-swarm-import="${safeDocId}" style="display:inline-flex; align-items:center; gap:6px; padding:10px 16px; background:#16a34a; color:#ffffff; border:none; border-radius:8px; font-weight:700; cursor:pointer; font-size:0.85rem; box-shadow:0 2px 6px rgba(22,163,74,0.35); transition:transform 0.15s ease;">
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                    <span>${i18n.import1Click}</span>
+                                </button>
+                                <button type="button" data-swarm-dismiss="${safeDocId}" style="padding:10px 12px; background:transparent; color:${metaColor}; border:1px solid ${cardBorder}; border-radius:8px; font-weight:600; cursor:pointer; font-size:0.82rem;" title="${i18n.dismiss}">
+                                    ✕
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                html += `</div>`;
+                wrap.innerHTML = html;
+            }
+        } else if (currentSwarmTab === 'remote') {
             const allRemoteDocs = [];
             const seenRemoteKeys = new Set();
 
@@ -2441,7 +2751,7 @@
         const footerStats = document.getElementById('swarm-footer-stats');
         if (footerStats) {
             const activePeers = remoteCatalog.size;
-            footerStats.textContent = `Status: ${activePeers} Peer(s) im Netzwerk (${webrtcConnections.size} WebRTC verbunden) | ${localCatalog.length} eigene(s) Dokument(e) freigegeben`;
+            footerStats.textContent = `Status: ${activePeers} Peer(s) im Netzwerk (${webrtcConnections.size} WebRTC verbunden) | ${stagedDocs.length} im Posteingang | ${localCatalog.length} eigene freigegeben`;
         }
     }
 
@@ -2511,6 +2821,8 @@
         getStagedInboxDocuments: getStagedInboxDocuments,
         stageDocumentInInbox: stageDocumentInInbox,
         removeStagedInboxDocument: removeStagedInboxDocument,
+        importStagedDocToDb: importStagedDocToDb,
+        importAllStagedDocsToDb: importAllStagedDocsToDb,
         receiveDocFromPeer: receiveDocFromPeer,
         broadcastDataReload: broadcastDataReload
     });

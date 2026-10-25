@@ -16,7 +16,7 @@
 </script>
 <meta name="theme-color" content="#007aff">
 
-<script src="js/core/community-swarm.js?v=2.8"></script>
+<script src="js/core/community-swarm.js?v=2.9"></script>
 
 <script>
   (function () {
@@ -1590,6 +1590,26 @@ function loadPrefs() {
   var swarmTapTimer = null;
 
   async function executeSwarmQuickUpdate() {
+    var stagedCount = 0;
+    try {
+      if (window.EduHybridShare && typeof window.EduHybridShare.getStagedInboxDocuments === 'function') {
+        stagedCount = window.EduHybridShare.getStagedInboxDocuments().length;
+      } else {
+        var rawStaged = localStorage.getItem('swarm_staged_inbox') || '[]';
+        stagedCount = JSON.parse(rawStaged).length;
+      }
+    } catch(e) {}
+
+    // If there are files waiting in the staged precache inbox, 1 click directly opens the inbox tab!
+    if (stagedCount > 0) {
+      if (window.EduHybridShare && typeof window.EduHybridShare.openSwarmModal === 'function') {
+        window.EduHybridShare.openSwarmModal('inbox');
+        return;
+      }
+      pushToFrame('OPEN_SWARM_MODAL', { tab: 'inbox' });
+      return;
+    }
+
     var badge = document.getElementById('headerSwarmBadge');
     if (badge) {
       badge.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle; margin-right:5px; animation:osirisSpin 0.8s linear infinite;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg><span>Aktualisiere...</span>';
@@ -1636,7 +1656,7 @@ function loadPrefs() {
 
   if (swarmBtnEl) {
     swarmBtnEl.style.touchAction = 'manipulation';
-    swarmBtnEl.title = 'P2P-Schwarm (1 Klick: Aktualisieren / 3 Klicks: Menü öffnen)';
+    swarmBtnEl.title = 'P2P-Schwarm (1 Klick: Aktualisieren & Posteingang / 3 Klicks: Menü öffnen)';
 
     swarmBtnEl.addEventListener('click', function(e) {
       e.preventDefault();
@@ -1680,8 +1700,14 @@ function loadPrefs() {
         var activePeers = Math.max(0, Math.min(999, Number(e.data.activePeers) || 0));
         var totalShared = Math.max(0, Math.min(9999, Number(e.data.totalShared) || 0));
         var newFilesCount = Math.max(0, Math.min(999, Number(e.data.newFilesCount) || 0));
+        var stagedCount = Math.max(0, Math.min(999, Number(e.data.stagedCount) || 0));
 
-        if (newFilesCount > 0) {
+        if (stagedCount > 0) {
+          badge.className = 'swarm-pill is-active has-inbox';
+          badge.style.background = '#16a34a';
+          badge.innerHTML = '<span style="display:inline-flex; align-items:center; gap:5px;"><span style="font-size:0.85rem;">📥</span> <strong>Posteingang (' + stagedCount + ' neu)</strong></span>';
+          badge.title = stagedCount + ' neue Datei(en) im Posteingang! (1 Klick: Öffnen & Übernehmen)';
+        } else if (newFilesCount > 0) {
           badge.className = 'swarm-pill is-active has-new';
           badge.style.background = '#2563eb';
           badge.textContent = '● Schwarm (+' + newFilesCount + ' neu)';
@@ -1697,6 +1723,14 @@ function loadPrefs() {
           badge.textContent = '● Schwarm (' + totalShared + ' geteilt)';
           badge.title = 'P2P-Schwarm bereit (1 Klick: Aktualisieren / 3 Klicks: Menü)';
         }
+      }
+    }
+  });
+
+  window.addEventListener('storage', function (e) {
+    if (e.key === 'swarm_staged_inbox') {
+      if (window.EduHybridShare && typeof window.EduHybridShare.updateSwarmBadge === 'function') {
+        window.EduHybridShare.updateSwarmBadge();
       }
     }
   });
