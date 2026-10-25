@@ -2099,9 +2099,18 @@
 
     function bytesToDataUrl(bytes, mimeType) {
         let binary = '';
-        const chunkSize = 0x8000;
-        for (let i = 0; i < bytes.length; i += chunkSize) {
-            binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+        if (typeof TextDecoder !== 'undefined') {
+            try {
+                binary = new TextDecoder('latin1').decode(bytes);
+            } catch (e) {
+                binary = '';
+            }
+        }
+        if (!binary) {
+            const chunkSize = 0x8000;
+            for (let i = 0; i < bytes.length; i += chunkSize) {
+                binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+            }
         }
         return `data:${mimeType};base64,${btoa(binary)}`;
     }
@@ -2237,9 +2246,10 @@
 
             // Direct fast extraction from raw PDF trailer/object (< 2ms)
             if (keyIdx !== -1) {
-                let tail = '';
                 const maxLen = Math.min(u8.length - keyIdx, 30000);
-                for (let i = 0; i < maxLen; i++) tail += String.fromCharCode(u8[keyIdx + i]);
+                const tail = typeof TextDecoder !== 'undefined'
+                    ? new TextDecoder('latin1').decode(u8.subarray(keyIdx, keyIdx + maxLen))
+                    : Array.from(u8.subarray(keyIdx, keyIdx + maxLen)).map(c => String.fromCharCode(c)).join('');
                 const hexMatch = tail.match(/<([0-9a-fA-F\s]+)>/);
                 if (hexMatch) {
                     const hex = hexMatch[1].replace(/\s+/g, '');
@@ -2251,10 +2261,13 @@
                                 if (!isNaN(code)) text += String.fromCharCode(code);
                             }
                         } else {
+                            const byteArr = new Uint8Array(hex.length / 2);
                             for (let i = 0; i < hex.length; i += 2) {
-                                const code = parseInt(hex.substr(i, 2), 16);
-                                if (!isNaN(code)) text += String.fromCharCode(code);
+                                byteArr[i / 2] = parseInt(hex.substr(i, 2), 16);
                             }
+                            text = typeof TextDecoder !== 'undefined'
+                                ? new TextDecoder('utf-8').decode(byteArr)
+                                : Array.from(byteArr).map(c => String.fromCharCode(c)).join('');
                         }
                         const directMeta = parseMetaPayload(text);
                         if (directMeta) return directMeta;
@@ -2407,6 +2420,12 @@
         try {
             await window.OSIRIS_LIBS_READY;
             rawBuf = await file.arrayBuffer();
+            // Cache single shared raw buffer & pre-converted DataURL for instant 0ms save
+            e.target._cachedRawBuf = rawBuf;
+            e.target._cachedFileName = file.name;
+            e.target._cachedFileSize = file.size;
+            e.target._cachedDataUrl = bytesToDataUrl(new Uint8Array(rawBuf), file.type || 'application/pdf');
+
             if (window.OsirisSecurity) {
                 const secCheck = window.OsirisSecurity.validateMagicBytes(new Uint8Array(rawBuf), file.name);
                 if (!secCheck.valid) {
@@ -2628,49 +2647,53 @@ function saveEntry() {
             };
         }
 
-        if (fileInput.files.length > 0) {
-            const reader = new FileReader();
-            
-            // Track the progress of reading the file
-            reader.onprogress = function(ev) {
-                if (ev.lengthComputable && saveProgress) {
-                    const percentLoaded = Math.round((ev.loaded / ev.total) * 60) + 10;
-                    saveProgress.style.width = percentLoaded + '%';
+        async function processFileAndPersist(dataUrl) {
+            // Authoritative re-check right before writing: guards against
+            // the flag-based check above going stale (e.g. a second file
+            // input event racing this save) and against duplicates that
+            // were only added to the DB after the file was selected.
+            if (!window.editingId) {
+                const stashedHash = fileInput.dataset.fileHash || null;
+                const dupe = await findMatchingEntry(file, stashedHash);
+                if (dupe) {
+                    alert("Diese Datei ist bereits gespeichert (als „" + (dupe.thema || dupe.fileName || 'vorhandener Eintrag') + "\"). Bitte bearbeiten Sie den vorhandenen Eintrag.");
+                    if (saveBtn) saveBtn.style.pointerEvents = 'auto';
+                    if (saveText) saveText.textContent = 'SPEICHERN';
+                    if (saveProgress) { saveProgress.style.width = '0%'; }
+                    window.duplicateBlocked = true;
+                    setSaveBtnEnabled(false);
+                    showDuplicateNotice(document.getElementById('file-dup-status'), dupe);
+                    return;
                 }
-            };
-            
-            reader.onload = function(ev) {
+            }
+            const meta = { thema, lektion, buch, klassen, jahr, typ, subTyp };
+            if (saveText && (isPdfFile(file.name, file.type) || isDocxFile(file.name, file.type))) {
+                saveText.textContent = 'METADATEN WERDEN EINGEBETTET...';
+            }
+            const finalData = await embedMetadataIfApplicable(dataUrl, meta, file.name, file.type);
+            if (saveProgress) saveProgress.style.width = '90%';
+            persist(finalData, file.name, file.type, file.size, fileInput.dataset.fileHash || null);
+        }
+
+        if (fileInput.files.length > 0) {
+            // Fast 0ms memory path: rawBuf was already read into memory during selection
+            if (fileInput._cachedDataUrl && fileInput._cachedFileName === file.name && fileInput._cachedFileSize === file.size) {
                 if (saveProgress) saveProgress.style.width = '80%';
-                // Yield thread to allow DOM to paint 80% before blocking to DB
-                setTimeout(async () => {
-                    // Authoritative re-check right before writing: guards against
-                    // the flag-based check above going stale (e.g. a second file
-                    // input event racing this save) and against duplicates that
-                    // were only added to the DB after the file was selected.
-                    if (!window.editingId) {
-                        const stashedHash = fileInput.dataset.fileHash || null;
-                        const dupe = await findMatchingEntry(file, stashedHash);
-                        if (dupe) {
-                            alert("Diese Datei ist bereits gespeichert (als „" + (dupe.thema || dupe.fileName || 'vorhandener Eintrag') + "\"). Bitte bearbeiten Sie den vorhandenen Eintrag.");
-                            if (saveBtn) saveBtn.style.pointerEvents = 'auto';
-                            if (saveText) saveText.textContent = 'SPEICHERN';
-                            if (saveProgress) { saveProgress.style.width = '0%'; }
-                            window.duplicateBlocked = true;
-                            setSaveBtnEnabled(false);
-                            showDuplicateNotice(document.getElementById('file-dup-status'), dupe);
-                            return;
-                        }
+                setTimeout(() => { processFileAndPersist(fileInput._cachedDataUrl); }, 30);
+            } else {
+                const reader = new FileReader();
+                reader.onprogress = function(ev) {
+                    if (ev.lengthComputable && saveProgress) {
+                        const percentLoaded = Math.round((ev.loaded / ev.total) * 60) + 10;
+                        saveProgress.style.width = percentLoaded + '%';
                     }
-                    const meta = { thema, lektion, buch, klassen, jahr, typ, subTyp };
-                    if (saveText && (isPdfFile(file.name, file.type) || isDocxFile(file.name, file.type))) {
-                        saveText.textContent = 'METADATEN WERDEN EINGEBETTET...';
-                    }
-                    const finalData = await embedMetadataIfApplicable(ev.target.result, meta, file.name, file.type);
-                    if (saveProgress) saveProgress.style.width = '90%';
-                    persist(finalData, file.name, file.type, file.size, fileInput.dataset.fileHash || null);
-                }, 50);
-            };
-            reader.readAsDataURL(fileInput.files[0]);
+                };
+                reader.onload = function(ev) {
+                    if (saveProgress) saveProgress.style.width = '80%';
+                    setTimeout(() => { processFileAndPersist(ev.target.result); }, 30);
+                };
+                reader.readAsDataURL(fileInput.files[0]);
+            }
         } else {
             if (saveProgress) saveProgress.style.width = '50%';
             const txRead = idb.transaction(["documents"], "readonly");

@@ -1030,6 +1030,16 @@
         const size = Number(docMeta.fileSize) || 0;
         const docId = Number(docMeta.id) || 0;
 
+        // 0. Ultra-fast in-memory _docMetaCache check (0.01 ms)
+        if (window._docMetaCache && Array.isArray(window._docMetaCache)) {
+            const inCache = window._docMetaCache.some(d => 
+                (hash && d.fileHash && d.fileHash.toLowerCase() === hash) ||
+                (name && d.fileName && d.fileName.toLowerCase() === name && (!size || d.fileSize === size)) ||
+                (docId > 0 && d.id && Number(d.id) === docId)
+            );
+            if (inCache) return true;
+        }
+
         // 1. Fast in-memory check
         if (hash && window.knownLocalHashes && window.knownLocalHashes.has(hash)) {
             return true;
