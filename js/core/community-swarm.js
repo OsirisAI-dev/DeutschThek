@@ -285,7 +285,9 @@
         // 1. PDF Validation (%PDF-)
         if (b0 === 0x25 && b1 === 0x50 && b2 === 0x44 && b3 === 0x46) {
             const checkLen = Math.min(len, 200000);
-            const strSlice = String.fromCharCode.apply(null, u8.subarray(0, checkLen));
+            const strSlice = typeof TextDecoder !== 'undefined'
+                ? new TextDecoder('latin1').decode(u8.subarray(0, checkLen))
+                : String.fromCharCode.apply(null, u8.subarray(0, checkLen));
             const dangerousPatterns = [
                 /\/JavaScript\b/i,
                 /\/JS\b/i,
@@ -305,7 +307,9 @@
         // 2. DOCX / ZIP Container Validation (PK\x03\x04)
         if (b0 === 0x50 && b1 === 0x4B && b2 === 0x03 && b3 === 0x04) {
             const checkLen = Math.min(len, 200000);
-            const strSlice = String.fromCharCode.apply(null, u8.subarray(0, checkLen));
+            const strSlice = typeof TextDecoder !== 'undefined'
+                ? new TextDecoder('latin1').decode(u8.subarray(0, checkLen))
+                : String.fromCharCode.apply(null, u8.subarray(0, checkLen));
             if (strSlice.includes('vbaProject.bin') || strSlice.includes('.exe') || strSlice.includes('.vbs') || strSlice.includes('.bat') || strSlice.includes('.ps1')) {
                 return { valid: false, reason: 'Office-Container enthält Makros oder ausführbaren Code' };
             }
@@ -719,6 +723,12 @@
                 container.style.cssText = 'position:fixed; bottom:24px; right:24px; z-index:999999; display:flex; flex-direction:column; gap:10px; pointer-events:none; max-width:420px;';
                 hostDoc.body.appendChild(container);
             }
+            if (!hostDoc.getElementById('osiris-swarm-toast-style')) {
+                const styleEl = hostDoc.createElement('style');
+                styleEl.id = 'osiris-swarm-toast-style';
+                styleEl.textContent = '@keyframes osirisToastSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }';
+                hostDoc.head.appendChild(styleEl);
+            }
 
             const toast = hostDoc.createElement('div');
             const isSuccess = type === 'success';
@@ -726,7 +736,23 @@
             const bgColor = isSuccess ? '#15803d' : (isInfo ? '#2563eb' : '#b91c1c');
 
             toast.style.cssText = 'background:' + bgColor + '; color:#ffffff; padding:12px 18px; border-radius:8px; font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size:0.86rem; font-weight:600; line-height:1.4; box-shadow:0 8px 24px rgba(0,0,0,0.28); display:flex; align-items:center; gap:10px; pointer-events:auto; opacity:0; transform:translateY(12px); transition:opacity 0.25s ease, transform 0.25s ease;';
-            toast.textContent = message;
+
+            let iconSvg = '';
+            let cleanMsg = String(message || '');
+            if (cleanMsg.includes('Aktualisiere') || cleanMsg.includes('🔄') || type === 'sync') {
+                cleanMsg = cleanMsg.replace(/^🔄\s*/, '');
+                iconSvg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; animation:osirisToastSpin 0.85s linear infinite;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>';
+            } else if (cleanMsg.startsWith('✓') || isSuccess) {
+                cleanMsg = cleanMsg.replace(/^✓\s*/, '');
+                iconSvg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="20 6 9 17 4 12"/></svg>';
+            } else if (cleanMsg.includes('⚠️') || cleanMsg.includes('🛑') || type === 'warning' || type === 'error') {
+                cleanMsg = cleanMsg.replace(/^[⚠️🛑]\s*/, '');
+                iconSvg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>';
+            } else {
+                iconSvg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>';
+            }
+
+            toast.innerHTML = iconSvg + '<span>' + cleanMsg + '</span>';
             container.appendChild(toast);
 
             requestAnimationFrame(() => {
@@ -2111,7 +2137,7 @@
                 const peerId = dlBtn.getAttribute('data-peer-id') || '';
                 dlBtn.disabled = true;
                 dlBtn.style.opacity = '0.8';
-                dlBtn.innerHTML = `<span>${i18n.downloading || 'Lade...'}</span>`;
+                dlBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle; margin-right:6px; animation:osirisToastSpin 0.85s linear infinite;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg><span>${i18n.downloading || 'Lade...'}</span>`;
                 requestDocDownload(docId, peerId);
                 setTimeout(() => {
                     if (dlBtn && dlBtn.disabled && dlBtn.textContent.includes('Lade')) {

@@ -235,6 +235,10 @@
             0% { transform: translateX(100%); }
             100% { transform: translateX(-100%); }
         }
+        @keyframes osirisSpin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
 
         /* Fullscreen Modal Styles */
         #fs-modal {
@@ -1972,9 +1976,9 @@
 
     // --- Metadata Injector: detect already-uploaded files and auto-fill the form ---
 
-    async function computeFileHash(file) {
+    async function computeFileHash(file, preloadedBuffer) {
         try {
-            const buffer = await file.arrayBuffer();
+            const buffer = preloadedBuffer || await file.arrayBuffer();
             const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
             return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
         } catch (err) {
@@ -1985,13 +1989,20 @@
 
     function findMatchingEntry(file, hash) {
         return new Promise((resolve) => {
+            // Ultra-fast in-memory cache check (0.01ms) - bypasses heavy IndexedDB deserialization
+            if (window._docMetaCache && window._docMetaCache.length > 0) {
+                const items = window._docMetaCache.filter(it => it.id !== window.editingId);
+                let match = hash ? items.find(it => it.fileHash && it.fileHash === hash) : null;
+                if (!match) {
+                    match = items.find(it => it.fileName === file.name && it.fileSize === file.size);
+                }
+                if (match) { resolve(match); return; }
+            }
             if (!idb) { resolve(null); return; }
             const tx = idb.transaction(["documents"], "readonly");
             tx.objectStore("documents").getAll().onsuccess = (e) => {
                 const items = (e.target.result || []).filter(it => it.id !== window.editingId);
-                // 1) Strongest signal: identical content hash
                 let match = hash ? items.find(it => it.fileHash && it.fileHash === hash) : null;
-                // 2) Fallback for legacy entries saved before hashing existed: name + size
                 if (!match) {
                     match = items.find(it => it.fileName === file.name && it.fileSize === file.size);
                 }
@@ -2196,23 +2207,49 @@
         return dataUrl;
     }
 
-    async function readEmbeddedMetaFromPdf(file) {
-        await window.OSIRIS_LIBS_READY;
-        const pdfjsLib = window['pdfjs-dist/build/pdf'] || window.pdfjsLib;
-        if (!pdfjsLib) return null;
-        const buffer = await file.arrayBuffer();
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'lib/pdf/v1/pdf.worker.min.js';
-        const loadingTask = pdfjsLib.getDocument({ data: buffer, isEvalSupported: false });
-        const pdf = await loadingTask.promise;
-        const metadata = await pdf.getMetadata();
-        const raw = metadata && metadata.info && metadata.info[OSIRIS_META_KEY];
-        return raw ? parseMetaPayload(raw) : null;
+    async function readEmbeddedMetaFromPdf(file, preloadedBuffer) {
+        try {
+            const buffer = preloadedBuffer || await file.arrayBuffer();
+            // Fast binary pre-scan: does the PDF even contain the byte sequence 'OsirisMeineBank'?
+            // If not, avoid loading the 1.08MB PDF.js worker and parsing the whole document!
+            const u8 = new Uint8Array(buffer);
+            const keyBytes = [79, 115, 105, 114, 105, 115, 77, 101, 105, 110, 101, 66, 97, 110, 107]; // 'OsirisMeineBank'
+            let hasKey = false;
+            const searchLimit = Math.min(u8.length - keyBytes.length, 300000);
+            const endStart = Math.max(0, u8.length - 150000);
+            function checkRegion(start, end) {
+                for (let i = start; i < end; i++) {
+                    if (u8[i] === keyBytes[0]) {
+                        let match = true;
+                        for (let k = 1; k < keyBytes.length; k++) {
+                            if (u8[i + k] !== keyBytes[k]) { match = false; break; }
+                        }
+                        if (match) return true;
+                    }
+                }
+                return false;
+            }
+            hasKey = checkRegion(0, searchLimit) || checkRegion(endStart, u8.length - keyBytes.length);
+            if (!hasKey) return null;
+
+            await window.OSIRIS_LIBS_READY;
+            const pdfjsLib = window['pdfjs-dist/build/pdf'] || window.pdfjsLib;
+            if (!pdfjsLib) return null;
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'lib/pdf/v1/pdf.worker.min.js';
+            const loadingTask = pdfjsLib.getDocument({ data: buffer, isEvalSupported: false });
+            const pdf = await loadingTask.promise;
+            const metadata = await pdf.getMetadata();
+            const raw = metadata && metadata.info && metadata.info[OSIRIS_META_KEY];
+            return raw ? parseMetaPayload(raw) : null;
+        } catch (e) {
+            return null;
+        }
     }
 
-    async function readEmbeddedMetaFromDocx(file) {
+    async function readEmbeddedMetaFromDocx(file, preloadedBuffer) {
         await window.OSIRIS_LIBS_READY;
         if (typeof JSZip === 'undefined') return null;
-        const buffer = await file.arrayBuffer();
+        const buffer = preloadedBuffer || await file.arrayBuffer();
         const zip = await JSZip.loadAsync(buffer);
         const customEntry = zip.file('docProps/custom.xml');
         if (!customEntry) return null;
@@ -2226,10 +2263,10 @@
         return parseMetaPayload(lpwstr.textContent);
     }
 
-    async function readEmbeddedMetaFromFile(file) {
+    async function readEmbeddedMetaFromFile(file, preloadedBuffer) {
         try {
-            if (isPdfFile(file.name, file.type)) return await readEmbeddedMetaFromPdf(file);
-            if (isDocxFile(file.name, file.type)) return await readEmbeddedMetaFromDocx(file);
+            if (isPdfFile(file.name, file.type)) return await readEmbeddedMetaFromPdf(file, preloadedBuffer);
+            if (isDocxFile(file.name, file.type)) return await readEmbeddedMetaFromDocx(file, preloadedBuffer);
         } catch (err) {
             console.error('Metadaten-Auslesen aus Datei fehlgeschlagen:', err);
         }
@@ -2297,8 +2334,10 @@
 
     function showCheckingNotice(statusEl) {
         statusEl.style.display = 'flex';
+        statusEl.style.alignItems = 'center';
+        statusEl.style.gap = '8px';
         statusEl.style.background = 'var(--bg)';
-        statusEl.innerHTML = `⏳ Datei wird auf Duplikate geprüft...`;
+        statusEl.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; animation:osirisSpin 0.85s linear infinite;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg> <span>Datei wird auf Duplikate geprüft...</span>`;
     }
 
     function hideDuplicateNotice(statusEl) {
@@ -2319,10 +2358,11 @@
         showCheckingNotice(statusEl);
         setSaveBtnEnabled(false);
 
+        let rawBuf = null;
         // Deep Security Inspection (Magic Bytes, 25MB limit, PDF /JavaScript, DOCX VBA Macros)
         try {
             await window.OSIRIS_LIBS_READY;
-            const rawBuf = await file.arrayBuffer();
+            rawBuf = await file.arrayBuffer();
             if (window.OsirisSecurity) {
                 const secCheck = window.OsirisSecurity.validateMagicBytes(new Uint8Array(rawBuf), file.name);
                 if (!secCheck.valid) {
@@ -2339,7 +2379,7 @@
             console.error('Security check failed:', secErr);
         }
 
-        const hash = await computeFileHash(file);
+        const hash = await computeFileHash(file, rawBuf);
         // Stash the hash so saveEntry() can reuse it without re-reading the file
         if (hash) e.target.dataset.fileHash = hash;
 
@@ -2356,7 +2396,7 @@
         // No local record of this file — check whether the file itself carries
         // Osiris metadata embedded during a previous save (e.g. on another device).
         setSaveBtnEnabled(true);
-        const embeddedMeta = await readEmbeddedMetaFromFile(file);
+        const embeddedMeta = await readEmbeddedMetaFromFile(file, rawBuf);
         if (e.target.files[0] !== file) return; // guard again after async work
         if (embeddedMeta) {
             applyMetadataFromEntry(embeddedMeta);
@@ -2892,6 +2932,20 @@ function saveEntry() {
         req.onsuccess = (e) => {
             const db = e.target.result.reverse(); // newest first
 
+            // Cache lightweight document metadata for ultra-fast duplicate checks
+            window._docMetaCache = db.map(item => ({
+                id: item.id,
+                fileHash: item.fileHash,
+                fileName: item.fileName,
+                fileSize: item.fileSize,
+                thema: item.thema,
+                lektion: item.lektion,
+                buch: item.buch,
+                klassen: item.klassen,
+                jahr: item.jahr,
+                typ: item.typ
+            }));
+
             // Dynamically refresh unique themes and lessons so updated files show in filters
             const dbThemes = new Set();
             const dbLessons = new Set();
@@ -2949,7 +3003,7 @@ function saveEntry() {
                 if (isUpdate) {
                     card.style.borderLeft = '4px solid #16a34a';
                 }
-                const updatePill = isUpdate ? `<span class="pill" style="background:#16a34a; color:white; font-weight:bold; box-shadow:0 0 6px rgba(22,163,74,0.35); display:inline-flex; align-items:center; gap:3px;" title="Über P2P-Schwarm aktualisiert">⚡ UPDATE</span>` : '';
+                const updatePill = isUpdate ? `<span class="pill" style="background:#16a34a; color:white; font-weight:bold; box-shadow:0 0 6px rgba(22,163,74,0.35); display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:12px; font-size:0.75rem;" title="Über P2P-Schwarm aktualisiert"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg> UPDATE</span>` : '';
 
                 card.innerHTML = `
                     <div style="display:flex; justify-content:space-between; align-items:flex-start;">
