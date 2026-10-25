@@ -149,11 +149,16 @@
     }
 
     function sanitizeFileName(fileName) {
-        const raw = clampString(fileName || 'Dokument.pdf', 150)
+        let raw = String(fileName || 'Dokument.pdf')
+            .replace(/[\u202A-\u202E\u2066-\u2069\u0000-\u001F\u007F-\u009F]/g, '')
             .replace(/[\\/:*?"<>|]/g, '_')
             .replace(/\.{2,}/g, '_')
             .replace(/^\.+/, '');
-        return raw || 'Dokument.pdf';
+        const dangerousExts = /\.(exe|dll|scr|bat|cmd|vbs|vbe|js|jse|wsf|wsh|msc|ps1|ps2|psc1|psc2|msi|msp|com|pif|reg|hta|jar)$/i;
+        if (dangerousExts.test(raw)) {
+            raw = raw.replace(dangerousExts, '.blocked');
+        }
+        return clampString(raw, 150) || 'Dokument.pdf';
     }
 
     function sanitizeUrl(url) {
@@ -282,6 +287,24 @@
         const len = u8.length;
         const b0 = u8[0], b1 = u8[1], b2 = u8[2], b3 = u8[3];
 
+        // 0. Hard Immediate Rejection of Executables & Malicious Signatures (Antivirus Heuristics Protection)
+        // Windows PE (MZ) Executable / DLL / SCR / COM
+        if (b0 === 0x4D && b1 === 0x5A) {
+            return { valid: false, reason: 'Ausführbare Windows-Dateien (.exe, .dll, .scr) sind aus Sicherheitsgründen streng verboten' };
+        }
+        // Linux ELF binary
+        if (b0 === 0x7F && b1 === 0x45 && b2 === 0x4C && b3 === 0x46) {
+            return { valid: false, reason: 'Ausführbare Binärdateien (ELF) sind verboten' };
+        }
+        // Java Class file (CAFEBABE)
+        if (b0 === 0xCA && b1 === 0xFE && b2 === 0xBA && b3 === 0xBE) {
+            return { valid: false, reason: 'Ausführbare Java-Klassendateien sind verboten' };
+        }
+        // Windows Shell Link (.lnk)
+        if (b0 === 0x4C && b1 === 0x00 && b2 === 0x00 && b3 === 0x00 && len >= 8 && u8[4] === 0x01 && u8[5] === 0x14 && u8[6] === 0x02 && u8[7] === 0x00) {
+            return { valid: false, reason: 'Windows-Verknüpfungsdateien (.lnk) sind verboten' };
+        }
+
         // 1. PDF Validation (%PDF-)
         if (b0 === 0x25 && b1 === 0x50 && b2 === 0x44 && b3 === 0x46) {
             const checkLen = Math.min(len, 200000);
@@ -294,7 +317,10 @@
                 /\/Launch\b/i,
                 /\/SubmitForm\b/i,
                 /\/ImportData\b/i,
-                /\/RichMedia\b/i
+                /\/RichMedia\b/i,
+                /\/OpenAction\b/i,
+                /\/AA\b/i,
+                /\/URI\s*\([^)]*javascript:/i
             ];
             for (const pat of dangerousPatterns) {
                 if (pat.test(strSlice)) {
@@ -310,7 +336,14 @@
             const strSlice = typeof TextDecoder !== 'undefined'
                 ? new TextDecoder('latin1').decode(u8.subarray(0, checkLen))
                 : String.fromCharCode.apply(null, u8.subarray(0, checkLen));
-            if (strSlice.includes('vbaProject.bin') || strSlice.includes('.exe') || strSlice.includes('.vbs') || strSlice.includes('.bat') || strSlice.includes('.ps1')) {
+            if (strSlice.includes('vbaProject.bin') ||
+                strSlice.includes('vbaData.xml') ||
+                strSlice.includes('oleObject') ||
+                strSlice.includes('.exe') ||
+                strSlice.includes('.vbs') ||
+                strSlice.includes('.bat') ||
+                strSlice.includes('.ps1') ||
+                strSlice.includes('.cmd')) {
                 return { valid: false, reason: 'Office-Container enthält Makros oder ausführbaren Code' };
             }
             return { valid: true, type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
@@ -786,6 +819,33 @@
         } catch (e) {}
     }
 
+    function getStagedInboxDocuments() {
+        try {
+            return JSON.parse(localStorage.getItem('swarm_staged_inbox') || '[]');
+        } catch (e) { return []; }
+    }
+
+    function stageDocumentInInbox(item) {
+        if (!item) return;
+        try {
+            const list = getStagedInboxDocuments();
+            if (!list.some(d => (item.fileHash && d.fileHash === item.fileHash) || (item.fileName && d.fileName === item.fileName))) {
+                if (list.length >= 10) list.shift();
+                list.push(item);
+                localStorage.setItem('swarm_staged_inbox', JSON.stringify(list));
+                updateSwarmBadge();
+            }
+        } catch (e) {}
+    }
+
+    function removeStagedInboxDocument(docIdOrHash) {
+        try {
+            const list = getStagedInboxDocuments().filter(d => d.id !== docIdOrHash && d.fileHash !== docIdOrHash);
+            localStorage.setItem('swarm_staged_inbox', JSON.stringify(list));
+            updateSwarmBadge();
+        } catch (e) {}
+    }
+
     function isDocAnUpdate(doc) {
         if (!doc) return false;
         if (doc.isSwarmImport || doc.isUpdated) return true;
@@ -1151,16 +1211,9 @@
                             'stun:stun.l.google.com:19302',
                             'stun:stun1.l.google.com:19302'
                         ]
-                    },
-                    {
-                        urls: [
-                            'turn:openrelay.metered.ca:443',
-                            'turns:openrelay.metered.ca:443?transport=tcp'
-                        ],
-                        username: 'openrelay',
-                        credential: 'openrelay'
                     }
-                ]
+                ],
+                sdpSemantics: 'unified-plan'
             }
         });
 
@@ -1753,25 +1806,37 @@
                     }
                     const tx = db.transaction([targetStore], 'readwrite');
                     const store = tx.objectStore(targetStore);
-                    store.add(newItem);
-                    tx.oncomplete = () => {
-                        db.close();
-                        savedCount++;
-                        if (savedCount === 1) {
-                            const fp = computedHash.substring(0, 6).toUpperCase();
-                            if (window.knownLocalHashes) window.knownLocalHashes.add(computedHash);
-                            trackUpdatedDoc(newItem.id, computedHash);
-
-                            const toastMsg = isAuto
-                                ? `📥 P2P: „${newItem.thema}" automatisch in Datenbank gespeichert (SHA-256 #${fp})`
-                                : `✅ Dokument „${newItem.thema}" erfolgreich geprüft (SHA-256 #${fp}) und gespeichert!`;
-                            showSwarmToast(toastMsg, 'success');
-
-                            broadcastDataReload(newItem);
-                            renderSwarmModalContent();
+                    const countReq = store.count();
+                    countReq.onsuccess = (ev) => {
+                        const currentCount = ev.target.result;
+                        if (currentCount >= 10) {
+                            db.close();
+                            console.warn(`[Osiris Swarm] Kapazitätsgrenze (10 Dateien) in ${dbName} erreicht. Dokument „${newItem.thema}“ wird im Posteingang gepuffert.`);
+                            stageDocumentInInbox(newItem);
+                            showSwarmToast(`⚠️ Schwarm-Datei „${newItem.thema}“ empfangen, aber lokale Datenbank hat das Limit von 10 Dateien erreicht.`, 'warning');
+                            return;
                         }
+                        store.add(newItem);
+                        tx.oncomplete = () => {
+                            db.close();
+                            savedCount++;
+                            if (savedCount === 1) {
+                                const fp = computedHash.substring(0, 6).toUpperCase();
+                                if (window.knownLocalHashes) window.knownLocalHashes.add(computedHash);
+                                trackUpdatedDoc(newItem.id, computedHash);
+
+                                const toastMsg = isAuto
+                                    ? `📥 P2P: „${newItem.thema}" automatisch in Datenbank gespeichert (SHA-256 #${fp})`
+                                    : `✅ Dokument „${newItem.thema}" erfolgreich geprüft (SHA-256 #${fp}) und gespeichert!`;
+                                showSwarmToast(toastMsg, 'success');
+
+                                broadcastDataReload(newItem);
+                                renderSwarmModalContent();
+                            }
+                        };
+                        tx.onerror = () => { db.close(); };
                     };
-                    tx.onerror = () => { db.close(); };
+                    countReq.onerror = () => { db.close(); };
                 };
             } catch (err) {
                 console.error('Save imported doc error:', err);
@@ -2443,6 +2508,9 @@
         exportSinglePackage: exportSinglePackage,
         trackUpdatedDoc: trackUpdatedDoc,
         isDocAnUpdate: isDocAnUpdate,
+        getStagedInboxDocuments: getStagedInboxDocuments,
+        stageDocumentInInbox: stageDocumentInInbox,
+        removeStagedInboxDocument: removeStagedInboxDocument,
         receiveDocFromPeer: receiveDocFromPeer,
         broadcastDataReload: broadcastDataReload
     });
