@@ -2912,15 +2912,6 @@
                 await importAllStagedDocsToDb();
                 return;
             }
-            const adminExportBtn = e.target.closest('#btn-admin-export-catalog');
-            if (adminExportBtn) {
-                adminExportBtn.disabled = true;
-                adminExportBtn.style.opacity = '0.7';
-                await exportOfficialCatalogJson();
-                adminExportBtn.disabled = false;
-                adminExportBtn.style.opacity = '1';
-                return;
-            }
             const dlBtn = e.target.closest('[data-swarm-download]');
             if (dlBtn) {
                 const docId = Number(dlBtn.getAttribute('data-doc-id'));
@@ -3344,25 +3335,8 @@
                 wrap.innerHTML = html;
             }
         } else {
-            const adminBarHtml = `
-                <div style="display:flex; justify-content:space-between; align-items:center; background:${isDark ? '#1e293b' : '#f8fafc'}; border:1px solid ${cardBorder}; padding:10px 14px; border-radius:8px; margin-bottom:12px; gap:10px; flex-wrap:wrap;">
-                    <div style="font-size:0.82rem; color:${textColor};">
-                        <strong style="color:#4f46e5;">🏛️ Admin-Bereich:</strong> Exportieren Sie Ihre freigegebenen Dokumente als <code>official-catalog.json</code> für GitHub.
-                    </div>
-                    <div style="display:flex; gap:8px;">
-                        <a href="ADMIN_CATALOG.html" target="_blank" style="display:inline-flex; align-items:center; gap:5px; padding:6px 12px; background:transparent; color:${isDark ? '#93c5fd' : '#2563eb'}; border:1px solid ${isDark ? '#3b82f6' : '#93c5fd'}; border-radius:6px; font-weight:600; text-decoration:none; font-size:0.78rem;">
-                            <span>Admin-Konsole ↗</span>
-                        </a>
-                        <button type="button" id="btn-admin-export-catalog" style="display:inline-flex; align-items:center; gap:6px; padding:6px 14px; background:#4f46e5; color:white; border:none; border-radius:6px; font-weight:700; cursor:pointer; font-size:0.8rem; box-shadow:0 2px 5px rgba(79,70,229,0.3);" title="Exportiert official-catalog.json für Git Commits">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                            <span>Katalog exportieren (Git)</span>
-                        </button>
-                    </div>
-                </div>
-            `;
-
             if (localCatalog.length === 0) {
-                wrap.innerHTML = adminBarHtml + `
+                wrap.innerHTML = `
                     <div style="text-align:center; padding: 48px 20px; color: ${metaColor};">
                         <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="1.75" style="opacity:0.75; margin-bottom:12px;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
                         <h4 style="margin:0 0 8px 0; color:${textColor}; font-size:1.05rem;">${i18n.noSharedLocal}</h4>
@@ -3372,7 +3346,7 @@
                     </div>
                 `;
             } else {
-                let html = adminBarHtml + `
+                let html = `
                     <div style="display:flex; flex-direction:column; gap:12px;">
                         <div style="font-size:0.85rem; color:${metaColor}; margin-bottom:2px; font-weight:600;">
                             Sie teilen ${localCatalog.length} Dokument(e) im Schwarm :
