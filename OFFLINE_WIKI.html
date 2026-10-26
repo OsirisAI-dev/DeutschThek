@@ -136,8 +136,8 @@
             background-repeat: no-repeat;
             background-position: center 42%;
             background-size: min(72vw, 560px) auto;
-            filter: blur(8px);
-            opacity: 0.22;
+            filter: blur(2.5px);
+            opacity: 0.28;
             pointer-events: none;
             transition: opacity 0.3s ease, filter 0.3s ease;
             transform: scale(1.03);
@@ -145,23 +145,23 @@
 
         [data-theme="dark"] body::before,
         [data-theme="osiris"] body::before {
-            opacity: 0.16;
-            filter: blur(9px) invert(0.92) hue-rotate(180deg) brightness(0.92);
+            opacity: 0.20;
+            filter: blur(3px) invert(0.92) hue-rotate(180deg) brightness(0.92);
         }
 
         [data-theme="snow"] body::before {
-            opacity: 0.20;
-            filter: blur(8px) brightness(1.05);
+            opacity: 0.26;
+            filter: blur(2.5px) brightness(1.05);
         }
 
         [data-theme="grass"] body::before {
-            opacity: 0.20;
-            filter: blur(8px) hue-rotate(50deg);
+            opacity: 0.26;
+            filter: blur(2.5px) hue-rotate(50deg);
         }
 
         [data-theme="ocean"] body::before {
-            opacity: 0.20;
-            filter: blur(8px) hue-rotate(160deg);
+            opacity: 0.26;
+            filter: blur(2.5px) hue-rotate(160deg);
         }
 
         header {
