@@ -1079,7 +1079,10 @@
                 iconSvg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>';
             }
 
-            toast.innerHTML = iconSvg + '<span>' + cleanMsg + '</span>';
+            toast.innerHTML = iconSvg;
+            const msgSpan = hostDoc.createElement('span');
+            msgSpan.textContent = cleanMsg;
+            toast.appendChild(msgSpan);
             container.appendChild(toast);
 
             requestAnimationFrame(() => {
@@ -2326,7 +2329,8 @@
         const doc = (catalog.documents || []).find(d => Number(d.id) === Number(docId));
         if (!doc) {
             showSwarmToast('⚠️ Offizielles Dokument nicht im Katalog gefunden.', 'warning');
-            return;
+            renderSwarmModalContent();
+            return false;
         }
 
         let fileData = doc.fileData;
@@ -2350,7 +2354,8 @@
 
         if (!fileData) {
             showSwarmToast('⚠️ Datei-Inhalt des Dokuments konnte nicht geladen werden.', 'warning');
-            return;
+            renderSwarmModalContent();
+            return false;
         }
 
         // Trigger immediate browser download
@@ -2884,12 +2889,6 @@
                 await importStagedDocToDb(docId, false);
                 return;
             }
-            const dlLocalBtn = e.target.closest('[data-swarm-download-local]');
-            if (dlLocalBtn) {
-                const docId = Number(dlLocalBtn.getAttribute('data-swarm-download-local'));
-                downloadLocalSharedDocFile(docId);
-                return;
-            }
             const dlStagedBtn = e.target.closest('[data-swarm-download-staged]');
             if (dlStagedBtn) {
                 const docId = Number(dlStagedBtn.getAttribute('data-swarm-download-staged'));
@@ -2921,7 +2920,11 @@
                 dlBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle; margin-right:6px; animation:osirisToastSpin 0.85s linear infinite;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg><span>${i18n.downloading || 'Wird geladen...'}</span>`;
                 
                 if (peerId === 'official') {
-                    await downloadOfficialCatalogDoc(docId);
+                    try {
+                        await downloadOfficialCatalogDoc(docId);
+                    } catch (e) {
+                        renderSwarmModalContent();
+                    }
                     return;
                 }
 
@@ -2945,7 +2948,8 @@
                 requestDocDownload(docId, peerId);
 
                 setTimeout(() => {
-                    if (dlBtn && dlBtn.disabled && (dlBtn.textContent.includes('Lade') || dlBtn.textContent.includes('geladen'))) {
+                    if (document.body.contains(dlBtn) && userDownloadRequests.has(docId) && dlBtn.disabled) {
+                        userDownloadRequests.delete(docId);
                         dlBtn.disabled = false;
                         dlBtn.style.opacity = '1';
                         dlBtn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> <span>${i18n.download || 'Herunterladen'}</span>`;
