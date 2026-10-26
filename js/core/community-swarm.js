@@ -42,7 +42,7 @@
     const RATE_LIMIT_WINDOW_MS = 10000; // 10 seconds
     const RATE_LIMIT_MAX_MSGS = 25;     // max 25 control messages per 10s per peer
     const PEER_ID_REGEX = /^peer_[a-z0-9]{6,16}$/;
-    const CHUNK_SIZE = 48000;           // 48 KB chunk size for WebRTC DataChannel transfer
+    const CHUNK_SIZE = 32000;           // 32 KB chunk size for WebRTC DataChannel transfer
 
     // WebRTC Swarm Lobby Pool Settings
     const LOBBY_PREFIX = 'osiris-dt-swarm-v2-';
@@ -72,6 +72,38 @@
     let incomingChunks = new Map();     // transferId -> { chunks: Map(idx->str), total, sender, token, startedAt }
     let activeSwarmRoom = 'global';
     const userDownloadRequests = new Set(); // Tracks doc IDs explicitly requested for browser disk download
+    const activeDownloadTrackers = new Map(); // docId -> { timer, btn, peerId, i18n }
+
+    function handleDownloadTimeout(docId) {
+        const tracker = activeDownloadTrackers.get(docId);
+        userDownloadRequests.delete(docId);
+        activeDownloadTrackers.delete(docId);
+
+        if (tracker && tracker.btn && document.body.contains(tracker.btn)) {
+            tracker.btn.disabled = false;
+            tracker.btn.style.opacity = '1';
+            const dlLabel = (tracker.i18n && tracker.i18n.download) || 'Herunterladen';
+            tracker.btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> <span>${dlLabel}</span>`;
+        }
+
+        showSwarmToast('⚠️ Zeitüberschreitung: P2P-Peer antwortet nicht oder direkte Verbindung wird durch Carrier/Firewall-NAT blockiert. Nutzen Sie den offiziellen Katalog oder Bluetooth.', 'warning');
+    }
+
+    function updateDownloadProgress(docId, loadedChunks, totalChunks) {
+        const tracker = activeDownloadTrackers.get(docId);
+        if (!tracker) return;
+
+        // Reset the watchdog: grant 18 more seconds from the last received chunk
+        clearTimeout(tracker.timer);
+        tracker.timer = setTimeout(() => {
+            handleDownloadTimeout(docId);
+        }, 18000);
+
+        if (tracker.btn && document.body.contains(tracker.btn)) {
+            const pct = Math.min(99, Math.round((loadedChunks / totalChunks) * 100));
+            tracker.btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle; margin-right:6px; animation:osirisToastSpin 0.85s linear infinite;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg><span>${pct}% empfangen...</span>`;
+        }
+    }
 
     function triggerBrowserFileDownload(fileName, dataUrl) {
         if (!dataUrl || !fileName) return false;
@@ -1650,8 +1682,19 @@
                         urls: [
                             'stun:stun.l.google.com:19302',
                             'stun:stun1.l.google.com:19302',
-                            'stun:stun.cloudflare.com:3478'
+                            'stun:stun2.l.google.com:19302',
+                            'stun:stun.cloudflare.com:3478',
+                            'stun:openrelay.metered.ca:80'
                         ]
+                    },
+                    {
+                        urls: [
+                            'turn:openrelay.metered.ca:80',
+                            'turn:openrelay.metered.ca:443',
+                            'turn:openrelay.metered.ca:443?transport=tcp'
+                        ],
+                        username: 'openrelay',
+                        credential: 'openrelay'
                     }
                 ],
                 sdpSemantics: 'unified-plan'
@@ -1769,6 +1812,7 @@
             // Chunk large packets (e.g. DELIVER_DOC with full PDF bytes)
             const transferId = generateCryptoHex(8);
             const totalChunks = Math.ceil(jsonStr.length / CHUNK_SIZE);
+            const targetDocId = (packet.payload && packet.payload.id) ? Number(packet.payload.id) : (packet.docId ? Number(packet.docId) : 0);
             for (let i = 0; i < totalChunks; i++) {
                 if (!conn || !conn.open) break;
                 const chunkSlice = jsonStr.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
@@ -1776,6 +1820,7 @@
                     type: 'SWARM_CHUNK',
                     sender: myPeerId,
                     transferId: transferId,
+                    docId: targetDocId,
                     chunkIndex: i,
                     totalChunks: totalChunks,
                     data: chunkSlice
@@ -1843,12 +1888,18 @@
                 chunks: new Map(),
                 total: total,
                 sender: chunkMsg.sender,
+                docId: chunkMsg.docId ? Number(chunkMsg.docId) : 0,
                 startedAt: now
             };
             incomingChunks.set(transferId, entry);
         }
 
         entry.chunks.set(idx, chunkData);
+
+        const activeDocId = entry.docId || (chunkMsg.docId ? Number(chunkMsg.docId) : 0);
+        if (activeDocId) {
+            updateDownloadProgress(activeDocId, entry.chunks.size, entry.total);
+        }
 
         if (entry.chunks.size === entry.total) {
             incomingChunks.delete(transferId);
@@ -1876,13 +1927,15 @@
         }
 
         // 2. WebRTC DataChannels (cross-device mesh across GitHub Pages)
-        if (webrtcConnections.size > 0) {
-            if (targetOsirisPeerId && peerToWebrtcMap.has(targetOsirisPeerId)) {
-                const targetWebrtcId = peerToWebrtcMap.get(targetOsirisPeerId);
+        if (webrtcConnections.size > 0 || (peerJsInstance && !peerJsInstance.destroyed)) {
+            const targetWebrtcId = targetOsirisPeerId ? (peerToWebrtcMap.get(targetOsirisPeerId) || (remoteCatalog.get(targetOsirisPeerId) && remoteCatalog.get(targetOsirisPeerId).webrtcId)) : null;
+            if (targetWebrtcId) {
                 const targetConn = webrtcConnections.get(targetWebrtcId);
                 if (targetConn && targetConn.open) {
                     sendOverConn(targetConn, packet);
                     return;
+                } else if (!targetConn && peerJsInstance && !peerJsInstance.destroyed) {
+                    connectToWebRtcPeer(targetWebrtcId);
                 }
             }
 
@@ -1975,6 +2028,9 @@
                     docs: sanitizeRemoteCatalogList(msg.catalog),
                     webrtcId: msg.webrtcId || null
                 });
+                if (msg.webrtcId && PEER_ID_REGEX.test(msg.sender)) {
+                    peerToWebrtcMap.set(msg.sender, msg.webrtcId);
+                }
                 updateSwarmBadge();
                 renderSwarmModalContent();
                 triggerAutoSyncMissingDocs(msg.sender, remoteCatalog.get(msg.sender).docs);
@@ -1996,6 +2052,9 @@
                         docs: sanitizeRemoteCatalogList(msg.catalog),
                         webrtcId: msg.webrtcId || null
                     });
+                    if (msg.webrtcId && PEER_ID_REGEX.test(msg.sender)) {
+                        peerToWebrtcMap.set(msg.sender, msg.webrtcId);
+                    }
                     updateSwarmBadge();
                     renderSwarmModalContent();
                     triggerAutoSyncMissingDocs(msg.sender, remoteCatalog.get(msg.sender).docs);
@@ -2072,7 +2131,7 @@
         const inCatalog = (localCatalog || []).find(d => d && (d.id == docId || String(d.id) === String(docId)));
         if (!inCatalog && !isDocShared(docId)) return;
 
-        const dbsToTry = [currentConfig.dbName, currentConfig.dbName === 'DokumentationDB' ? 'TestBankDB' : 'DokumentationDB'];
+        const dbsToTry = Array.from(new Set([(inCatalog && inCatalog.sourceDb), currentConfig.dbName, 'DokumentationDB', 'TestBankDB'].filter(Boolean)));
 
         function tryDb(idx) {
             if (idx >= dbsToTry.length) {
@@ -2241,6 +2300,18 @@
 
         // Check if user initiated a manual "Laden" download: trigger physical file download to device storage
         const requestedId = Number(rawDocItem.id) || Number(docItem.id);
+        const tracker = activeDownloadTrackers.get(requestedId);
+        if (tracker) {
+            clearTimeout(tracker.timer);
+            activeDownloadTrackers.delete(requestedId);
+            if (tracker.btn && document.body.contains(tracker.btn)) {
+                tracker.btn.disabled = true;
+                tracker.btn.style.background = '#16a34a';
+                tracker.btn.style.opacity = '1';
+                tracker.btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg> <span>Gespeichert</span>`;
+            }
+        }
+
         const wasUserDownload = userDownloadRequests.has(requestedId) || !isAuto;
         if (wasUserDownload) {
             userDownloadRequests.delete(requestedId);
@@ -2458,6 +2529,11 @@
             expiresAt: now + 45000,
             isAutoSync: !!isAutoSync
         });
+
+        const targetWebrtcId = peerToWebrtcMap.get(peerId) || (remoteCatalog.get(peerId) && remoteCatalog.get(peerId).webrtcId);
+        if (targetWebrtcId && peerJsInstance && !webrtcConnections.has(targetWebrtcId)) {
+            connectToWebRtcPeer(targetWebrtcId);
+        }
 
         sendSwarmPacket({
             type: 'REQUEST_DOC',
@@ -2945,17 +3021,22 @@
 
                 // Track user intent for browser file download upon arrival via P2P
                 userDownloadRequests.add(docId);
-                requestDocDownload(docId, peerId);
 
-                setTimeout(() => {
-                    if (document.body.contains(dlBtn) && userDownloadRequests.has(docId) && dlBtn.disabled) {
-                        userDownloadRequests.delete(docId);
-                        dlBtn.disabled = false;
-                        dlBtn.style.opacity = '1';
-                        dlBtn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> <span>${i18n.download || 'Herunterladen'}</span>`;
-                        showSwarmToast('⚠️ P2P-Direktübertragung wird durch Browser/Netzwerk-Sicherheit blockiert. Bitte Dokument als offiziellen Katalog auf GitHub veröffentlichen oder per Bluetooth/Mail senden.', 'warning');
-                    }
-                }, 4000);
+                if (activeDownloadTrackers.has(docId)) {
+                    clearTimeout(activeDownloadTrackers.get(docId).timer);
+                }
+                const dlTimer = setTimeout(() => {
+                    handleDownloadTimeout(docId);
+                }, 25000);
+
+                activeDownloadTrackers.set(docId, {
+                    timer: dlTimer,
+                    btn: dlBtn,
+                    peerId: peerId,
+                    i18n: i18n
+                });
+
+                requestDocDownload(docId, peerId);
                 return;
             }
             const stopBtn = e.target.closest('[data-swarm-stop]');
