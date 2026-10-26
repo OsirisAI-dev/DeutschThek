@@ -240,6 +240,18 @@
         renderLinksList();
     }
 
+    function safeWikiUrl(rawUrl) {
+        if (!rawUrl || typeof rawUrl !== 'string') return '#';
+        const trimmed = rawUrl.trim();
+        if (window.location.protocol !== 'file:' && /^file:/i.test(trimmed)) {
+            return '#';
+        }
+        if (/^(https?:\/\/|\/|#|mailto:)/i.test(trimmed)) {
+            return trimmed.replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+        return 'https://' + trimmed.replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
     function addLink() {
         const name = document.getElementById('link-name').value.trim();
         const url = document.getElementById('link-url').value.trim();
@@ -261,8 +273,9 @@
             div.style.alignItems = 'center';
             div.style.marginBottom = '5px';
             
+            const safeHref = safeWikiUrl(l.url);
             div.innerHTML = `
-                <a href="${l.url}" target="_blank" style="color:var(--text); text-decoration:none; font-weight:bold; max-width:85%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                <a href="${safeHref}" target="_blank" rel="noopener noreferrer" style="color:var(--text); text-decoration:none; font-weight:bold; max-width:85%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
                     ${l.name}
                 </a>
                 <span onclick="removeLink(${idx})" style="cursor:pointer; color:red; font-weight:bold; font-size:1.1rem;">✖</span>
@@ -284,7 +297,8 @@
         pool.forEach(l => {
             const span = document.createElement('span');
             span.style.margin = '0 25px';
-            span.innerHTML = `<a href="${l.url}" target="_blank" style="color:var(--primary); text-decoration:none; font-weight:bold;">${l.name}</a>`;
+            const safeHref = safeWikiUrl(l.url);
+            span.innerHTML = `<a href="${safeHref}" target="_blank" rel="noopener noreferrer" style="color:var(--primary); text-decoration:none; font-weight:bold;">${l.name}</a>`;
             ticker.appendChild(span);
         });
     }

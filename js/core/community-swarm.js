@@ -107,6 +107,11 @@
 
     function triggerBrowserFileDownload(fileName, dataUrl) {
         if (!dataUrl || !fileName) return false;
+        // Security check: Block file:/// download navigation from web context
+        if (typeof dataUrl === 'string' && /^file:/i.test(dataUrl) && window.location.protocol !== 'file:') {
+            console.warn('[Osiris Swarm] Disallowed file:/// download target from web origin.');
+            return false;
+        }
         try {
             let blobUrl = null;
             let downloadUrl = dataUrl;
@@ -121,6 +126,8 @@
                 } catch (blobErr) {
                     downloadUrl = dataUrl;
                 }
+            } else if (typeof dataUrl === 'string' && !dataUrl.startsWith('blob:') && !dataUrl.startsWith('data:')) {
+                if (/^file:/i.test(dataUrl)) return false;
             }
             const a = document.createElement('a');
             a.href = downloadUrl;
@@ -233,6 +240,10 @@
     function sanitizeUrl(url) {
         if (!url || typeof url !== 'string') return '#';
         const trimmed = url.replace(/[\x00-\x20\u202A-\u202E\u2066-\u2069]/g, '').trim();
+        // Strict protection against file:/// navigation from web contexts
+        if (window.location.protocol !== 'file:' && /^file:/i.test(trimmed)) {
+            return '#';
+        }
         try {
             const parsed = new URL(trimmed, window.location.origin);
             if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
@@ -1711,16 +1722,12 @@
                     {
                         urls: [
                             'stun:stun.l.google.com:19302',
-                            'stun:stun1.l.google.com:19302',
-                            'stun:stun2.l.google.com:19302',
-                            'stun:stun.cloudflare.com:3478',
-                            'stun:openrelay.metered.ca:80'
+                            'stun:stun.cloudflare.com:3478'
                         ]
                     },
                     {
                         urls: [
                             'turn:openrelay.metered.ca:80',
-                            'turn:openrelay.metered.ca:443',
                             'turn:openrelay.metered.ca:443?transport=tcp'
                         ],
                         username: 'openrelay',
@@ -1782,6 +1789,28 @@
         }
     }
 
+    const pendingWebrtcOutbox = new Map();
+
+    function queueOutgoingPacket(targetWebrtcId, packet) {
+        if (!targetWebrtcId || !packet) return;
+        if (!pendingWebrtcOutbox.has(targetWebrtcId)) {
+            pendingWebrtcOutbox.set(targetWebrtcId, []);
+        }
+        const queue = pendingWebrtcOutbox.get(targetWebrtcId);
+        if (queue.length < 25) {
+            queue.push(packet);
+        }
+    }
+
+    function flushPendingPackets(targetWebrtcId, conn) {
+        if (!pendingWebrtcOutbox.has(targetWebrtcId) || !conn || !conn.open) return;
+        const queue = pendingWebrtcOutbox.get(targetWebrtcId);
+        pendingWebrtcOutbox.delete(targetWebrtcId);
+        queue.forEach(pkt => {
+            sendOverConn(conn, pkt);
+        });
+    }
+
     function connectToWebRtcPeer(targetId) {
         if (!peerJsInstance || !targetId || targetId === myWebrtcId) return;
         if (webrtcConnections.has(targetId)) return;
@@ -1811,6 +1840,8 @@
                 knownWebrtcIds: Array.from(webrtcConnections.keys()),
                 catalog: localCatalog
             });
+
+            flushPendingPackets(conn.peer, conn);
 
             updateSwarmBadge();
             renderSwarmModalContent();
@@ -1964,8 +1995,12 @@
                 if (targetConn && targetConn.open) {
                     sendOverConn(targetConn, packet);
                     return;
-                } else if (!targetConn && peerJsInstance && !peerJsInstance.destroyed) {
-                    connectToWebRtcPeer(targetWebrtcId);
+                } else {
+                    queueOutgoingPacket(targetWebrtcId, packet);
+                    if (!targetConn && peerJsInstance && !peerJsInstance.destroyed) {
+                        connectToWebRtcPeer(targetWebrtcId);
+                    }
+                    return;
                 }
             }
 
