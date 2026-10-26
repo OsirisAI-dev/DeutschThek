@@ -86,7 +86,7 @@
             tracker.btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> <span>${dlLabel}</span>`;
         }
 
-        showSwarmToast('⚠️ Zeitüberschreitung: P2P-Peer antwortet nicht oder direkte Verbindung wird durch Carrier/Firewall-NAT blockiert. Nutzen Sie den offiziellen Katalog oder Bluetooth.', 'warning');
+        showSwarmToast('Zeitüberschreitung: P2P-Peer antwortet nicht oder direkte Verbindung wird durch Carrier/Firewall-NAT blockiert. Nutzen Sie den offiziellen Katalog oder Bluetooth.', 'warning');
     }
 
     function updateDownloadProgress(docId, loadedChunks, totalChunks) {
@@ -544,7 +544,7 @@
             const curSize = Number(safeDoc.fileSize) || (safeDoc.fileData ? Math.round(safeDoc.fileData.length * 0.75) : 0);
             if (curSize > MAX_P2P_SHARE_BYTES) {
                 const sizeMb = (curSize / (1024 * 1024)).toFixed(1);
-                showSwarmToast(`⚠️ P2P-Limit: Datei ist ${sizeMb} MB groß (maximal 10 MB im P2P-Schwarm erlaubt). Bitte per Bluetooth oder Social Media teilen.`, 'warning');
+                showSwarmToast(`P2P-Limit: Datei ist ${sizeMb} MB groß (maximal 10 MB im P2P-Schwarm erlaubt). Bitte per Bluetooth oder Social Media teilen.`, 'warning');
                 return;
             }
             await toggleShareDocToSwarm(safeDoc.id, true, safeDoc);
@@ -918,7 +918,7 @@
         }
 
         if (exportDocs.length === 0) {
-            showSwarmToast('⚠️ Keine geteilten Dokumente zum Exportieren gefunden. Bitte teilen Sie zuerst Dokumente über das Menü „Teilen“.', 'warning');
+            showSwarmToast('Keine geteilten Dokumente zum Exportieren gefunden. Bitte teilen Sie zuerst Dokumente über das Menü „Teilen“.', 'warning');
             return null;
         }
 
@@ -941,7 +941,7 @@
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
 
-        showSwarmToast(`🏛️ Offizieller Katalog mit ${exportDocs.length} Dokument(en) exportiert! Kopieren Sie die Datei nach data/official-catalog.json und committen Sie auf GitHub.`, 'info');
+        showSwarmToast(`Offizieller Katalog mit ${exportDocs.length} Dokument(en) exportiert! Kopieren Sie die Datei nach data/official-catalog.json und committen Sie auf GitHub.`, 'info');
         return catalogPayload;
     }
     
@@ -1032,7 +1032,7 @@
         const totalCount = officialCount + p2pFiles.length;
 
         if (totalCount === 0) {
-            showSwarmToast('✓ Datenbank ist auf dem neuesten Stand. Keine neuen Dokumente im Schwarm.', 'info');
+            showSwarmToast('Datenbank ist auf dem neuesten Stand. Keine neuen Dokumente im Schwarm.', 'info');
             updateSwarmBadge();
             return 0;
         }
@@ -1079,7 +1079,7 @@
         setAutoSaveToDbEnabled(enabled);
         const toggle = document.getElementById('swarm-auto-save-toggle');
         if (toggle) toggle.checked = !!enabled;
-        showSwarmToast(enabled ? '⚡ P2P Auto-Speichern aktiviert: Neue Schwarm-Dokumente werden automatisch gespeichert.' : '⏸️ P2P Auto-Speichern deaktiviert.', 'info');
+        showSwarmToast(enabled ? 'P2P Auto-Speichern aktiviert: Neue Schwarm-Dokumente werden automatisch gespeichert.' : 'P2P Auto-Speichern deaktiviert.', 'info');
         if (enabled) {
             // Trigger auto-sync for any currently known remote docs
             remoteCatalog.forEach((peerData, peerId) => {
@@ -1097,7 +1097,7 @@
             if (!container) {
                 container = hostDoc.createElement('div');
                 container.id = 'osiris-swarm-toast-container';
-                container.style.cssText = 'position:fixed; bottom:24px; right:24px; z-index:999999; display:flex; flex-direction:column; gap:10px; pointer-events:none; max-width:420px;';
+                container.style.cssText = 'position:fixed; bottom:24px; right:24px; z-index:999999; display:flex; flex-direction:column; gap:10px; pointer-events:none; max-width:440px;';
                 hostDoc.body.appendChild(container);
             }
             if (!hostDoc.getElementById('osiris-swarm-toast-style')) {
@@ -1107,27 +1107,39 @@
                 hostDoc.head.appendChild(styleEl);
             }
 
-            const toast = hostDoc.createElement('div');
-            const isSuccess = type === 'success';
-            const isInfo = type === 'info';
-            const bgColor = isSuccess ? '#15803d' : (isInfo ? '#2563eb' : '#b91c1c');
+            const rawMsg = String(message || '');
+            const isDownload = type === 'download' || rawMsg.includes('📥') || /heruntergeladen|téléchargé|download/i.test(rawMsg);
+            const isSync = type === 'sync' || rawMsg.includes('🔄') || /aktualisier/i.test(rawMsg);
+            const isWarning = type === 'warning' || type === 'error' || rawMsg.includes('⚠️') || rawMsg.includes('🛑') || /abgewiesen|block|fehler|limit/i.test(rawMsg);
+            const isSuccess = type === 'success' || rawMsg.includes('✅') || rawMsg.startsWith('✓');
 
-            toast.style.cssText = 'background:' + bgColor + '; color:#ffffff; padding:12px 18px; border-radius:8px; font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size:0.86rem; font-weight:600; line-height:1.4; box-shadow:0 8px 24px rgba(0,0,0,0.28); display:flex; align-items:center; gap:10px; pointer-events:auto; opacity:0; transform:translateY(12px); transition:opacity 0.25s ease, transform 0.25s ease;';
+            // Strip any emoji prefixes / symbols cleanly
+            let cleanMsg = rawMsg
+                .replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}✓ℹ️⚠️🛑📥✅🏛️⚡🔄\s]+/gu, '')
+                .trim();
 
+            const bgColor = isWarning ? '#b91c1c' : (isSuccess ? '#15803d' : '#2563eb');
             let iconSvg = '';
-            let cleanMsg = String(message || '');
-            if (cleanMsg.includes('Aktualisiere') || cleanMsg.includes('🔄') || type === 'sync') {
-                cleanMsg = cleanMsg.replace(/^🔄\s*/, '');
-                iconSvg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; animation:osirisToastSpin 0.85s linear infinite;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>';
-            } else if (cleanMsg.startsWith('✓') || isSuccess) {
-                cleanMsg = cleanMsg.replace(/^✓\s*/, '');
-                iconSvg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="20 6 9 17 4 12"/></svg>';
-            } else if (cleanMsg.includes('⚠️') || cleanMsg.includes('🛑') || type === 'warning' || type === 'error') {
-                cleanMsg = cleanMsg.replace(/^[⚠️🛑]\s*/, '');
-                iconSvg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>';
+
+            if (isDownload) {
+                // Modern sleek SVG download icon
+                iconSvg = '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>';
+            } else if (isSync) {
+                // Modern spinning sync icon
+                iconSvg = '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; animation:osirisToastSpin 0.85s linear infinite;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>';
+            } else if (isSuccess) {
+                // Modern checkmark icon
+                iconSvg = '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="20 6 9 17 4 12"/></svg>';
+            } else if (isWarning) {
+                // Modern alert triangle icon
+                iconSvg = '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>';
             } else {
-                iconSvg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>';
+                // Modern info circle icon
+                iconSvg = '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>';
             }
+
+            const toast = hostDoc.createElement('div');
+            toast.style.cssText = 'background:' + bgColor + '; color:#ffffff; padding:12px 18px; border-radius:8px; font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size:0.86rem; font-weight:600; line-height:1.4; box-shadow:0 8px 24px rgba(0,0,0,0.28); display:flex; align-items:center; gap:10px; pointer-events:auto; opacity:0; transform:translateY(12px); transition:opacity 0.25s ease, transform 0.25s ease;';
 
             toast.innerHTML = iconSvg;
             const msgSpan = hostDoc.createElement('span');
@@ -1256,7 +1268,7 @@
 
                     const fp = (targetDoc.fileHash || '').substring(0, 6).toUpperCase();
                     if (!isSilentAuto) {
-                        showSwarmToast(`✅ „${targetDoc.thema}“ (SHA-256 #${fp}) erfolgreich in lokale Bibliothek importiert!`, 'success');
+                        showSwarmToast(`„${targetDoc.thema}“ (SHA-256 #${fp}) erfolgreich in lokale Bibliothek importiert!`, 'success');
                     }
 
                     broadcastDataReload(targetDoc);
@@ -1311,7 +1323,7 @@
             if (ok) successCount++;
         }
         if (successCount > 0) {
-            showSwarmToast(`✅ ${successCount} Dokument(e) erfolgreich in Ihre lokale Bibliothek übernommen!`, 'success');
+            showSwarmToast(`${successCount} Dokument(e) erfolgreich in Ihre lokale Bibliothek übernommen!`, 'success');
         }
         updateSwarmBadge();
         renderSwarmModalContent();
@@ -2246,7 +2258,7 @@
     async function receiveDocFromPeer(rawDocItem, isAuto) {
         const docItem = sanitizeDocRecord(rawDocItem);
         if (!docItem || !docItem.fileData) {
-            if (!isAuto) showSwarmToast('⚠️ P2P-Übertragung abgelehnt: Ungültige oder manipulierte Dokumentendaten.', 'warning');
+            if (!isAuto) showSwarmToast('P2P-Übertragung abgelehnt: Ungültige oder manipulierte Dokumentendaten.', 'warning');
             return;
         }
 
@@ -2254,7 +2266,7 @@
         try {
             u8 = dataUrlToUint8Array(docItem.fileData);
         } catch (err) {
-            if (!isAuto) showSwarmToast('⚠️ Sicherheitswarnung: Datei überschreitet das 25 MB Limit oder ist korrupt.', 'warning');
+            if (!isAuto) showSwarmToast('Sicherheitswarnung: Datei überschreitet das 25 MB Limit oder ist korrupt.', 'warning');
             return;
         }
 
@@ -2262,21 +2274,21 @@
         if (u8.length > MAX_P2P_SHARE_BYTES) {
             const sizeMb = (u8.length / (1024 * 1024)).toFixed(1);
             console.warn(`[Osiris Security] P2P-Dokument übersteigt 10 MB Limit (${sizeMb} MB). Abgewiesen.`);
-            if (!isAuto) showSwarmToast(`🛑 Datei übersteigt das 10 MB P2P-Schwarm-Limit (${sizeMb} MB) und wurde abgewiesen.`, 'warning');
+            if (!isAuto) showSwarmToast(`Datei übersteigt das 10 MB P2P-Schwarm-Limit (${sizeMb} MB) und wurde abgewiesen.`, 'warning');
             return;
         }
 
         // 1. Deep Magic-Byte & Active Content Inspection
         const check = validateMagicBytes(u8, docItem.fileName);
         if (!check.valid) {
-            if (!isAuto) showSwarmToast('🛑 SICHERHEITSBLOCKADE: ' + check.reason, 'warning');
+            if (!isAuto) showSwarmToast('Sicherheitsblockade: ' + check.reason, 'warning');
             return;
         }
 
         // 2. Mandatory SHA-256 Bit-Integrity Verification
         const computedHash = await computeSHA256(u8.buffer);
         if (!computedHash || (docItem.fileHash && docItem.fileHash !== computedHash)) {
-            if (!isAuto) showSwarmToast('🛑 INTEGRITÄTSFEHLER: SHA-256 Hash stimmt nicht mit dem Original überein!', 'warning');
+            if (!isAuto) showSwarmToast('Integritätsfehler: SHA-256 Hash stimmt nicht mit dem Original überein!', 'warning');
             return;
         }
 
@@ -2311,7 +2323,7 @@
             if (wasUserDownload) {
                 userDownloadRequests.delete(requestedId);
                 triggerBrowserFileDownload(docItem.fileName, docItem.fileData);
-                showSwarmToast(`📥 Datei „${docItem.fileName}“ wird auf Ihr Gerät heruntergeladen (bereits in der lokalen DB vorhanden)!`, 'info');
+                showSwarmToast(`Datei „${docItem.fileName}“ wird auf Ihr Gerät heruntergeladen (bereits in der lokalen DB vorhanden)!`, 'info');
             } else {
                 console.log(`[Osiris P2P] Dokument „${docItem.thema}" im Hintergrund synchronisiert.`);
             }
@@ -2353,7 +2365,7 @@
         if (wasUserDownload) {
             userDownloadRequests.delete(requestedId);
             triggerBrowserFileDownload(newItem.fileName, newItem.fileData);
-            showSwarmToast(`📥 Datei „${newItem.fileName}“ wird heruntergeladen & im Posteingang/DB gespeichert!`, 'info');
+            showSwarmToast(`Datei „${newItem.fileName}“ wird heruntergeladen & im Posteingang/DB gespeichert!`, 'info');
         }
 
         if (isAutoSaveToDbEnabled()) {
@@ -2363,7 +2375,7 @@
             // Auto-save is off: keep in staged inbox and alert the user with interactive notification
             const fp = computedHash.substring(0, 6).toUpperCase();
             if (!wasUserDownload) {
-                showSwarmToast(`📥 Neuer Schwarm-Inhalt im Posteingang: „${newItem.thema}" (SHA-256 #${fp}) – Klicken zum Übernehmen`, 'info');
+                showSwarmToast(`Neuer Schwarm-Inhalt im Posteingang: „${newItem.thema}" (SHA-256 #${fp}) – Klicken zum Übernehmen`, 'info');
             }
             renderSwarmModalContent();
         }
@@ -2460,12 +2472,12 @@
     async function downloadLocalSharedDocFile(docId) {
         const doc = await getLocalDocWithData(docId);
         if (!doc || !doc.fileData) {
-            showSwarmToast('⚠️ Dokumentinhalt konnte nicht aus der lokalen Datenbank geladen werden.', 'warning');
+            showSwarmToast('Dokumentinhalt konnte nicht aus der lokalen Datenbank geladen werden.', 'warning');
             return;
         }
         const success = triggerBrowserFileDownload(doc.fileName || 'Dokument.pdf', doc.fileData);
         if (success) {
-            showSwarmToast(`📥 Datei „${doc.fileName}“ wird mit allen Metadaten auf Ihr Gerät heruntergeladen.`, 'info');
+            showSwarmToast(`Datei „${doc.fileName}“ wird mit allen Metadaten auf Ihr Gerät heruntergeladen.`, 'info');
         }
     }
 
@@ -2473,12 +2485,12 @@
         const staged = getStagedInboxDocuments();
         const doc = staged.find(d => Number(d.id) === Number(docId));
         if (!doc || !doc.fileData) {
-            showSwarmToast('⚠️ Dokument im Posteingang nicht gefunden.', 'warning');
+            showSwarmToast('Dokument im Posteingang nicht gefunden.', 'warning');
             return;
         }
         const success = triggerBrowserFileDownload(doc.fileName || 'Dokument.pdf', doc.fileData);
         if (success) {
-            showSwarmToast(`📥 Datei „${doc.fileName}“ wird heruntergeladen.`, 'info');
+            showSwarmToast(`Datei „${doc.fileName}“ wird heruntergeladen.`, 'info');
         }
     }
 
@@ -2486,7 +2498,7 @@
         const catalog = await fetchOfficialCatalog();
         const doc = (catalog.documents || []).find(d => Number(d.id) === Number(docId));
         if (!doc) {
-            showSwarmToast('⚠️ Offizielles Dokument nicht im Katalog gefunden.', 'warning');
+            showSwarmToast('Offizielles Dokument nicht im Katalog gefunden.', 'warning');
             renderSwarmModalContent();
             return false;
         }
@@ -2494,7 +2506,7 @@
         let fileData = doc.fileData;
         if (!fileData && doc.filePath) {
             try {
-                showSwarmToast(`📥 Lade offizielle Datei herunter: ${doc.fileName}...`, 'info');
+                showSwarmToast(`Lade offizielle Datei herunter: ${doc.fileName}...`, 'info');
                 const resp = await fetch(doc.filePath);
                 if (resp.ok) {
                     const blob = await resp.blob();
@@ -2511,7 +2523,7 @@
         }
 
         if (!fileData) {
-            showSwarmToast('⚠️ Datei-Inhalt des Dokuments konnte nicht geladen werden.', 'warning');
+            showSwarmToast('Datei-Inhalt des Dokuments konnte nicht geladen werden.', 'warning');
             renderSwarmModalContent();
             return false;
         }
@@ -2541,19 +2553,19 @@
                     if (doc.fileHash && window.knownLocalHashes) window.knownLocalHashes.add(doc.fileHash.toLowerCase());
                     trackUpdatedDoc(docRecord.id, doc.fileHash);
                     broadcastDataReload(docRecord);
-                    showSwarmToast(`✅ Datei „${doc.fileName}“ heruntergeladen & in Datenbank gespeichert!`, 'info');
+                    showSwarmToast(`Datei „${doc.fileName}“ heruntergeladen & in Datenbank gespeichert!`, 'info');
                     renderSwarmModalContent();
                     updateSwarmBadge();
                 };
             } catch (e) {
                 stageDocumentInInbox(docRecord);
-                showSwarmToast(`📥 Datei „${doc.fileName}“ heruntergeladen & im Posteingang bereitgestellt!`, 'info');
+                showSwarmToast(`Datei „${doc.fileName}“ heruntergeladen & im Posteingang bereitgestellt!`, 'info');
                 renderSwarmModalContent();
                 updateSwarmBadge();
             }
         } else {
             stageDocumentInInbox(docRecord);
-            showSwarmToast(`📥 Datei „${doc.fileName}“ heruntergeladen & im Posteingang bereitgestellt!`, 'info');
+            showSwarmToast(`Datei „${doc.fileName}“ heruntergeladen & im Posteingang bereitgestellt!`, 'info');
             renderSwarmModalContent();
             updateSwarmBadge();
         }
@@ -2638,7 +2650,7 @@
             const rawSize = (docData && (Number(docData.fileSize) || (docData.fileData ? Math.round(docData.fileData.length * 0.75) : 0))) || 0;
             if (rawSize > MAX_P2P_SHARE_BYTES) {
                 const sizeMb = (rawSize / (1024 * 1024)).toFixed(1);
-                showSwarmToast(`⚠️ P2P-Limit: Datei ist ${sizeMb} MB groß (maximal 10 MB im P2P-Schwarm erlaubt). Bitte nutzen Sie Bluetooth oder Social Media.`, 'warning');
+                showSwarmToast(`P2P-Limit: Datei ist ${sizeMb} MB groß (maximal 10 MB im P2P-Schwarm erlaubt). Bitte nutzen Sie Bluetooth oder Social Media.`, 'warning');
                 return;
             }
         }
@@ -3064,12 +3076,6 @@
                 downloadStagedInboxDocFile(docId);
                 return;
             }
-            const dlLocalBtn = e.target.closest('[data-swarm-download-local]');
-            if (dlLocalBtn) {
-                const docId = Number(dlLocalBtn.getAttribute('data-swarm-download-local'));
-                await downloadLocalSharedDocFile(docId);
-                return;
-            }
             const dismissBtn = e.target.closest('[data-swarm-dismiss]');
             if (dismissBtn) {
                 const docId = dismissBtn.getAttribute('data-swarm-dismiss');
@@ -3113,7 +3119,7 @@
                     if (isAutoSaveToDbEnabled()) {
                         await importStagedDocToDb(memDoc.id, true);
                     }
-                    showSwarmToast(`📥 Datei „${memDoc.fileName}“ heruntergeladen & im Posteingang/DB bereitgestellt!`, 'info');
+                    showSwarmToast(`Datei „${memDoc.fileName}“ heruntergeladen & im Posteingang/DB bereitgestellt!`, 'info');
                     renderSwarmModalContent();
                     return;
                 }
@@ -3129,7 +3135,7 @@
                 if (localDoc && localDoc.fileData) {
                     const success = triggerBrowserFileDownload(localDoc.fileName || (memDoc && memDoc.fileName) || 'Dokument.pdf', localDoc.fileData);
                     if (success) {
-                        showSwarmToast(`📥 Datei „${localDoc.fileName}“ wird aus der lokalen Datenbank heruntergeladen!`, 'info');
+                        showSwarmToast(`Datei „${localDoc.fileName}“ wird aus der lokalen Datenbank heruntergeladen!`, 'info');
                     }
                     return;
                 }
@@ -3597,11 +3603,7 @@
                                 <div style="font-size:0.78rem; color:${metaColor};">📄 ${safeFileName}</div>
                             </div>
                             <div class="swarm-doc-actions" style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
-                                <button type="button" data-swarm-download-local="${safeDocId}" style="display:inline-flex; align-items:center; gap:6px; padding:9px 13px; background:#2563eb; color:white; border:none; border-radius:8px; font-weight:700; cursor:pointer; font-size:0.84rem; box-shadow:0 1px 4px rgba(37,99,235,0.25);" title="Datei (.pdf/.docx) auf Ihr Gerät herunterladen">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                                    <span>${i18n.downloadFile || 'Datei laden'}</span>
-                                </button>
-                                <button type="button" data-swarm-stop="1" data-doc-id="${safeDocId}" style="padding:9px 14px; background:#dc2626; color:white; border:none; border-radius:8px; font-weight:700; cursor:pointer; font-size:0.84rem; box-shadow:0 1px 4px rgba(220,38,38,0.25);">
+                                <button type="button" data-swarm-stop="1" data-doc-id="${safeDocId}" style="padding:9px 16px; background:#dc2626; color:white; border:none; border-radius:8px; font-weight:700; cursor:pointer; font-size:0.84rem; box-shadow:0 1px 4px rgba(220,38,38,0.25);">
                                     <span>${i18n.stopShare || 'Teilen beenden'}</span>
                                 </button>
                             </div>
