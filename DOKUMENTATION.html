@@ -608,10 +608,7 @@
 </div>
 
     <div style="margin-top: 15px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-            <label data-i18n="uploadFile" style="margin-top:0;">DATEI HOCHLADEN (PDF, DOC, DOCX...)</label>
-            <span id="db-storage-capacity" style="font-size:0.75rem; font-weight:bold; color:var(--text-muted); background:var(--surface); border:1px solid var(--border); padding:2px 8px; border-radius:12px;">0 / 10 Dateien</span>
-        </div>
+        <label data-i18n="uploadFile" style="margin-bottom:4px; display:block;">DATEI HOCHLADEN (PDF, DOC, DOCX...)</label>
         <input type="file" id="inp-file" accept=".pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*,text/*,video/*" required style="padding: 10px; background: var(--bg);">
         <div id="file-dup-status" style="display:none; margin-top:8px; padding:10px 12px; border-radius:6px; font-size:0.85rem; align-items:center; gap:8px; border:1px solid var(--border); line-height:1.4;"></div>
     </div>
@@ -2454,19 +2451,7 @@
         if (!file) { hideDuplicateNotice(statusEl); return; }
         if (!idb) return; // DB not ready yet, skip silently
 
-        // Storage capacity limit: max 10 files in IndexedDB to avoid storage bloating
-        if (!window.editingId) {
-            const currentDocCount = window._docMetaCache ? window._docMetaCache.length : 0;
-            if (currentDocCount >= 10) {
-                window.duplicateBlocked = true;
-                setSaveBtnEnabled(false);
-                statusEl.style.display = 'flex';
-                statusEl.style.background = 'rgba(220,53,69,0.12)';
-                statusEl.innerHTML = `<div style="color:#dc3545; font-weight:bold;">⚠️ Kapazitätsgrenze erreicht (10 / 10 Dateien): Um den Speicher nicht zu überlasten, können maximal 10 Dokumente gleichzeitig in der lokalen Datenbank gespeichert werden. Bitte löschen oder exportieren Sie ein Dokument vor dem Hochladen.</div>`;
-                e.target.value = '';
-                return;
-            }
-        }
+
 
         showCheckingNotice(statusEl);
         setSaveBtnEnabled(false);
@@ -2625,14 +2610,7 @@ function saveEntry() {
             return;
         }
 
-        // Storage capacity limit safeguard (max 10 files)
-        if (!window.editingId) {
-            const currentDocCount = window._docMetaCache ? window._docMetaCache.length : 0;
-            if (currentDocCount >= 10) {
-                alert("Kapazitätsgrenze erreicht (Maximal 10 Dateien): Um den Browserspeicher nicht zu überlasten, können maximal 10 Dokumente gleichzeitig gespeichert werden. Bitte exportieren oder löschen Sie ältere Einträge.");
-                return;
-            }
-        }
+
 
         let subTyp = [];
         if (rawSelectedTyp === 'SONSTIGES' && typ) {
@@ -3078,25 +3056,7 @@ function saveEntry() {
                 typ: item.typ
             }));
 
-            // Update storage capacity badge (max 10 files safeguard)
-            const capEl = document.getElementById('db-storage-capacity');
-            if (capEl) {
-                const count = db.length;
-                capEl.textContent = `${count} / 10 Dateien`;
-                if (count >= 10) {
-                    capEl.style.color = '#dc3545';
-                    capEl.style.borderColor = '#dc3545';
-                    capEl.style.background = 'rgba(220,53,69,0.08)';
-                } else if (count >= 8) {
-                    capEl.style.color = '#ff9800';
-                    capEl.style.borderColor = '#ff9800';
-                    capEl.style.background = 'rgba(255,152,0,0.08)';
-                } else {
-                    capEl.style.color = 'var(--text-muted)';
-                    capEl.style.borderColor = 'var(--border)';
-                    capEl.style.background = 'var(--surface)';
-                }
-            }
+
 
             // Dynamically refresh unique themes and lessons so updated files show in filters
             const dbThemes = new Set();
