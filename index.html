@@ -793,6 +793,15 @@
     gap: 10px;
     padding: 12px 22px 18px;
   }
+  .hub-backup-scroll-body {
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+    display: flex;
+    flex-direction: column;
+  }
   .backup-action-btn {
     display: flex;
     align-items: center;
@@ -1113,129 +1122,132 @@
       </button>
     </div>
 
-    <!-- Database Selection Section -->
-    <div class="hub-backup-section">
-      <div class="backup-section-label">
-        <span>Datenbanken auswählen</span>
-        <span class="backup-stats-summary" id="backupSelectionSummary">3 von 3 ausgewählt</span>
-      </div>
+    <!-- Scrollable Modal Body (Ensures Reset button is always visible & reachable) -->
+    <div class="hub-backup-scroll-body">
+      <!-- Database Selection Section -->
+      <div class="hub-backup-section">
+        <div class="backup-section-label">
+          <span>Datenbanken auswählen</span>
+          <span class="backup-stats-summary" id="backupSelectionSummary">3 von 3 ausgewählt</span>
+        </div>
 
-      <div class="db-selector-card">
-        <!-- Master Checkbox ALLE -->
-        <label class="db-checkbox-item master-chk">
-          <input type="checkbox" id="chk-db-all" checked>
-          <span class="chk-label-main">
-            <strong>ALLE</strong> — Alle Datenbanken sichern / verwalten
-          </span>
-        </label>
-
-        <div class="db-checkbox-subgrid">
-          <!-- TB (TestBankDB) -->
-          <label class="db-checkbox-item">
-            <input type="checkbox" id="chk-db-tb" class="sub-db-chk" checked data-db="TB">
-            <div class="chk-label-col">
-              <span class="db-tag-pill">TB</span>
-              <div>
-                <div class="db-title-text">Testbank</div>
-                <div class="db-desc-text">Prüfungsstoff, Tests &amp; Übungen</div>
-              </div>
-            </div>
-            <span class="db-count-pill" id="count-tb">...</span>
+        <div class="db-selector-card">
+          <!-- Master Checkbox ALLE -->
+          <label class="db-checkbox-item master-chk">
+            <input type="checkbox" id="chk-db-all" checked>
+            <span class="chk-label-main">
+              <strong>ALLE</strong> — Alle Datenbanken sichern / verwalten
+            </span>
           </label>
 
-          <!-- OW (OfflineWikiIDB + localStorage) -->
-          <label class="db-checkbox-item">
-            <input type="checkbox" id="chk-db-ow" class="sub-db-chk" checked data-db="OW">
-            <div class="chk-label-col">
-              <span class="db-tag-pill ow">OW</span>
-              <div>
-                <div class="db-title-text">Offline-Wiki</div>
-                <div class="db-desc-text">Artikel, Glossar &amp; Nachschlagewerke</div>
+          <div class="db-checkbox-subgrid">
+            <!-- TB (TestBankDB) -->
+            <label class="db-checkbox-item">
+              <input type="checkbox" id="chk-db-tb" class="sub-db-chk" checked data-db="TB">
+              <div class="chk-label-col">
+                <span class="db-tag-pill">TB</span>
+                <div>
+                  <div class="db-title-text">Testbank</div>
+                  <div class="db-desc-text">Prüfungsstoff, Tests &amp; Übungen</div>
+                </div>
               </div>
-            </div>
-            <span class="db-count-pill" id="count-ow">...</span>
-          </label>
+              <span class="db-count-pill" id="count-tb">...</span>
+            </label>
 
-          <!-- DK (DokumentationDB) -->
-          <label class="db-checkbox-item">
-            <input type="checkbox" id="chk-db-dk" class="sub-db-chk" checked data-db="DK">
-            <div class="chk-label-col">
-              <span class="db-tag-pill dk">DK</span>
-              <div>
-                <div class="db-title-text">Dokumentation</div>
-                <div class="db-desc-text">Lehrskizzen, Doktypen &amp; Verlaufspläne</div>
+            <!-- OW (OfflineWikiIDB + localStorage) -->
+            <label class="db-checkbox-item">
+              <input type="checkbox" id="chk-db-ow" class="sub-db-chk" checked data-db="OW">
+              <div class="chk-label-col">
+                <span class="db-tag-pill ow">OW</span>
+                <div>
+                  <div class="db-title-text">Offline-Wiki</div>
+                  <div class="db-desc-text">Artikel, Glossar &amp; Nachschlagewerke</div>
+                </div>
               </div>
-            </div>
-            <span class="db-count-pill" id="count-dk">...</span>
-          </label>
+              <span class="db-count-pill" id="count-ow">...</span>
+            </label>
+
+            <!-- DK (DokumentationDB) -->
+            <label class="db-checkbox-item">
+              <input type="checkbox" id="chk-db-dk" class="sub-db-chk" checked data-db="DK">
+              <div class="chk-label-col">
+                <span class="db-tag-pill dk">DK</span>
+                <div>
+                  <div class="db-title-text">Dokumentation</div>
+                  <div class="db-desc-text">Lehrskizzen, Doktypen &amp; Verlaufspläne</div>
+                </div>
+              </div>
+              <span class="db-count-pill" id="count-dk">...</span>
+            </label>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- Centralized Actions -->
-    <div class="backup-actions-grid">
-      <!-- 1. Export Button -->
-      <button class="backup-action-btn export-action" id="btnBackupExport">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#28a745; flex-shrink:0;">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-          <polyline points="7 10 12 15 17 10"></polyline>
-          <line x1="12" y1="15" x2="12" y2="3"></line>
-        </svg>
-        <div class="btn-text-col">
-          <strong>Lokal exportieren (JSON)</strong>
-          <small>Sichert die gewählten Datenbanken in eine einzige Offline-JSON-Datei</small>
-        </div>
-      </button>
-
-      <!-- 2. Import Button -->
-      <button class="backup-action-btn import-action" id="btnBackupImport">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--hub-accent); flex-shrink:0;">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-          <polyline points="17 8 12 3 7 8"></polyline>
-          <line x1="12" y1="3" x2="12" y2="15"></line>
-        </svg>
-        <div class="btn-text-col">
-          <strong>Wiederherstellen / Importieren</strong>
-          <small>Liest Master-Backup oder Einzel-JSON mit Zero-Trust-Prüfung ein</small>
-        </div>
-      </button>
-      <input type="file" id="backupFileInput" style="display:none;" accept=".json,application/json">
-
-      <!-- Swarm Auto-Share Toggle Option -->
-      <div class="backup-swarm-toggle-bar" style="grid-column: 1 / -1; padding: 12px 16px; background: var(--hub-surface); border: 1px solid var(--hub-border); border-radius: 8px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
-        <div style="display:flex; align-items:center; gap:8px; font-size:0.86rem; color:var(--hub-text);">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
-            <circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line>
-            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10z"></path><path d="M12 2a15.3 15.3 0 0 0-4 10 15.3 15.3 0 0 0 4 10z"></path>
+      <!-- Centralized Actions -->
+      <div class="backup-actions-grid">
+        <!-- 1. Export Button -->
+        <button class="backup-action-btn export-action" id="btnBackupExport">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#28a745; flex-shrink:0;">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
           </svg>
-          <strong>Import-Optionen (Schwarm):</strong>
+          <div class="btn-text-col">
+            <strong>Lokal exportieren (JSON)</strong>
+            <small>Sichert die gewählten Datenbanken in eine einzige Offline-JSON-Datei</small>
+          </div>
+        </button>
+
+        <!-- 2. Import Button -->
+        <button class="backup-action-btn import-action" id="btnBackupImport">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--hub-accent); flex-shrink:0;">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <div class="btn-text-col">
+            <strong>Wiederherstellen / Importieren</strong>
+            <small>Liest Master-Backup oder Einzel-JSON mit Zero-Trust-Prüfung ein</small>
+          </div>
+        </button>
+        <input type="file" id="backupFileInput" style="display:none;" accept=".json,application/json">
+
+        <!-- Swarm Auto-Share Toggle Option -->
+        <div class="backup-swarm-toggle-bar" style="grid-column: 1 / -1; padding: 12px 16px; background: var(--hub-surface); border: 1px solid var(--hub-border); border-radius: 8px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+          <div style="display:flex; align-items:center; gap:8px; font-size:0.86rem; color:var(--hub-text);">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+              <circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10z"></path><path d="M12 2a15.3 15.3 0 0 0-4 10 15.3 15.3 0 0 0 4 10z"></path>
+            </svg>
+            <strong>Import-Optionen (Schwarm):</strong>
+          </div>
+          <label class="swarm-toggle-wrap" style="display:inline-flex; align-items:center; gap:8px; cursor:pointer; font-weight:700; font-size:0.86rem; color:var(--hub-accent); user-select:none; margin:0;" title="Wenn aktiviert, werden alle importierten Dokumente automatisch im Community-Schwarm freigegeben">
+            <span class="swarm-toggle-switch">
+              <input type="checkbox" id="swarm-auto-share-toggle" onchange="toggleSwarmAutoShare(this)">
+              <span class="swarm-toggle-slider"></span>
+            </span>
+            <span id="swarm-auto-share-label">Schwärm ein/ aus</span>
+          </label>
         </div>
-        <label class="swarm-toggle-wrap" style="display:inline-flex; align-items:center; gap:8px; cursor:pointer; font-weight:700; font-size:0.86rem; color:var(--hub-accent); user-select:none; margin:0;" title="Wenn aktiviert, werden alle importierten Dokumente automatisch im Community-Schwarm freigegeben">
-          <span class="swarm-toggle-switch">
-            <input type="checkbox" id="swarm-auto-share-toggle" onchange="toggleSwarmAutoShare(this)">
-            <span class="swarm-toggle-slider"></span>
-          </span>
-          <span id="swarm-auto-share-label">Schwärm ein/ aus</span>
-        </label>
+
+        <!-- 3. Reset Button -->
+        <button class="backup-action-btn reset-action" id="btnBackupReset">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#dc3545; flex-shrink:0;">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            <line x1="10" y1="11" x2="10" y2="17"></line>
+            <line x1="14" y1="11" x2="14" y2="17"></line>
+          </svg>
+          <div class="btn-text-col">
+            <strong>Datenbank zurücksetzen (Reset)</strong>
+            <small>Löscht unwiderruflich alle Einträge in den oben ausgewählten Datenbanken</small>
+          </div>
+        </button>
       </div>
 
-      <!-- 3. Reset Button -->
-      <button class="backup-action-btn reset-action" id="btnBackupReset">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#dc3545; flex-shrink:0;">
-          <polyline points="3 6 5 6 21 6"></polyline>
-          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-          <line x1="10" y1="11" x2="10" y2="17"></line>
-          <line x1="14" y1="11" x2="14" y2="17"></line>
-        </svg>
-        <div class="btn-text-col">
-          <strong>Datenbank zurücksetzen (Reset)</strong>
-          <small>Löscht unwiderruflich alle Einträge in den oben ausgewählten Datenbanken</small>
-        </div>
-      </button>
+      <!-- Status Notification Bar -->
+      <div id="backupStatusMsg" style="display:none; margin: 0 22px 14px; padding: 10px 14px; border-radius: 8px; font-size: 0.84rem; font-weight: 600;"></div>
     </div>
-
-    <!-- Status Notification Bar -->
-    <div id="backupStatusMsg" style="display:none; margin: 0 22px 14px; padding: 10px 14px; border-radius: 8px; font-size: 0.84rem; font-weight: 600;"></div>
 
     <!-- Modal Footer -->
     <div class="hub-modal-footer">
