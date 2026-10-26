@@ -2631,7 +2631,7 @@
             tabRemote: "Documents disponibles dans l'essaim",
             tabLocal: "Mes documents partagés",
             inboxEmpty: "Votre boîte de réception est vide",
-            inboxEmptyHint: "Dès que de nouveaux fichiers sont reçus ou synchronisés depuis l'essaim, ils sont pré-mis en cache ici en toute sécurité. Cliquez sur « Importer » pour les ajouter à votre liste de documents.",
+            inboxEmptyHint: "",
             import1Click: "Importer (1 clic)",
             importAll: "Tout importer",
             dismiss: "Ignorer",
@@ -2657,7 +2657,7 @@
             tabRemote: "Available Documents in Swarm",
             tabLocal: "My Shared Documents",
             inboxEmpty: "Your staged inbox is empty",
-            inboxEmptyHint: "As soon as new files arrive from peers, they are safely precached here. Click 'Import' to write them to your local database.",
+            inboxEmptyHint: "",
             import1Click: "Import (1 click)",
             importAll: "Import All",
             dismiss: "Dismiss",
@@ -2683,7 +2683,7 @@
             tabRemote: "Verfügbare Dokumente im Schwarm",
             tabLocal: "Meine geteilten Dokumente",
             inboxEmpty: "Ihr Posteingang ist leer",
-            inboxEmptyHint: "Sobald neue Dateien von Kollegen über den Schwarm empfangen oder synchronisiert werden, landen sie sicher hier im Vorab-Puffer (Sandbox). Klicken Sie auf „Übernehmen“, um sie mit 1 Klick in Ihre Dokumentenliste einzutragen.",
+            inboxEmptyHint: "",
             import1Click: "Übernehmen (1 Klick)",
             importAll: "Alle übernehmen",
             dismiss: "Verwerfen",
@@ -3027,7 +3027,7 @@
             tabRemote: "Verfügbare Dokumente im Schwarm",
             tabLocal: "Meine geteilten Dokumente",
             inboxEmpty: "Ihr Posteingang ist leer",
-            inboxEmptyHint: "Sobald neue Dateien empfangen werden, landen sie sicher hier im Vorab-Puffer. Klicken Sie auf „Übernehmen“, um sie mit 1 Klick in Ihre Dokumentenliste einzutragen.",
+            inboxEmptyHint: "",
             import1Click: "Übernehmen (1 Klick)",
             importAll: "Alle übernehmen",
             dismiss: "Verwerfen",
@@ -3142,10 +3142,7 @@
                             <path d="M22 12h-6l-2 3h-4l-2-3H2"></path>
                             <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path>
                         </svg>
-                        <h4 style="margin:0 0 8px 0; color:${textColor}; font-size:1.05rem;">${i18n.inboxEmpty}</h4>
-                        <p style="margin:0; font-size:0.86rem; max-width:480px; margin:auto; line-height:1.5;">
-                            ${i18n.inboxEmptyHint}
-                        </p>
+                        <h4 style="margin:0; color:${textColor}; font-size:1.05rem;">${i18n.inboxEmpty}</h4>
                     </div>
                 `;
             } else {
