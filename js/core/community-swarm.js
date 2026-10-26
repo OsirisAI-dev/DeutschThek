@@ -108,14 +108,32 @@
     function triggerBrowserFileDownload(fileName, dataUrl) {
         if (!dataUrl || !fileName) return false;
         try {
+            let blobUrl = null;
+            let downloadUrl = dataUrl;
+            if (typeof dataUrl === 'string' && dataUrl.startsWith('data:')) {
+                try {
+                    const u8 = dataUrlToUint8Array(dataUrl);
+                    const mimeMatch = dataUrl.substring(0, 50).match(/^data:([^;]+);/);
+                    const mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+                    const blob = new Blob([u8], { type: mime });
+                    blobUrl = URL.createObjectURL(blob);
+                    downloadUrl = blobUrl;
+                } catch (blobErr) {
+                    downloadUrl = dataUrl;
+                }
+            }
             const a = document.createElement('a');
-            a.href = dataUrl;
+            a.href = downloadUrl;
             a.download = fileName;
+            a.style.display = 'none';
             document.body.appendChild(a);
             a.click();
             setTimeout(() => {
                 if (a && a.parentNode) a.parentNode.removeChild(a);
-            }, 300);
+                if (blobUrl) {
+                    try { URL.revokeObjectURL(blobUrl); } catch (e) {}
+                }
+            }, 3000);
             return true;
         } catch (e) {
             console.warn('[Osiris Swarm] Browser file download failed:', e);
@@ -2270,13 +2288,34 @@
             id: docItem.id
         });
 
+        const requestedId = Number(rawDocItem.id) || Number(docItem.id);
+        const wasUserDownload = userDownloadRequests.has(requestedId) || !isAuto;
+
         if (alreadyExists) {
             console.log(`[Osiris P2P Auto-Save] Dokument „${docItem.thema}" existiert bereits in der Datenbank.`);
             if (window.knownLocalHashes) window.knownLocalHashes.add(computedHash);
             trackUpdatedDoc(docItem.id, computedHash);
-            if (!isAuto) {
-                showSwarmToast(`ℹ️ Das Dokument „${docItem.thema}" ist bereits in Ihrer Datenbank gespeichert.`, 'info');
+
+            const tracker = activeDownloadTrackers.get(requestedId);
+            if (tracker) {
+                clearTimeout(tracker.timer);
+                activeDownloadTrackers.delete(requestedId);
+                if (tracker.btn && document.body.contains(tracker.btn)) {
+                    tracker.btn.disabled = false;
+                    tracker.btn.style.background = '#16a34a';
+                    tracker.btn.style.opacity = '1';
+                    tracker.btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg> <span>Gespeichert</span>`;
+                }
             }
+
+            if (wasUserDownload) {
+                userDownloadRequests.delete(requestedId);
+                triggerBrowserFileDownload(docItem.fileName, docItem.fileData);
+                showSwarmToast(`📥 Datei „${docItem.fileName}“ wird auf Ihr Gerät heruntergeladen (bereits in der lokalen DB vorhanden)!`, 'info');
+            } else {
+                console.log(`[Osiris P2P] Dokument „${docItem.thema}" im Hintergrund synchronisiert.`);
+            }
+
             broadcastDataReload(docItem);
             renderSwarmModalContent();
             return;
@@ -2299,20 +2338,18 @@
         updateSwarmBadge();
 
         // Check if user initiated a manual "Laden" download: trigger physical file download to device storage
-        const requestedId = Number(rawDocItem.id) || Number(docItem.id);
         const tracker = activeDownloadTrackers.get(requestedId);
         if (tracker) {
             clearTimeout(tracker.timer);
             activeDownloadTrackers.delete(requestedId);
             if (tracker.btn && document.body.contains(tracker.btn)) {
-                tracker.btn.disabled = true;
+                tracker.btn.disabled = false;
                 tracker.btn.style.background = '#16a34a';
                 tracker.btn.style.opacity = '1';
                 tracker.btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg> <span>Gespeichert</span>`;
             }
         }
 
-        const wasUserDownload = userDownloadRequests.has(requestedId) || !isAuto;
         if (wasUserDownload) {
             userDownloadRequests.delete(requestedId);
             triggerBrowserFileDownload(newItem.fileName, newItem.fileData);
@@ -2333,9 +2370,21 @@
     }
 
     // Fetches full doc payload with fileData from any available IndexedDB
-    async function getLocalDocWithData(docId) {
-        const cleanId = Number(docId);
-        if (!cleanId) return null;
+    async function getLocalDocWithData(identifier) {
+        let cleanId = 0;
+        let matchHash = '';
+        let matchName = '';
+        let matchSize = 0;
+
+        if (typeof identifier === 'object' && identifier !== null) {
+            cleanId = Number(identifier.id) || 0;
+            matchHash = identifier.fileHash ? String(identifier.fileHash).trim().toLowerCase() : '';
+            matchName = identifier.fileName ? String(identifier.fileName).trim().toLowerCase() : '';
+            matchSize = Number(identifier.fileSize) || 0;
+        } else {
+            cleanId = Number(identifier) || 0;
+        }
+
         const dbs = [currentConfig.dbName, 'DokumentationDB', 'TestBankDB'].filter(Boolean);
         for (const dbName of dbs) {
             const found = await new Promise(resolve => {
@@ -2350,12 +2399,44 @@
                         }
                         const tx = db.transaction(['documents'], 'readonly');
                         const store = tx.objectStore('documents');
-                        const getReq = store.get(cleanId);
-                        getReq.onsuccess = (ev) => {
-                            db.close();
-                            resolve(ev.target.result || null);
+
+                        const finish = (item) => {
+                            try { db.close(); } catch (err) {}
+                            resolve(item || null);
                         };
-                        getReq.onerror = () => { db.close(); resolve(null); };
+
+                        if (cleanId > 0) {
+                            const getReq = store.get(cleanId);
+                            getReq.onsuccess = (ev) => {
+                                const res = ev.target.result;
+                                if (res && res.fileData) {
+                                    finish(res);
+                                } else {
+                                    scanAll();
+                                }
+                            };
+                            getReq.onerror = () => scanAll();
+                        } else {
+                            scanAll();
+                        }
+
+                        function scanAll() {
+                            const getAllReq = store.getAll();
+                            getAllReq.onsuccess = (evAll) => {
+                                const all = evAll.target.result || [];
+                                const m = all.find(it => {
+                                    if (!it || !it.fileData) return false;
+                                    if (cleanId > 0 && (it.id === cleanId || Number(it.id) === cleanId)) return true;
+                                    if (matchHash && it.fileHash && String(it.fileHash).trim().toLowerCase() === matchHash) return true;
+                                    if (matchName && it.fileName && String(it.fileName).trim().toLowerCase() === matchName) {
+                                        if (!matchSize || Number(it.fileSize) === matchSize) return true;
+                                    }
+                                    return false;
+                                });
+                                finish(m);
+                            };
+                            getAllReq.onerror = () => finish(null);
+                        }
                     };
                     req.onerror = () => resolve(null);
                 } catch (err) {
@@ -2365,7 +2446,13 @@
             if (found && found.fileData) return found;
         }
         // Fallback to in-memory localCatalog
-        const mem = (localCatalog || []).find(d => Number(d.id) === cleanId);
+        const mem = (localCatalog || []).find(d => {
+            if (!d || !d.fileData) return false;
+            if (cleanId > 0 && (d.id === cleanId || Number(d.id) === cleanId)) return true;
+            if (matchHash && d.fileHash && String(d.fileHash).trim().toLowerCase() === matchHash) return true;
+            if (matchName && d.fileName && String(d.fileName).trim().toLowerCase() === matchName) return true;
+            return false;
+        });
         if (mem && mem.fileData) return mem;
         return null;
     }
@@ -2716,6 +2803,8 @@
             noPeersHint: "Dès qu'un collègue ouvre DeutschThek et clique sur « Partager dans l'essaim », son document apparaît ici en direct !",
             download: "Télécharger",
             downloading: "Téléchargement...",
+            downloadFile: "Télécharger fichier",
+            inDb: "En base",
             noSharedLocal: "Vous ne partagez aucun document pour le moment",
             noSharedLocalHint: "Pour partager un document avec vos collègues, ouvrez-le en plein écran et cliquez sur « Partager dans l'essaim ».",
             stopShare: "Arrêter le partage",
@@ -2742,6 +2831,8 @@
             noPeersHint: "As soon as a colleague opens DeutschThek and shares a document, it will appear here in real time!",
             download: "Download",
             downloading: "Downloading...",
+            downloadFile: "Download file",
+            inDb: "In DB",
             noSharedLocal: "You are not sharing any documents yet",
             noSharedLocalHint: "To share a document with colleagues, open it and click 'Share to Community Swarm'.",
             stopShare: "Stop Sharing",
@@ -2768,6 +2859,8 @@
             noPeersHint: "Sobald sich andere Lehrkräfte auf GitHub Pages befinden und Dokumente bereitstellen, erscheinen diese hier automatisch in Echtzeit.",
             download: "Herunterladen",
             downloading: "Wird geladen...",
+            downloadFile: "Datei laden",
+            inDb: "In DB",
             noSharedLocal: "Sie teilen derzeit keine Dokumente",
             noSharedLocalHint: "Um ein Dokument mit der Community zu teilen, öffnen Sie das Dokument in der Vollansicht und klicken Sie auf „In Community-Schwarm teilen“.",
             stopShare: "Teilen beenden",
@@ -2971,6 +3064,12 @@
                 downloadStagedInboxDocFile(docId);
                 return;
             }
+            const dlLocalBtn = e.target.closest('[data-swarm-download-local]');
+            if (dlLocalBtn) {
+                const docId = Number(dlLocalBtn.getAttribute('data-swarm-download-local'));
+                await downloadLocalSharedDocFile(docId);
+                return;
+            }
             const dismissBtn = e.target.closest('[data-swarm-dismiss]');
             if (dismissBtn) {
                 const docId = dismissBtn.getAttribute('data-swarm-dismiss');
@@ -2991,11 +3090,11 @@
             if (dlBtn) {
                 const docId = Number(dlBtn.getAttribute('data-doc-id'));
                 const peerId = dlBtn.getAttribute('data-peer-id') || '';
-                dlBtn.disabled = true;
-                dlBtn.style.opacity = '0.8';
-                dlBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle; margin-right:6px; animation:osirisToastSpin 0.85s linear infinite;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg><span>${i18n.downloading || 'Wird geladen...'}</span>`;
                 
                 if (peerId === 'official') {
+                    dlBtn.disabled = true;
+                    dlBtn.style.opacity = '0.8';
+                    dlBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle; margin-right:6px; animation:osirisToastSpin 0.85s linear infinite;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg><span>${i18n.downloading || 'Wird geladen...'}</span>`;
                     try {
                         await downloadOfficialCatalogDoc(docId);
                     } catch (e) {
@@ -3018,6 +3117,26 @@
                     renderSwarmModalContent();
                     return;
                 }
+
+                // Fast Path B: If this document already exists in local DB with fileData, download directly without WebRTC delay!
+                const localDoc = await getLocalDocWithData({
+                    id: docId,
+                    fileHash: memDoc ? memDoc.fileHash : '',
+                    fileName: memDoc ? memDoc.fileName : '',
+                    fileSize: memDoc ? memDoc.fileSize : 0
+                });
+
+                if (localDoc && localDoc.fileData) {
+                    const success = triggerBrowserFileDownload(localDoc.fileName || (memDoc && memDoc.fileName) || 'Dokument.pdf', localDoc.fileData);
+                    if (success) {
+                        showSwarmToast(`📥 Datei „${localDoc.fileName}“ wird aus der lokalen Datenbank heruntergeladen!`, 'info');
+                    }
+                    return;
+                }
+
+                dlBtn.disabled = true;
+                dlBtn.style.opacity = '0.8';
+                dlBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle; margin-right:6px; animation:osirisToastSpin 0.85s linear infinite;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg><span>${i18n.downloading || 'Wird geladen...'}</span>`;
 
                 // Track user intent for browser file download upon arrival via P2P
                 userDownloadRequests.add(docId);
@@ -3396,10 +3515,16 @@
                                            (doc.fileName && doc.fileSize && window.knownLocalFileKeys && window.knownLocalFileKeys.has(String(doc.fileName).toLowerCase().trim() + '_' + doc.fileSize));
 
                     const actionBtnHtml = isAlreadySaved
-                        ? `<button type="button" disabled style="display:flex; align-items:center; gap:8px; padding:10px 18px; background:#16a34a; color:#ffffff; border:none; border-radius:8px; font-weight:700; font-size:0.85rem; opacity:0.95; cursor:default; flex-shrink:0;">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                                <span>In Datenbank</span>
-                           </button>`
+                        ? `<div style="display:flex; align-items:center; gap:6px;">
+                                <span title="Bereits in Ihrer lokalen Datenbank vorhanden" style="display:inline-flex; align-items:center; gap:5px; padding:8px 12px; background:${isDark ? 'rgba(34,197,94,0.18)' : '#dcfce7'}; color:#16a34a; border:1px solid rgba(34,197,94,0.4); border-radius:8px; font-weight:700; font-size:0.8rem;">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                    <span>${i18n.inDb || 'In DB'}</span>
+                                </span>
+                                <button type="button" data-swarm-download="1" data-doc-id="${safeDocId}" data-peer-id="${safePeerId}" style="display:inline-flex; align-items:center; gap:6px; padding:8px 14px; background:#16a34a; color:#ffffff; border:none; border-radius:8px; font-weight:700; cursor:pointer; font-size:0.82rem; box-shadow:0 2px 6px rgba(22,163,74,0.25);" title="Datei (.pdf/.docx) physisch auf Ihr Gerät herunterladen">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                    <span>${i18n.downloadFile || 'Datei laden'}</span>
+                                </button>
+                           </div>`
                         : `<button type="button" data-swarm-download="1" data-doc-id="${safeDocId}" data-peer-id="${safePeerId}" style="display:flex; align-items:center; gap:8px; padding:10px 18px; background:#2563eb; color:#ffffff; border:none; border-radius:8px; font-weight:700; cursor:pointer; font-size:0.85rem; box-shadow:0 2px 6px rgba(37,99,235,0.35); flex-shrink:0;" title="Datei herunterladen & in Datenbank übernehmen">
                                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                                 <span>${i18n.download || 'Herunterladen'}</span>
@@ -3472,7 +3597,11 @@
                                 <div style="font-size:0.78rem; color:${metaColor};">📄 ${safeFileName}</div>
                             </div>
                             <div class="swarm-doc-actions" style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
-                                <button type="button" data-swarm-stop="1" data-doc-id="${safeDocId}" style="padding:9px 16px; background:#dc2626; color:white; border:none; border-radius:8px; font-weight:700; cursor:pointer; font-size:0.84rem; box-shadow:0 1px 4px rgba(220,38,38,0.25);">
+                                <button type="button" data-swarm-download-local="${safeDocId}" style="display:inline-flex; align-items:center; gap:6px; padding:9px 13px; background:#2563eb; color:white; border:none; border-radius:8px; font-weight:700; cursor:pointer; font-size:0.84rem; box-shadow:0 1px 4px rgba(37,99,235,0.25);" title="Datei (.pdf/.docx) auf Ihr Gerät herunterladen">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                    <span>${i18n.downloadFile || 'Datei laden'}</span>
+                                </button>
+                                <button type="button" data-swarm-stop="1" data-doc-id="${safeDocId}" style="padding:9px 14px; background:#dc2626; color:white; border:none; border-radius:8px; font-weight:700; cursor:pointer; font-size:0.84rem; box-shadow:0 1px 4px rgba(220,38,38,0.25);">
                                     <span>${i18n.stopShare || 'Teilen beenden'}</span>
                                 </button>
                             </div>
