@@ -1084,6 +1084,24 @@
     };
     request.onsuccess = (e) => {
         idb = e.target.result;
+        if (!idb.objectStoreNames.contains("documents")) {
+            const nextVersion = (idb.version || 1) + 1;
+            idb.close();
+            const upReq = indexedDB.open("TestBankDB", nextVersion);
+            upReq.onupgradeneeded = (ev) => {
+                const upDb = ev.target.result;
+                if (!upDb.objectStoreNames.contains("documents")) {
+                    upDb.createObjectStore("documents", { keyPath: "id" });
+                }
+            };
+            upReq.onsuccess = (ev) => {
+                idb = ev.target.result;
+                renderResults();
+                seedDictionaryFromDB();
+                window.OSIRIS_LIBS_READY.then(() => { if (window.EduHybridShare) EduHybridShare.init({ dbName: "TestBankDB", storeName: "documents", docTypeLabel: "Prüfungsstoff", onDocImported: () => renderResults() }); });
+            };
+            return;
+        }
         renderResults();
         seedDictionaryFromDB();
         window.OSIRIS_LIBS_READY.then(() => { if (window.EduHybridShare) EduHybridShare.init({ dbName: "TestBankDB", storeName: "documents", docTypeLabel: "Prüfungsstoff", onDocImported: () => renderResults() }); });

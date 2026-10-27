@@ -1866,45 +1866,111 @@ function loadPrefs() {
     }, 5000);
   }
 
-  function openIDBPromise(dbName, version, upgradeFn) {
+  function openSecureIDB(dbName, storeName) {
+    var defaultStore = storeName || (dbName === 'OfflineWikiIDB' ? 'entries' : 'documents');
     return new Promise(function(resolve, reject) {
-      var req = indexedDB.open(dbName, version);
-      if (upgradeFn) req.onupgradeneeded = upgradeFn;
-      req.onsuccess = function(e) { resolve(e.target.result); };
-      req.onerror = function(e) { reject(e.target.error); };
+      try {
+        var req = indexedDB.open(dbName);
+        req.onupgradeneeded = function(e) {
+          var db = e.target.result;
+          if (defaultStore && !db.objectStoreNames.contains(defaultStore)) {
+            db.createObjectStore(defaultStore, { keyPath: "id" });
+          }
+        };
+        req.onsuccess = function(e) {
+          var db = e.target.result;
+          if (!defaultStore || db.objectStoreNames.contains(defaultStore)) {
+            resolve(db);
+          } else {
+            var nextVersion = (db.version || 1) + 1;
+            db.close();
+            var upReq = indexedDB.open(dbName, nextVersion);
+            upReq.onupgradeneeded = function(ev) {
+              var upgradedDb = ev.target.result;
+              if (defaultStore && !upgradedDb.objectStoreNames.contains(defaultStore)) {
+                upgradedDb.createObjectStore(defaultStore, { keyPath: "id" });
+              }
+            };
+            upReq.onsuccess = function(ev) {
+              resolve(ev.target.result);
+            };
+            upReq.onerror = function(ev) {
+              resolve(db);
+            };
+          }
+        };
+        req.onerror = function(e) {
+          reject(e.target.error || new Error('IDB open failed: ' + dbName));
+        };
+      } catch (err) {
+        reject(err);
+      }
     });
   }
 
+  function openIDBPromise(dbName, version, upgradeFn) {
+    var storeName = dbName === 'OfflineWikiIDB' ? 'entries' : 'documents';
+    return openSecureIDB(dbName, storeName);
+  }
+
   async function fetchTBRecords() {
+    var db = null;
     try {
-      var db = await openIDBPromise("TestBankDB", 1, function(e) {
-        var d = e.target.result;
-        if (!d.objectStoreNames.contains("documents")) d.createObjectStore("documents", { keyPath: "id" });
-      });
-      return new Promise(function(resolve) {
-        var tx = db.transaction(["documents"], "readonly");
-        var req = tx.objectStore("documents").getAll();
-        req.onsuccess = function() { resolve(req.result || []); };
-        req.onerror = function() { resolve([]); };
+      db = await openSecureIDB("TestBankDB", "documents");
+      if (!db || !db.objectStoreNames.contains("documents")) {
+        if (db) { try { db.close(); } catch(e) {} }
+        return [];
+      }
+      return await new Promise(function(resolve) {
+        try {
+          var tx = db.transaction(["documents"], "readonly");
+          var req = tx.objectStore("documents").getAll();
+          req.onsuccess = function() {
+            try { db.close(); } catch(e) {}
+            resolve(req.result || []);
+          };
+          req.onerror = function() {
+            try { db.close(); } catch(e) {}
+            resolve([]);
+          };
+        } catch (txErr) {
+          try { db.close(); } catch(e) {}
+          resolve([]);
+        }
       });
     } catch (e) {
+      if (db) { try { db.close(); } catch(err) {} }
       return [];
     }
   }
 
   async function fetchDKRecords() {
+    var db = null;
     try {
-      var db = await openIDBPromise("DokumentationDB", 1, function(e) {
-        var d = e.target.result;
-        if (!d.objectStoreNames.contains("documents")) d.createObjectStore("documents", { keyPath: "id" });
-      });
-      return new Promise(function(resolve) {
-        var tx = db.transaction(["documents"], "readonly");
-        var req = tx.objectStore("documents").getAll();
-        req.onsuccess = function() { resolve(req.result || []); };
-        req.onerror = function() { resolve([]); };
+      db = await openSecureIDB("DokumentationDB", "documents");
+      if (!db || !db.objectStoreNames.contains("documents")) {
+        if (db) { try { db.close(); } catch(e) {} }
+        return [];
+      }
+      return await new Promise(function(resolve) {
+        try {
+          var tx = db.transaction(["documents"], "readonly");
+          var req = tx.objectStore("documents").getAll();
+          req.onsuccess = function() {
+            try { db.close(); } catch(e) {}
+            resolve(req.result || []);
+          };
+          req.onerror = function() {
+            try { db.close(); } catch(e) {}
+            resolve([]);
+          };
+        } catch (txErr) {
+          try { db.close(); } catch(e) {}
+          resolve([]);
+        }
       });
     } catch (e) {
+      if (db) { try { db.close(); } catch(err) {} }
       return [];
     }
   }
@@ -1913,18 +1979,33 @@ function loadPrefs() {
     var localList = [];
     try { localList = JSON.parse(localStorage.getItem('offline_wiki_db') || '[]'); } catch(e) {}
     var idbList = [];
+    var db = null;
     try {
-      var db = await openIDBPromise("OfflineWikiIDB", 1, function(e) {
-        var d = e.target.result;
-        if (!d.objectStoreNames.contains("entries")) d.createObjectStore("entries", { keyPath: "id" });
-      });
-      idbList = await new Promise(function(resolve) {
-        var tx = db.transaction(["entries"], "readonly");
-        var req = tx.objectStore("entries").getAll();
-        req.onsuccess = function() { resolve(req.result || []); };
-        req.onerror = function() { resolve([]); };
-      });
-    } catch (e) {}
+      db = await openSecureIDB("OfflineWikiIDB", "entries");
+      if (db && db.objectStoreNames.contains("entries")) {
+        idbList = await new Promise(function(resolve) {
+          try {
+            var tx = db.transaction(["entries"], "readonly");
+            var req = tx.objectStore("entries").getAll();
+            req.onsuccess = function() {
+              try { db.close(); } catch(e) {}
+              resolve(req.result || []);
+            };
+            req.onerror = function() {
+              try { db.close(); } catch(e) {}
+              resolve([]);
+            };
+          } catch(txErr) {
+            try { db.close(); } catch(e) {}
+            resolve([]);
+          }
+        });
+      } else if (db) {
+        try { db.close(); } catch(e) {}
+      }
+    } catch (e) {
+      if (db) { try { db.close(); } catch(err) {} }
+    }
 
     var map = new Map();
     (Array.isArray(localList) ? localList : []).forEach(function(item) { if (item && item.id) map.set(item.id, item); });
@@ -2069,35 +2150,46 @@ function loadPrefs() {
         var selDK = document.getElementById('chk-db-dk').checked;
 
         var importedCount = 0;
+        var importedDocsList = [];
 
         // Case 1: Master Backup format
         if (parsed && parsed.app === 'DeutschThekMasterBackup' && parsed.databases) {
           // Restore TB
           if (selTB && parsed.databases.TB && Array.isArray(parsed.databases.TB)) {
-            var dbTB = await openIDBPromise("TestBankDB", 1, function(ev) {
-              var d = ev.target.result;
-              if (!d.objectStoreNames.contains("documents")) d.createObjectStore("documents", { keyPath: "id" });
-            });
-            var txTB = dbTB.transaction(["documents"], "readwrite");
-            var stTB = txTB.objectStore("documents");
-            parsed.databases.TB.forEach(function(doc) {
-              var safeDoc = window.OsirisSecurity ? window.OsirisSecurity.sanitizeDocRecord(doc) : doc;
-              if (safeDoc) { stTB.put(safeDoc); importedCount++; }
-            });
+            var dbTB = await openSecureIDB("TestBankDB", "documents");
+            if (dbTB && dbTB.objectStoreNames.contains("documents")) {
+              var txTB = dbTB.transaction(["documents"], "readwrite");
+              var stTB = txTB.objectStore("documents");
+              parsed.databases.TB.forEach(function(doc) {
+                var safeDoc = window.OsirisSecurity ? window.OsirisSecurity.sanitizeDocRecord(doc) : doc;
+                if (safeDoc) { stTB.put(safeDoc); importedCount++; importedDocsList.push(safeDoc); }
+              });
+              await new Promise(function(res) {
+                txTB.oncomplete = function() { try { dbTB.close(); } catch(e) {} res(); };
+                txTB.onerror = function() { try { dbTB.close(); } catch(e) {} res(); };
+              });
+            } else if (dbTB) {
+              try { dbTB.close(); } catch(e) {}
+            }
           }
 
           // Restore DK
           if (selDK && parsed.databases.DK && Array.isArray(parsed.databases.DK)) {
-            var dbDK = await openIDBPromise("DokumentationDB", 1, function(ev) {
-              var d = ev.target.result;
-              if (!d.objectStoreNames.contains("documents")) d.createObjectStore("documents", { keyPath: "id" });
-            });
-            var txDK = dbDK.transaction(["documents"], "readwrite");
-            var stDK = txDK.objectStore("documents");
-            parsed.databases.DK.forEach(function(doc) {
-              var safeDoc = window.OsirisSecurity ? window.OsirisSecurity.sanitizeDocRecord(doc) : doc;
-              if (safeDoc) { stDK.put(safeDoc); importedCount++; }
-            });
+            var dbDK = await openSecureIDB("DokumentationDB", "documents");
+            if (dbDK && dbDK.objectStoreNames.contains("documents")) {
+              var txDK = dbDK.transaction(["documents"], "readwrite");
+              var stDK = txDK.objectStore("documents");
+              parsed.databases.DK.forEach(function(doc) {
+                var safeDoc = window.OsirisSecurity ? window.OsirisSecurity.sanitizeDocRecord(doc) : doc;
+                if (safeDoc) { stDK.put(safeDoc); importedCount++; importedDocsList.push(safeDoc); }
+              });
+              await new Promise(function(res) {
+                txDK.oncomplete = function() { try { dbDK.close(); } catch(e) {} res(); };
+                txDK.onerror = function() { try { dbDK.close(); } catch(e) {} res(); };
+              });
+            } else if (dbDK) {
+              try { dbDK.close(); } catch(e) {}
+            }
             if (parsed.meta && parsed.meta.docu_dict_doktyp && Array.isArray(parsed.meta.docu_dict_doktyp)) {
               try {
                 var secDok = window.OsirisSecurity;
@@ -2128,10 +2220,29 @@ function loadPrefs() {
               try { curLocal = JSON.parse(localStorage.getItem('offline_wiki_db') || '[]'); } catch(e) {}
               var mapOW = new Map();
               curLocal.forEach(function(i) { if (i && i.id) mapOW.set(i.id, i); });
+              var dbOW = await openSecureIDB("OfflineWikiIDB", "entries");
+              var txOW = null;
+              var stOW = null;
+              if (dbOW && dbOW.objectStoreNames.contains("entries")) {
+                txOW = dbOW.transaction(["entries"], "readwrite");
+                stOW = txOW.objectStore("entries");
+              }
               owEntries.forEach(function(i) {
                 var safeEntry = secOW && secOW.sanitizeWikiEntry ? secOW.sanitizeWikiEntry(i) : i;
-                if (safeEntry && safeEntry.id) { mapOW.set(safeEntry.id, safeEntry); importedCount++; }
+                if (safeEntry && safeEntry.id) {
+                  mapOW.set(safeEntry.id, safeEntry);
+                  if (stOW) stOW.put(safeEntry);
+                  importedCount++;
+                }
               });
+              if (txOW) {
+                await new Promise(function(res) {
+                  txOW.oncomplete = function() { try { dbOW.close(); } catch(e) {} res(); };
+                  txOW.onerror = function() { try { dbOW.close(); } catch(e) {} res(); };
+                });
+              } else if (dbOW) {
+                try { dbOW.close(); } catch(e) {}
+              }
               localStorage.setItem('offline_wiki_db', JSON.stringify(Array.from(mapOW.values())));
             }
             if (owLinks.length > 0) {
@@ -2165,16 +2276,21 @@ function loadPrefs() {
           var isTB = (selTB && !selDK && !selOW) || (!isDK && !isOW);
 
           if (isDK && selDK) {
-            var dbDK2 = await openIDBPromise("DokumentationDB", 1, function(ev) {
-              var d = ev.target.result;
-              if (!d.objectStoreNames.contains("documents")) d.createObjectStore("documents", { keyPath: "id" });
-            });
-            var txDK2 = dbDK2.transaction(["documents"], "readwrite");
-            var stDK2 = txDK2.objectStore("documents");
-            items.forEach(function(doc) {
-              var safeDoc = window.OsirisSecurity ? window.OsirisSecurity.sanitizeDocRecord(doc) : doc;
-              if (safeDoc) { stDK2.put(safeDoc); importedCount++; }
-            });
+            var dbDK2 = await openSecureIDB("DokumentationDB", "documents");
+            if (dbDK2 && dbDK2.objectStoreNames.contains("documents")) {
+              var txDK2 = dbDK2.transaction(["documents"], "readwrite");
+              var stDK2 = txDK2.objectStore("documents");
+              items.forEach(function(doc) {
+                var safeDoc = window.OsirisSecurity ? window.OsirisSecurity.sanitizeDocRecord(doc) : doc;
+                if (safeDoc) { stDK2.put(safeDoc); importedCount++; importedDocsList.push(safeDoc); }
+              });
+              await new Promise(function(res) {
+                txDK2.oncomplete = function() { try { dbDK2.close(); } catch(e) {} res(); };
+                txDK2.onerror = function() { try { dbDK2.close(); } catch(e) {} res(); };
+              });
+            } else if (dbDK2) {
+              try { dbDK2.close(); } catch(e) {}
+            }
           } else if (isOW && selOW) {
             var secOW2 = window.OsirisSecurity;
             var curLocal2 = [];
@@ -2187,24 +2303,28 @@ function loadPrefs() {
             });
             localStorage.setItem('offline_wiki_db', JSON.stringify(Array.from(mapOW2.values())));
           } else if (selTB) {
-            var dbTB2 = await openIDBPromise("TestBankDB", 1, function(ev) {
-              var d = ev.target.result;
-              if (!d.objectStoreNames.contains("documents")) d.createObjectStore("documents", { keyPath: "id" });
-            });
-            var txTB2 = dbTB2.transaction(["documents"], "readwrite");
-            var stTB2 = txTB2.objectStore("documents");
-            items.forEach(function(doc) {
-              var safeDoc = window.OsirisSecurity ? window.OsirisSecurity.sanitizeDocRecord(doc) : doc;
-              if (safeDoc) { stTB2.put(safeDoc); importedCount++; }
-            });
+            var dbTB2 = await openSecureIDB("TestBankDB", "documents");
+            if (dbTB2 && dbTB2.objectStoreNames.contains("documents")) {
+              var txTB2 = dbTB2.transaction(["documents"], "readwrite");
+              var stTB2 = txTB2.objectStore("documents");
+              items.forEach(function(doc) {
+                var safeDoc = window.OsirisSecurity ? window.OsirisSecurity.sanitizeDocRecord(doc) : doc;
+                if (safeDoc) { stTB2.put(safeDoc); importedCount++; importedDocsList.push(safeDoc); }
+              });
+              await new Promise(function(res) {
+                txTB2.oncomplete = function() { try { dbTB2.close(); } catch(e) {} res(); };
+                txTB2.onerror = function() { try { dbTB2.close(); } catch(e) {} res(); };
+              });
+            } else if (dbTB2) {
+              try { dbTB2.close(); } catch(e) {}
+            }
           }
         }
 
         if (isSwarmAutoShareEnabled() && window.EduHybridShare && typeof window.EduHybridShare.toggleShareDocToSwarm === 'function') {
           try {
-            var allImported = [].concat(Array.isArray(tbDocs) ? tbDocs : [], Array.isArray(dkDocs) ? dkDocs : []);
-            for (var k = 0; k < allImported.length; k++) {
-              var itm = allImported[k];
+            for (var k = 0; k < importedDocsList.length; k++) {
+              var itm = importedDocsList[k];
               if (itm && itm.id) {
                 window.EduHybridShare.toggleShareDocToSwarm(itm.id, true, itm);
               }
@@ -2246,33 +2366,48 @@ function loadPrefs() {
 
     try {
       if (selTB) {
-        var dbTB = await openIDBPromise("TestBankDB", 1, function(ev) {
-          var d = ev.target.result;
-          if (!d.objectStoreNames.contains("documents")) d.createObjectStore("documents", { keyPath: "id" });
-        });
-        var txTB = dbTB.transaction(["documents"], "readwrite");
-        txTB.objectStore("documents").clear();
+        var dbTB = await openSecureIDB("TestBankDB", "documents");
+        if (dbTB && dbTB.objectStoreNames.contains("documents")) {
+          var txTB = dbTB.transaction(["documents"], "readwrite");
+          txTB.objectStore("documents").clear();
+          await new Promise(function(res) {
+            txTB.oncomplete = function() { try { dbTB.close(); } catch(e) {} res(); };
+            txTB.onerror = function() { try { dbTB.close(); } catch(e) {} res(); };
+          });
+        } else if (dbTB) {
+          try { dbTB.close(); } catch(e) {}
+        }
       }
 
       if (selDK) {
-        var dbDK = await openIDBPromise("DokumentationDB", 1, function(ev) {
-          var d = ev.target.result;
-          if (!d.objectStoreNames.contains("documents")) d.createObjectStore("documents", { keyPath: "id" });
-        });
-        var txDK = dbDK.transaction(["documents"], "readwrite");
-        txDK.objectStore("documents").clear();
+        var dbDK = await openSecureIDB("DokumentationDB", "documents");
+        if (dbDK && dbDK.objectStoreNames.contains("documents")) {
+          var txDK = dbDK.transaction(["documents"], "readwrite");
+          txDK.objectStore("documents").clear();
+          await new Promise(function(res) {
+            txDK.oncomplete = function() { try { dbDK.close(); } catch(e) {} res(); };
+            txDK.onerror = function() { try { dbDK.close(); } catch(e) {} res(); };
+          });
+        } else if (dbDK) {
+          try { dbDK.close(); } catch(e) {}
+        }
       }
 
       if (selOW) {
         localStorage.removeItem('offline_wiki_db');
         localStorage.removeItem('wiki_links');
         try {
-          var dbOW = await openIDBPromise("OfflineWikiIDB", 1, function(ev) {
-            var d = ev.target.result;
-            if (!d.objectStoreNames.contains("entries")) d.createObjectStore("entries", { keyPath: "id" });
-          });
-          var txOW = dbOW.transaction(["entries"], "readwrite");
-          txOW.objectStore("entries").clear();
+          var dbOW = await openSecureIDB("OfflineWikiIDB", "entries");
+          if (dbOW && dbOW.objectStoreNames.contains("entries")) {
+            var txOW = dbOW.transaction(["entries"], "readwrite");
+            txOW.objectStore("entries").clear();
+            await new Promise(function(res) {
+              txOW.oncomplete = function() { try { dbOW.close(); } catch(e) {} res(); };
+              txOW.onerror = function() { try { dbOW.close(); } catch(e) {} res(); };
+            });
+          } else if (dbOW) {
+            try { dbOW.close(); } catch(e) {}
+          }
         } catch(e) {}
       }
 

@@ -1147,6 +1147,24 @@
     };
     request.onsuccess = (e) => {
         idb = e.target.result;
+        if (!idb.objectStoreNames.contains("documents")) {
+            const nextVersion = (idb.version || 1) + 1;
+            idb.close();
+            const upReq = indexedDB.open("DokumentationDB", nextVersion);
+            upReq.onupgradeneeded = (ev) => {
+                const upDb = ev.target.result;
+                if (!upDb.objectStoreNames.contains("documents")) {
+                    upDb.createObjectStore("documents", { keyPath: "id" });
+                }
+            };
+            upReq.onsuccess = (ev) => {
+                idb = ev.target.result;
+                renderResults();
+                seedDictionaryFromDB(); seedDoktypDictionary();
+                window.OSIRIS_LIBS_READY.then(() => { if (window.EduHybridShare) EduHybridShare.init({ dbName: "DokumentationDB", storeName: "documents", docTypeLabel: "Doktyp", onDocImported: () => renderResults() }); });
+            };
+            return;
+        }
         renderResults();
         seedDictionaryFromDB(); seedDoktypDictionary();
         window.OSIRIS_LIBS_READY.then(() => { if (window.EduHybridShare) EduHybridShare.init({ dbName: "DokumentationDB", storeName: "documents", docTypeLabel: "Doktyp", onDocImported: () => renderResults() }); });
