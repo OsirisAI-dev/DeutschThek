@@ -1211,8 +1211,8 @@
             <line x1="12" y1="15" x2="12" y2="3"></line>
           </svg>
           <div class="btn-text-col">
-            <strong>Lokal exportieren (JSON)</strong>
-            <small>Sichert die gewählten Datenbanken in eine einzige Offline-JSON-Datei</small>
+            <strong>Lokal exportieren (.json / .db)</strong>
+            <small id="exportFormatLabel">Sichert gewählte Datenbanken offline als .json oder .db</small>
           </div>
         </button>
 
@@ -1224,11 +1224,42 @@
             <line x1="12" y1="3" x2="12" y2="15"></line>
           </svg>
           <div class="btn-text-col">
-            <strong>Wiederherstellen / Importieren</strong>
-            <small>Liest Master-Backup oder Einzel-JSON mit Zero-Trust-Prüfung ein</small>
+            <strong>Wiederherstellen / Importieren (.json &amp; .db)</strong>
+            <small>Liest Master-Backup (.json oder .db) mit Zero-Trust-Prüfung ein</small>
           </div>
         </button>
-        <input type="file" id="backupFileInput" style="display:none;" accept=".json,application/json">
+
+        <!-- Format Selector Bar -->
+        <div style="grid-column: 1 / -1; display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; padding:8px 14px; background:var(--hub-surface); border:1px solid var(--hub-border); border-radius:8px;">
+          <span style="font-size:0.83rem; font-weight:700; color:var(--hub-text); display:flex; align-items:center; gap:6px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+            Export-Format:
+          </span>
+          <div style="display:flex; gap:16px; font-size:0.83rem;">
+            <label style="cursor:pointer; display:flex; align-items:center; gap:6px;">
+              <input type="radio" name="export-format" value="json" id="fmt-json" checked>
+              <span><strong>.json</strong> (Web-Standard)</span>
+            </label>
+            <label style="cursor:pointer; display:flex; align-items:center; gap:6px;">
+              <input type="radio" name="export-format" value="db" id="fmt-db">
+              <span><strong>.db</strong> (Master DB Snapshot)</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- 3. Starter Seed Button -->
+        <button type="button" class="backup-action-btn" id="btnBackupSeed" style="border-color:rgba(16,185,129,0.5); background:rgba(16,185,129,0.06); grid-column: 1 / -1;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+            <path d="M12 2v8m0 0l3-3m-3 3L9 7m3 7v8m0-8l4 4m-4-4l-4 4"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+          <div class="btn-text-col" style="text-align:left;">
+            <strong style="color:#059669;">🌱 Starter-Katalog einspielen (TB, OW, DK)</strong>
+            <small>Fügt sofort 7 praxiserprobte deutsche Lehrplandaten, Tests &amp; Wiki-Einträge hinzu (ideal zum Testen)</small>
+          </div>
+        </button>
+
+        <input type="file" id="backupFileInput" style="display:none;" accept=".json,.db,.dtk,.edu.json,application/json">
 
         <!-- Swarm Auto-Share Toggle Option -->
         <div class="backup-swarm-toggle-bar" style="grid-column: 1 / -1; padding: 12px 16px; background: var(--hub-surface); border: 1px solid var(--hub-border); border-radius: 8px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
@@ -2073,6 +2104,186 @@ function loadPrefs() {
     cb.addEventListener('change', updateBackupSelectionSummary);
   });
 
+  // --- DeutschThek Starter Catalog (TB, OW, DK) ---
+  var STARTER_CATALOG_DATA = {
+    TB: [
+      {
+        id: "tb_starter_gym9_analyse",
+        sourceDb: "TestBankDB",
+        thema: "Textanalyse & dialektische Erörterung",
+        typ: "Schulaufgabe",
+        niveau: "Gymnasium",
+        klasse: "9. Klasse",
+        fach: "Deutsch",
+        schulart: "Gymnasium",
+        jahr: "2026",
+        createdAt: 1730000000000,
+        fileName: "Schulaufgabe_9_Eroerterung.pdf",
+        questions: [
+          {
+            id: "q1",
+            type: "mc",
+            text: "Welche Struktur kennzeichnet die dialektische Erörterung nach dem Sanduhr-Prinzip?",
+            options: [
+              "Gegenposition (stärkstes zu schwächstes Argument) -> eigene Position (schwächstes zu stärkstes Argument)",
+              "Abwechselnd These und Gegenthese für jedes Argument",
+              "Nur eine einzige Position ohne Berücksichtigung der Gegenseite"
+            ],
+            correctIndex: 0,
+            explanation: "Beim Sanduhr-Prinzip beginnt man mit der Gegenseite (absteigend) und stärkt danach die eigene Position (aufsteigend)."
+          }
+        ],
+        text: "Materialgestütztes Schreiben und dialektische Argumentation zum Thema Digitale Medien im Deutschunterricht."
+      },
+      {
+        id: "tb_starter_gym10_konjunktiv",
+        sourceDb: "TestBankDB",
+        thema: "Grammatik & Stilistik: Konjunktiv I & II in der indirekten Rede",
+        typ: "Stegreifaufgabe",
+        niveau: "Gymnasium / Realschule",
+        klasse: "10. Klasse",
+        fach: "Deutsch",
+        schulart: "Gymnasium",
+        jahr: "2026",
+        createdAt: 1730000001000,
+        fileName: "Stegreifaufgabe_10_Konjunktiv.pdf",
+        questions: [
+          {
+            id: "q1",
+            type: "mc",
+            text: "Wann muss in der indirekten Rede Konjunktiv II statt Konjunktiv I verwendet werden?",
+            options: [
+              "Wenn die Form des Konjunktiv I mit dem Indikativ Präsens übereinstimmt",
+              "Nur in der Vergangenheit",
+              "Immer bei Zitaten von Politikern"
+            ],
+            correctIndex: 0,
+            explanation: "Fällt Konjunktiv I formal mit dem Indikativ zusammen (z.B. bei 'sie haben'), weicht man auf Konjunktiv II aus."
+          }
+        ],
+        text: "Übungen zur korrekten distanzierten Redewiedergabe in journalistischen und wissenschaftlichen Texten."
+      }
+    ],
+    DK: [
+      {
+        id: "dk_starter_curriculum_by",
+        sourceDb: "DokumentationDB",
+        thema: "LehrplanPLUS Bayern: Fachlehrplan Deutsch 9-10",
+        typ: "Lehrplan",
+        niveau: "Gymnasium",
+        klasse: "9-10",
+        fach: "Deutsch",
+        schulart: "Gymnasium",
+        jahr: "2026",
+        doktyp: "Lehrplan",
+        createdAt: 1730000002000,
+        fileName: "LehrplanPLUS_Deutsch_Gym9_10.pdf",
+        text: "Offizielle Kompetenzerwartungen: Literarische Texte des 19. und 20. Jahrhunderts erschließen, Argumentieren & Diskutieren, Reflexion über Sprache und Sprachwandel."
+      },
+      {
+        id: "dk_starter_operatoren_abitur",
+        sourceDb: "DokumentationDB",
+        thema: "Operatoren-Katalog Deutsch (AFB I bis III) für Oberstufe & Abitur",
+        typ: "Handreichung",
+        niveau: "Oberstufe",
+        klasse: "11-12",
+        fach: "Deutsch",
+        schulart: "Gymnasium",
+        jahr: "2026",
+        doktyp: "Handreichung",
+        createdAt: 1730000003000,
+        fileName: "Operatoren_Deutsch_Abitur.pdf",
+        text: "Systematische Aufstellung: Anforderungsbereich I (nennen, darstellen), Anforderungsbereich II (charakterisieren, analysieren, vergleichen), Anforderungsbereich III (beurteilen, bewerten, erörtern)."
+      }
+    ],
+    OW: [
+      {
+        id: "ow_starter_rhetorik",
+        title: "Rhetorische Stilmittel in der Literatur",
+        category: "Stilistik & Rhetorik",
+        text: "Systematische Übersicht wichtiger Tropen und Figuren: Alliteration, Anapher, Antithese, Chiasmus, Hyperbel, Metapher, Oxymoron, Parallelismus, Personifikation und rhetorische Frage mit Musteranalysen.",
+        updatedAt: "2026-10-27T12:00:00Z"
+      },
+      {
+        id: "ow_starter_eroerterung",
+        title: "Methodik der dialektischen Erörterung",
+        category: "Aufsatzlehre",
+        text: "Leitfaden zur schlüssigen Argumentation: Einleitung mit Hinführung zum Thema, dialektische Antithese und These (Sanduhr- oder Ping-Pong-Methode) mit Stützung (Beleg, Beispiel) und abschließendem Synthese-Urteil.",
+        updatedAt: "2026-10-27T12:00:00Z"
+      },
+      {
+        id: "ow_starter_kurzgeschichte",
+        title: "Merkmale und Analyse der modernen Kurzgeschichte",
+        category: "Epik & Textgattungen",
+        text: "Gattungsmerkmale: Unmittelbarer Einstieg ohne Exposition, Alltäglichkeit der Figuren und Handlung, Wendepunkt (Peripetie), offener Schluss und hohe sprachliche Verdichtung.",
+        updatedAt: "2026-10-27T12:00:00Z"
+      }
+    ]
+  };
+
+  async function seedStarterCatalog() {
+    var btn = document.getElementById('btnBackupSeed');
+    if (btn) { btn.style.pointerEvents = 'none'; btn.style.opacity = '0.7'; }
+    try {
+      showBackupStatus('🌱 Lade Starter-Katalog in TB, OW und DK...', 'info');
+      var addedCount = 0;
+
+      // Seed TB
+      var dbTB = await openSecureIDB("TestBankDB", "documents");
+      if (dbTB && dbTB.objectStoreNames.contains("documents")) {
+        var txTB = dbTB.transaction(["documents"], "readwrite");
+        var stTB = txTB.objectStore("documents");
+        STARTER_CATALOG_DATA.TB.forEach(function(d) { stTB.put(d); addedCount++; });
+        await new Promise(function(res) {
+          txTB.oncomplete = function() { try { dbTB.close(); } catch(e){} res(); };
+          txTB.onerror = function() { try { dbTB.close(); } catch(e){} res(); };
+        });
+      } else if (dbTB) { try { dbTB.close(); } catch(e){} }
+
+      // Seed DK
+      var dbDK = await openSecureIDB("DokumentationDB", "documents");
+      if (dbDK && dbDK.objectStoreNames.contains("documents")) {
+        var txDK = dbDK.transaction(["documents"], "readwrite");
+        var stDK = txDK.objectStore("documents");
+        STARTER_CATALOG_DATA.DK.forEach(function(d) { stDK.put(d); addedCount++; });
+        await new Promise(function(res) {
+          txDK.oncomplete = function() { try { dbDK.close(); } catch(e){} res(); };
+          txDK.onerror = function() { try { dbDK.close(); } catch(e){} res(); };
+        });
+      } else if (dbDK) { try { dbDK.close(); } catch(e){} }
+
+      // Seed OW (IndexedDB + localStorage)
+      var curOW = [];
+      try { curOW = JSON.parse(localStorage.getItem('offline_wiki_db') || '[]'); } catch(e){}
+      var mapOW = new Map();
+      curOW.forEach(function(item) { if (item && item.id) mapOW.set(item.id, item); });
+      var dbOW = await openSecureIDB("OfflineWikiIDB", "entries");
+      var txOW = (dbOW && dbOW.objectStoreNames.contains("entries")) ? dbOW.transaction(["entries"], "readwrite") : null;
+      var stOW = txOW ? txOW.objectStore("entries") : null;
+
+      STARTER_CATALOG_DATA.OW.forEach(function(item) {
+        mapOW.set(item.id, item);
+        if (stOW) stOW.put(item);
+        addedCount++;
+      });
+      if (txOW) {
+        await new Promise(function(res) {
+          txOW.oncomplete = function() { try { dbOW.close(); } catch(e){} res(); };
+          txOW.onerror = function() { try { dbOW.close(); } catch(e){} res(); };
+        });
+      } else if (dbOW) { try { dbOW.close(); } catch(e){} }
+      localStorage.setItem('offline_wiki_db', JSON.stringify(Array.from(mapOW.values())));
+
+      pushToFrame('RELOAD_DATA');
+      await refreshBackupCounts();
+      showBackupStatus('✓ Starter-Katalog geladen: ' + addedCount + ' Ressourcen verfügbar (2 TB, 3 OW, 2 DK). Sie können nun direkt ein Master-Backup (.json oder .db) exportieren!', 'success');
+    } catch(err) {
+      showBackupStatus('Fehler beim Laden des Starter-Katalogs: ' + err.message, 'error');
+    } finally {
+      if (btn) { btn.style.pointerEvents = 'auto'; btn.style.opacity = '1'; }
+    }
+  }
+
   async function handleBackupExport() {
     var btn = document.getElementById('btnBackupExport');
     var statusEl = document.getElementById('backupStatusMsg');
@@ -2125,12 +2336,16 @@ function loadPrefs() {
       if (backupData.databases.DK && Array.isArray(backupData.databases.DK)) totalCount += backupData.databases.DK.length;
       if (backupData.databases.OW && backupData.databases.OW.entries) totalCount += backupData.databases.OW.entries.length;
 
+      var isDbFmt = document.getElementById('fmt-db') && document.getElementById('fmt-db').checked;
+      var fileExt = isDbFmt ? '.db' : '.json';
+      var mimeType = isDbFmt ? 'application/octet-stream' : 'application/json;charset=utf-8';
+
       var now = new Date();
       var dateStr = now.toISOString().slice(0, 10);
       var timeStr = now.toTimeString().slice(0, 5).replace(':', '');
-      var filename = 'DeutschThek_Backup_' + backupData.selected.join('-') + '_' + dateStr + '_' + timeStr + '.json';
+      var filename = 'DeutschThek_Backup_' + backupData.selected.join('-') + '_' + dateStr + '_' + timeStr + fileExt;
 
-      var blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json;charset=utf-8' });
+      var blob = new Blob([JSON.stringify(backupData, null, 2)], { type: mimeType });
       var url = URL.createObjectURL(blob);
       var a = document.createElement('a');
       a.href = url;
@@ -2142,7 +2357,11 @@ function loadPrefs() {
         URL.revokeObjectURL(url);
       }, 2000);
 
-      showBackupStatus('✓ Sicherung erfolgreich exportiert: ' + filename + ' (' + totalCount + ' Einträge gesichert)', 'success');
+      if (totalCount === 0) {
+        showBackupStatus('⚠️ Hinweis: Die gewählten Datenbanken enthalten aktuell 0 Einträge. Die Sicherung ' + filename + ' ist leer. Nutzen Sie "Starter-Katalog einspielen", um Datensätze zu laden.', 'warning');
+      } else {
+        showBackupStatus('✓ Sicherung erfolgreich exportiert: ' + filename + ' (' + totalCount + ' Einträge gesichert)', 'success');
+      }
     } catch (err) {
       showBackupStatus('Fehler beim Exportieren: ' + err.message, 'error');
     } finally {
@@ -2166,9 +2385,25 @@ function loadPrefs() {
           parsed = JSON.parse(rawText);
         }
 
-        var selTB = document.getElementById('chk-db-tb').checked;
-        var selOW = document.getElementById('chk-db-ow').checked;
-        var selDK = document.getElementById('chk-db-dk').checked;
+        // Check for binary SQLite header (0x53 0x51 0x4C 0x69 0x74 0x65 0x20 0x66 0x6F 0x72 0x6D 0x61 0x74 0x20 0x33 0x00)
+        if (rawText && rawText.length >= 15 && rawText.slice(0, 15) === "SQLite format 3") {
+          showBackupStatus('ℹ️ Dies ist eine binäre SQLite-Datenbank. Nutzen Sie die Desktop-App DeutschThek Admin Publisher zum automatischen 1-Klick-Import & Konvertierung!', 'error');
+          return;
+        }
+
+        var selTB = document.getElementById('chk-db-tb') ? document.getElementById('chk-db-tb').checked : true;
+        var selOW = document.getElementById('chk-db-ow') ? document.getElementById('chk-db-ow').checked : true;
+        var selDK = document.getElementById('chk-db-dk') ? document.getElementById('chk-db-dk').checked : true;
+
+        // Auto-enable categories if none was checked
+        if (!selTB && !selOW && !selDK) {
+          selTB = true; selOW = true; selDK = true;
+          if (document.getElementById('chk-db-tb')) document.getElementById('chk-db-tb').checked = true;
+          if (document.getElementById('chk-db-ow')) document.getElementById('chk-db-ow').checked = true;
+          if (document.getElementById('chk-db-dk')) document.getElementById('chk-db-dk').checked = true;
+          if (document.getElementById('chk-db-all')) document.getElementById('chk-db-all').checked = true;
+          if (typeof updateBackupSelectionSummary === 'function') updateBackupSelectionSummary();
+        }
 
         var importedCount = 0;
         var importedDocsList = [];
@@ -2354,7 +2589,11 @@ function loadPrefs() {
         }
         pushToFrame('RELOAD_DATA');
         await refreshBackupCounts();
-        showBackupStatus('✓ Wiederherstellung abgeschlossen: ' + importedCount + ' Einträge importiert.', 'success');
+        if (importedCount === 0) {
+          showBackupStatus('ℹ️ Wiederherstellung abgeschlossen: Die Datei enthält 0 Datensätze für die ausgewählten Kategorien. (Tipp: Nutzen Sie "Starter-Katalog einspielen")', 'warning');
+        } else {
+          showBackupStatus('✓ Wiederherstellung erfolgreich abgeschlossen: ' + importedCount + ' Einträge importiert.', 'success');
+        }
       } catch (err) {
         showBackupStatus('Fehler beim Wiederherstellen: ' + err.message, 'error');
       }
@@ -2445,6 +2684,9 @@ function loadPrefs() {
 
   var btnExportEl = document.getElementById('btnBackupExport');
   if (btnExportEl) btnExportEl.addEventListener('click', handleBackupExport);
+
+  var btnSeedEl = document.getElementById('btnBackupSeed');
+  if (btnSeedEl) btnSeedEl.addEventListener('click', seedStarterCatalog);
 
   var btnImportEl = document.getElementById('btnBackupImport');
   var fileInputEl = document.getElementById('backupFileInput');
