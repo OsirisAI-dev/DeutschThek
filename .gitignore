@@ -1,2 +1,9 @@
-# Osiris Security: Restrict Admin Console to Local Environment Only
+# Osiris Security: Restrict Admin Console & Publisher to Local Environment Only
 ADMIN_CATALOG.html
+DeutschThek_Admin_Publisher.py
+Lancer_Admin_Publisher.bat
+*.bat
+scripts/
+__pycache__/
+*.pyc
+*.zip
