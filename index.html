@@ -6,15 +6,14 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self' blob: data:; script-src 'self' 'unsafe-inline' blob: https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https: wss: ws: blob: data:; worker-src 'self' blob: https://cdn.jsdelivr.net; frame-src 'self' blob: data:; object-src 'none'; base-uri 'self';">
 <meta name="referrer" content="no-referrer">
 <title>DeutschThek — Edu Hub</title>
-<script>
-  if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
-    var ml = document.createElement('link');
-    ml.rel = 'manifest';
-    ml.href = 'manifest.json';
-    document.head.appendChild(ml);
-  }
-</script>
+<link rel="icon" type="image/svg+xml" href="assets/icon.svg">
+<link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
+<link rel="apple-touch-icon" href="assets/icon-192.png">
+<link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#007aff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="DeutschThek">
 
 <script src="data/official-catalog.js"></script>
 <script src="js/core/community-swarm.js?v=3.5"></script>
@@ -929,6 +928,15 @@
           <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
           <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
           <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+        </svg>
+      </button>
+
+      <!-- PWA One-Click Install Button (Shown dynamically when installable) -->
+      <button class="hub-btn icon-btn" id="pwaInstallBtn" style="display:none;" title="Als App auf dem Gerät installieren" aria-label="App installieren">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
         </svg>
       </button>
 
@@ -2318,6 +2326,50 @@ function loadPrefs() {
       }
     });
   }
+  // PWA Install prompt handling
+  var deferredInstallPrompt = null;
+  var pwaInstallBtn = document.getElementById('pwaInstallBtn');
+
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    if (pwaInstallBtn) {
+      pwaInstallBtn.style.display = 'inline-flex';
+    }
+  });
+
+  if (pwaInstallBtn) {
+    pwaInstallBtn.addEventListener('click', function () {
+      if (!deferredInstallPrompt) return;
+      deferredInstallPrompt.prompt();
+      deferredInstallPrompt.userChoice.then(function (choice) {
+        if (choice && choice.outcome === 'accepted') {
+          console.log('[PWA] User accepted the install prompt');
+          pwaInstallBtn.style.display = 'none';
+        }
+        deferredInstallPrompt = null;
+      });
+    });
+  }
+
+  window.addEventListener('appinstalled', function () {
+    console.log('[PWA] DeutschThek successfully installed as standalone PWA');
+    if (pwaInstallBtn) pwaInstallBtn.style.display = 'none';
+  });
+
+  // Service Worker Registration for 100% PWA Offline Capability
+  if ('serviceWorker' in navigator && (window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('./sw.js?v=3.5', { scope: './' })
+        .then(function (reg) {
+          console.log('[PWA] Service Worker registered with scope:', reg.scope);
+        })
+        .catch(function (err) {
+          console.warn('[PWA] Service Worker registration failed:', err);
+        });
+    });
+  }
+
   applyTheme(appState.theme, false);
   applyLang();
   initSwarmAutoShareToggle();
