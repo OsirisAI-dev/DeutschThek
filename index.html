@@ -2074,13 +2074,22 @@ function loadPrefs() {
   });
 
   async function handleBackupExport() {
-    var selTB = document.getElementById('chk-db-tb').checked;
-    var selOW = document.getElementById('chk-db-ow').checked;
-    var selDK = document.getElementById('chk-db-dk').checked;
+    var btn = document.getElementById('btnBackupExport');
+    var statusEl = document.getElementById('backupStatusMsg');
+    if (statusEl) statusEl.style.display = 'none';
+
+    var selTB = document.getElementById('chk-db-tb') ? document.getElementById('chk-db-tb').checked : false;
+    var selOW = document.getElementById('chk-db-ow') ? document.getElementById('chk-db-ow').checked : false;
+    var selDK = document.getElementById('chk-db-dk') ? document.getElementById('chk-db-dk').checked : false;
 
     if (!selTB && !selOW && !selDK) {
       showBackupStatus('Bitte wählen Sie mindestens eine Datenbank aus (TB, OW oder DK).', 'error');
       return;
+    }
+
+    if (btn) {
+      btn.style.pointerEvents = 'none';
+      btn.style.opacity = '0.7';
     }
 
     try {
@@ -2111,6 +2120,11 @@ function loadPrefs() {
         } catch (e) {}
       }
 
+      var totalCount = 0;
+      if (backupData.databases.TB && Array.isArray(backupData.databases.TB)) totalCount += backupData.databases.TB.length;
+      if (backupData.databases.DK && Array.isArray(backupData.databases.DK)) totalCount += backupData.databases.DK.length;
+      if (backupData.databases.OW && backupData.databases.OW.entries) totalCount += backupData.databases.OW.entries.length;
+
       var now = new Date();
       var dateStr = now.toISOString().slice(0, 10);
       var timeStr = now.toTimeString().slice(0, 5).replace(':', '');
@@ -2123,12 +2137,19 @@ function loadPrefs() {
       a.download = filename;
       document.body.appendChild(a);
       a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      setTimeout(function() {
+        if (a && a.parentNode) a.parentNode.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 2000);
 
-      showBackupStatus('✓ Sicherung erfolgreich exportiert: ' + filename, 'success');
+      showBackupStatus('✓ Sicherung erfolgreich exportiert: ' + filename + ' (' + totalCount + ' Einträge gesichert)', 'success');
     } catch (err) {
       showBackupStatus('Fehler beim Exportieren: ' + err.message, 'error');
+    } finally {
+      if (btn) {
+        btn.style.pointerEvents = 'auto';
+        btn.style.opacity = '1';
+      }
     }
   }
 
