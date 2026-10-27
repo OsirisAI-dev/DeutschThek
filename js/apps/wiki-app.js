@@ -205,15 +205,7 @@
     }
 
     // ── Connection dot (mirrors hub) ──────────────────────────────────────
-    // Pre-existing gap found while wiring the AI-Text-Gen pipeline: this
-    // was called unconditionally at load with no null-check, and this
-    // particular Wiki HTML doesn't have a #connDot element (the Library
-    // Hub project's connDot markup — see workplan — apparently never got
-    // ported over here). That made the throw fatal to the whole script:
-    // everything after updateConnDot() below, including the initial
-    // renderResults() call, silently never ran. Guarding it here fixes
-    // the crash without guessing at where a dot element should visually
-    // go in this file's toolbar.
+    // Updates UI connection state safely with null-check for standalone views.
     function updateConnDot() {
         const dot = document.getElementById('connDot');
         if (!dot) return;

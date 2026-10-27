@@ -6,12 +6,8 @@
     <title>Mein Offline Wiki</title>
     <script src="lib/htmldocx/v1/html-docx.js"></script>
     <script>
-        // Pre-paint restore of the Hub's shared font, same reasoning and
-        // pattern as AI_TEXT_GEN_1_6.html: otherwise the title flashes in
-        // the default font on load before wiki-app.js (if it even does
-        // this — not verifiable, that file wasn't provided) gets around
-        // to applying it. Purely additive: only ever sets a CSS custom
-        // property, so it's harmless even if wiki-app.js also does this.
+        // Pre-paint font restoration: applies shared font before stylesheet parsing
+        // to avoid unstyled title flicker on slower devices.
         (function () {
             try {
                 var prefs = JSON.parse(localStorage.getItem('osiris_hub_prefs') || '{}');
