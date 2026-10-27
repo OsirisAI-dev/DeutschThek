@@ -1,0 +1,4 @@
+# Cloudflare Pages Clean Route Rewrites (Optional shortcuts)
+/bank /TEST_BANK.html 200
+/wiki /OFFLINE_WIKI.html 200
+/docs /DOKUMENTATION.html 200

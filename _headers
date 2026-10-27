@@ -1,0 +1,30 @@
+# Cloudflare Pages HTTP Headers Configuration
+# Optimized for DeutschThek PWA, WebRTC Swarm, and Static Asset Caching
+
+# Global security headers for all pages
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: SAMEORIGIN
+  Referrer-Policy: no-referrer
+
+# Service Worker: Must NEVER be cached by CDN to guarantee instantaneous updates
+/sw.js
+  Cache-Control: max-age=0, no-cache, no-store, must-revalidate
+  Service-Worker-Allowed: /
+
+# Web App Manifest
+/manifest.json
+  Content-Type: application/manifest+json; charset=utf-8
+  Cache-Control: max-age=0, must-revalidate
+
+# Official Catalog & JSON Data: Allow cross-origin read for Swarm peers
+/data/*
+  Access-Control-Allow-Origin: *
+  Cache-Control: max-age=60, stale-while-revalidate=300
+
+# Immutable static libraries and assets: Max CDN caching performance
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/lib/*
+  Cache-Control: public, max-age=31536000, immutable
