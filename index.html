@@ -1870,6 +1870,13 @@ function loadPrefs() {
   function closeBackupModal() {
     var m = document.getElementById('backup-modal');
     if (m) m.style.display = 'none';
+    if (window._justImportedBackup) {
+      window._justImportedBackup = false;
+      var frame = document.getElementById('tool-frame');
+      if (frame && frame.contentWindow) {
+        try { frame.contentWindow.location.reload(); } catch(e){}
+      }
+    }
   }
 
   function showBackupStatus(msg, type) {
@@ -2487,6 +2494,7 @@ function loadPrefs() {
           localStorage.setItem('offline_wiki_db', JSON.stringify(Array.from(mapOW.values()))); if (owLinksZip.length > 0) { try { var _curL = JSON.parse(localStorage.getItem('wiki_links') || '[]'); var _uSet = new Set(_curL.map(function(x){return x.url;})); owLinksZip.forEach(function(l){ if (l && l.name && l.url && !_uSet.has(l.url)) { _curL.push({name: l.name, url: l.url}); _uSet.add(l.url); } }); localStorage.setItem('wiki_links', JSON.stringify(_curL)); } catch(_eL){} }
         }
 
+        window._justImportedBackup = true;
         pushToFrame('RELOAD_DATA');
         await refreshBackupCounts();
         showBackupStatus('✓ Vollständige Wiederherstellung abgeschlossen: ' + importedCount + ' Dokumente & reale Dateien erfolgreich importiert!', 'success');
@@ -2636,9 +2644,11 @@ function loadPrefs() {
           }
         }
 
+        window._justImportedBackup = true;
         pushToFrame('RELOAD_DATA');
         await refreshBackupCounts();
         if (importedCount === 0) {
+          window._justImportedBackup = false;
           showBackupStatus('❌ Import abgebrochen: Die Datei enthält keine realen Dokumente für die gewählten Kategorien.', 'error');
         } else {
           showBackupStatus('✓ Wiederherstellung erfolgreich abgeschlossen: ' + importedCount + ' Dokumente importiert.', 'success');
