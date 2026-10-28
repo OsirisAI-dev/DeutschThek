@@ -627,17 +627,17 @@
      <div id="mode-checkboxes" style="margin-top:15px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
         <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
             <label style="display:inline-flex; align-items:center; gap:6px; margin:0; cursor:pointer;">
-                <input type="checkbox" id="delete-mode-cb" style="width:auto; margin:0; cursor:pointer;" onchange="renderResults()">
+                <input type="checkbox" id="delete-mode-cb" autocomplete="off" style="width:auto; margin:0; cursor:pointer;" onchange="renderResults()">
                 <span id="delete-mode-label" data-i18n="deleteMode">Löschmodus aktivieren</span>
             </label>
             <label style="display:inline-flex; align-items:center; gap:6px; margin:0; cursor:pointer;">
-                <input type="checkbox" id="edit-mode-cb" style="width:auto; margin:0; cursor:pointer;" onchange="renderResults()">
+                <input type="checkbox" id="edit-mode-cb" autocomplete="off" style="width:auto; margin:0; cursor:pointer;" onchange="renderResults()">
                 <span id="edit-mode-label" data-i18n="editMode">Modifikationen aktivieren</span>
             </label>
         </div>
         <label class="swarm-toggle-wrap" style="display:inline-flex; align-items:center; gap:8px; cursor:pointer; font-weight:700; font-size:0.86rem; color:var(--primary); user-select:none; margin:0;" title="Wenn aktiviert, werden alle importierten/gespeicherten Dateien automatisch im Community-Schwarm freigegeben">
             <span class="swarm-toggle-switch">
-                <input type="checkbox" id="swarm-auto-share-toggle" onchange="toggleSwarmAutoShare(this)">
+                <input type="checkbox" id="swarm-auto-share-toggle" autocomplete="off" onchange="toggleSwarmAutoShare(this)">
                 <span class="swarm-toggle-slider"></span>
             </span>
             <span id="swarm-auto-share-label">Schwärm ein/ aus</span>
@@ -662,20 +662,20 @@
             <span data-i18n="searchTitle">Suche in Datenbank</span>
         </h2>
         
-        <input type="text" id="search-input" data-i18n-ph="searchPh" placeholder="Schlüsselwörter suchen..." oninput="renderResults()">
+        <input type="text" id="search-input" autocomplete="off" data-i18n-ph="searchPh" placeholder="Schlüsselwörter suchen..." oninput="renderResults()">
         
         <div style="margin-top: 15px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-            <input type="checkbox" id="toggle-filters-cb" onchange="document.getElementById('filters-bar').style.display = this.checked ? 'flex' : 'none';" style="width: auto; margin: 0; cursor: pointer;">
+            <input type="checkbox" id="toggle-filters-cb" autocomplete="off" onchange="document.getElementById('filters-bar').style.display = this.checked ? 'flex' : 'none';" style="width: auto; margin: 0; cursor: pointer;">
             <label for="toggle-filters-cb" style="margin: 0; cursor: pointer; color: var(--primary); font-weight: bold; font-size: 0.9rem;" data-i18n="showFilters">FILTER ANZEIGEN</label>
             <button id="reset-filters-btn" onclick="resetFilters()" title="Filter zurücksetzen">↺</button>
             <div id="filter-updates-wrap" style="display: none; align-items: center; gap: 6px; margin-left: auto; background: rgba(22, 163, 74, 0.12); border: 1px solid rgba(22, 163, 74, 0.35); border-radius: 20px; padding: 3px 11px;">
-                <input type="checkbox" id="filter-updates-cb" onchange="renderResults()" style="width: auto; margin: 0; cursor: pointer;">
+                <input type="checkbox" id="filter-updates-cb" autocomplete="off" onchange="renderResults()" style="width: auto; margin: 0; cursor: pointer;">
                 <label for="filter-updates-cb" style="margin: 0; cursor: pointer; color: #16a34a; font-weight: bold; font-size: 0.82rem; user-select: none; display: flex; align-items: center; gap: 4px;">⚡ NUR UPDATES (<span id="updates-count-badge">0</span>)</label>
             </div>
         </div>
 
         <div class="filters-container" id="filters-bar" style="display: none;">
-            <select id="filter-buch" onchange="onFilterBuchChange()" style="padding: 8px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface); color: var(--text);">
+            <select id="filter-buch" autocomplete="off" onchange="onFilterBuchChange()" style="padding: 8px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface); color: var(--text);">
                 <option value="">Filter: ALLE LEHRWERKE</option>
                 <option value="HALLO ZUSAMMEN!">HALLO ZUSAMMEN!</option>
                 <option value="VORWÄRTS!">VORWÄRTS!</option>
@@ -684,8 +684,8 @@
                 <option value="IHR UND WIR PLUS (Textbuch 3)">IHR UND WIR PLUS (Textbuch 3)</option>
                 <option value="UND JETZT WIR">UND JETZT WIR</option>
             </select>
-            <input type="number" id="filter-jahr" min="2000" placeholder="Filter: JAHR" oninput="renderResults()">
-            <select id="filter-klassen" onchange="renderResults()">
+            <input type="number" id="filter-jahr" autocomplete="off" min="2000" placeholder="Filter: JAHR" oninput="renderResults()">
+            <select id="filter-klassen" autocomplete="off" onchange="renderResults()">
                 <option value="">Filter: ALLE KLASSEN</option>
                 <option value="12. Klasse">12. KLASSE (TERMINALE)</option>
                 <option value="11. Klasse">11. KLASSE (PREMIÈRE)</option>
@@ -694,13 +694,13 @@
                 <option value="8. Klasse">8. KLASSE (QUATRIÈME)</option>
                 <option value="Sonstiges">SONSTIGES</option>
             </select>
-            <select id="filter-thema" onchange="onFilterThemaChange()" style="padding: 8px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface); color: var(--text);">
+            <select id="filter-thema" autocomplete="off" onchange="onFilterThemaChange()" style="padding: 8px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface); color: var(--text);">
                 <option value="">Filter: ALLE THEMEN</option>
             </select>
-            <select id="filter-lektion" onchange="renderResults()" style="padding: 8px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface); color: var(--text);">
+            <select id="filter-lektion" autocomplete="off" onchange="renderResults()" style="padding: 8px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface); color: var(--text);">
                 <option value="">Filter: ALLE LEKTIONEN</option>
             </select>
-            <select id="filter-typ" onchange="renderResults()">
+            <select id="filter-typ" autocomplete="off" onchange="renderResults()">
                 <option value="">Filter: ALLE TYPEN</option>
                 <option value="KONTROLLE">LEISTUNGSKONTROLLE</option>
                 <option value="TEST">KURZTEST</option>
@@ -967,7 +967,17 @@
                 document.documentElement.setAttribute('data-theme', th);
                 localStorage.setItem('wiki_theme', th);
             }
+        } else if (msg.type === 'PREPARE_DB_OP' || msg.type === 'CLOSE_IDB') {
+            if (idb) {
+                try { idb.close(); } catch(e) {}
+                idb = null;
+            }
         } else if (msg.type === 'RELOAD_DATA') {
+            if (typeof resetFilters === 'function') resetFilters();
+            if (idb) {
+                try { idb.close(); } catch(e) {}
+                idb = null;
+            }
             if (typeof renderResults === 'function') renderResults();
             if (typeof seedDoktypDictionary === 'function') seedDoktypDictionary();
             if (typeof seedDictionaryFromDB === 'function') seedDictionaryFromDB();
@@ -1063,39 +1073,60 @@
 
     // --- Reset Filters ---
     function resetFilters() {
+        if (document.getElementById('search-input')) document.getElementById('search-input').value = '';
         if (document.getElementById('filter-buch')) document.getElementById('filter-buch').value = '';
-        document.getElementById('filter-jahr').value = '';
-        document.getElementById('filter-klassen').value = '';
-        document.getElementById('filter-thema').value = '';
-        document.getElementById('filter-typ').value = '';
+        if (document.getElementById('filter-jahr')) document.getElementById('filter-jahr').value = '';
+        if (document.getElementById('filter-klassen')) document.getElementById('filter-klassen').value = '';
+        if (document.getElementById('filter-thema')) document.getElementById('filter-thema').value = '';
+        if (document.getElementById('filter-lektion')) document.getElementById('filter-lektion').value = '';
+        if (document.getElementById('filter-typ')) document.getElementById('filter-typ').value = '';
         if (document.getElementById('filter-updates-cb')) document.getElementById('filter-updates-cb').checked = false;
-        document.getElementById('toggle-filters-cb').checked = false;
-        document.getElementById('filters-bar').style.display = 'none';
+        if (document.getElementById('toggle-filters-cb')) document.getElementById('toggle-filters-cb').checked = false;
+        var bar = document.getElementById('filters-bar');
+        if (bar) bar.style.display = 'none';
         renderResults();
     }
 
-    // --- IndexedDB Initialization ---
+    // --- IndexedDB Lifecycle & Initialization ---
+    function attachDbLifecycle(db) {
+        if (!db) return;
+        db.onversionchange = function() {
+            try { db.close(); } catch(e) {}
+            idb = null;
+        };
+        db.onclose = function() {
+            idb = null;
+        };
+    }
+
     const request = indexedDB.open("TestBankDB"); window._docMetaCache = window._docMetaCache || [];
+    request.onblocked = function() { console.warn("[TestBank] IDB open blocked"); };
     request.onupgradeneeded = (e) => {
         idb = e.target.result;
+        attachDbLifecycle(idb);
         if (!idb.objectStoreNames.contains("documents")) {
             idb.createObjectStore("documents", { keyPath: "id" });
         }
     };
     request.onsuccess = (e) => {
         idb = e.target.result;
+        attachDbLifecycle(idb);
         if (!idb.objectStoreNames.contains("documents")) {
             const nextVersion = (idb.version || 1) + 1;
-            idb.close();
+            try { idb.close(); } catch(err) {}
+            idb = null;
             const upReq = indexedDB.open("TestBankDB", nextVersion);
+            upReq.onblocked = function() { console.warn("[TestBank] IDB upgrade blocked"); };
             upReq.onupgradeneeded = (ev) => {
                 const upDb = ev.target.result;
+                attachDbLifecycle(upDb);
                 if (!upDb.objectStoreNames.contains("documents")) {
                     upDb.createObjectStore("documents", { keyPath: "id" });
                 }
             };
             upReq.onsuccess = (ev) => {
                 idb = ev.target.result;
+                attachDbLifecycle(idb);
                 renderResults();
                 seedDictionaryFromDB();
                 window.OSIRIS_LIBS_READY.then(() => { if (window.EduHybridShare) EduHybridShare.init({ dbName: "TestBankDB", storeName: "documents", docTypeLabel: "Prüfungsstoff", onDocImported: () => renderResults() }); });
@@ -2996,20 +3027,21 @@ function saveEntry() {
             const req = indexedDB.open("TestBankDB");
             req.onsuccess = (e) => {
                 idb = e.target.result;
+                attachDbLifecycle(idb);
                 renderResults();
             };
             return;
         }
 
-        const q = document.getElementById('search-input').value.toLowerCase().trim();
+        const q = document.getElementById('search-input') ? document.getElementById('search-input').value.toLowerCase().trim() : '';
         const fBuch = document.getElementById('filter-buch') ? document.getElementById('filter-buch').value.trim() : '';
-        const fJahr = document.getElementById('filter-jahr').value.trim();
+        const fJahr = document.getElementById('filter-jahr') ? document.getElementById('filter-jahr').value.trim() : '';
         const fKlass = document.getElementById('filter-klassen') ? document.getElementById('filter-klassen').value.toLowerCase().trim() : '';
         const fThema = document.getElementById('filter-thema') ? document.getElementById('filter-thema').value.toLowerCase().trim() : '';
         const fLektion = document.getElementById('filter-lektion') ? document.getElementById('filter-lektion').value.toLowerCase().trim() : '';
         const fTyp = document.getElementById('filter-typ') ? document.getElementById('filter-typ').value : '';
-        const deleteMode = document.getElementById('delete-mode-cb').checked;
-        const editMode = document.getElementById('edit-mode-cb').checked;
+        const deleteMode = document.getElementById('delete-mode-cb') ? document.getElementById('delete-mode-cb').checked : false;
+        const editMode = document.getElementById('edit-mode-cb') ? document.getElementById('edit-mode-cb').checked : false;
         const filterOnlyUpdates = document.getElementById('filter-updates-cb') && document.getElementById('filter-updates-cb').checked;
 
         let tx;
@@ -3019,6 +3051,7 @@ function saveEntry() {
             const req = indexedDB.open("TestBankDB");
             req.onsuccess = (e) => {
                 idb = e.target.result;
+                attachDbLifecycle(idb);
                 renderResults();
             };
             return;
@@ -3909,6 +3942,11 @@ function saveEntry() {
             }
         }
     }
+
+    // Ensure form filters in Gecko/Firefox start clean without stale cache
+    window.addEventListener('DOMContentLoaded', () => {
+        if (typeof resetFilters === 'function') resetFilters();
+    });
 
 </script>
 

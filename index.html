@@ -1872,6 +1872,7 @@ function loadPrefs() {
     if (m) m.style.display = 'none';
     if (window._justImportedBackup) {
       window._justImportedBackup = false;
+      pushToFrame('RELOAD_DATA', { forceRefresh: true });
       var frame = document.getElementById('tool-frame');
       if (frame && frame.contentWindow) {
         try { frame.contentWindow.location.reload(); } catch(e){}
@@ -1901,8 +1902,41 @@ function loadPrefs() {
   function openSecureIDB(dbName, storeName) {
     var defaultStore = storeName || (dbName === 'OfflineWikiIDB' ? 'entries' : 'documents');
     return new Promise(function(resolve, reject) {
+      var settled = false;
+      var timer = setTimeout(function() {
+        if (!settled) {
+          settled = true;
+          reject(new Error('IDB open timeout for ' + dbName));
+        }
+      }, 7000);
+
+      function doResolve(database) {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          if (database) {
+            database.onversionchange = function() {
+              try { database.close(); } catch(e) {}
+            };
+          }
+          resolve(database);
+        }
+      }
+
+      function doReject(err) {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          reject(err);
+        }
+      }
+
       try {
         var req = indexedDB.open(dbName);
+        req.onblocked = function() {
+          console.warn('[IDB] Open blocked for', dbName);
+          pushToFrame('PREPARE_DB_OP');
+        };
         req.onupgradeneeded = function(e) {
           var db = e.target.result;
           if (defaultStore && !db.objectStoreNames.contains(defaultStore)) {
@@ -1912,11 +1946,16 @@ function loadPrefs() {
         req.onsuccess = function(e) {
           var db = e.target.result;
           if (!defaultStore || db.objectStoreNames.contains(defaultStore)) {
-            resolve(db);
+            doResolve(db);
           } else {
             var nextVersion = (db.version || 1) + 1;
-            db.close();
+            try { db.close(); } catch(err) {}
+            pushToFrame('PREPARE_DB_OP');
             var upReq = indexedDB.open(dbName, nextVersion);
+            upReq.onblocked = function() {
+              console.warn('[IDB] Upgrade blocked for', dbName);
+              pushToFrame('PREPARE_DB_OP');
+            };
             upReq.onupgradeneeded = function(ev) {
               var upgradedDb = ev.target.result;
               if (defaultStore && !upgradedDb.objectStoreNames.contains(defaultStore)) {
@@ -1924,18 +1963,18 @@ function loadPrefs() {
               }
             };
             upReq.onsuccess = function(ev) {
-              resolve(ev.target.result);
+              doResolve(ev.target.result);
             };
             upReq.onerror = function(ev) {
-              resolve(db);
+              doReject(ev.target.error || new Error('IDB upgrade failed: ' + dbName));
             };
           }
         };
         req.onerror = function(e) {
-          reject(e.target.error || new Error('IDB open failed: ' + dbName));
+          doReject(e.target.error || new Error('IDB open failed: ' + dbName));
         };
       } catch (err) {
-        reject(err);
+        doReject(err);
       }
     });
   }
@@ -1957,13 +1996,21 @@ function loadPrefs() {
         try {
           var tx = db.transaction(["documents"], "readonly");
           var req = tx.objectStore("documents").getAll();
+          var result = [];
           req.onsuccess = function() {
-            try { db.close(); } catch(e) {}
-            resolve(req.result || []);
+            result = req.result || [];
           };
-          req.onerror = function() {
+          tx.oncomplete = function() {
             try { db.close(); } catch(e) {}
-            resolve([]);
+            resolve(result);
+          };
+          tx.onerror = function() {
+            try { db.close(); } catch(e) {}
+            resolve(result);
+          };
+          tx.onabort = function() {
+            try { db.close(); } catch(e) {}
+            resolve(result);
           };
         } catch (txErr) {
           try { db.close(); } catch(e) {}
@@ -1988,13 +2035,21 @@ function loadPrefs() {
         try {
           var tx = db.transaction(["documents"], "readonly");
           var req = tx.objectStore("documents").getAll();
+          var result = [];
           req.onsuccess = function() {
-            try { db.close(); } catch(e) {}
-            resolve(req.result || []);
+            result = req.result || [];
           };
-          req.onerror = function() {
+          tx.oncomplete = function() {
             try { db.close(); } catch(e) {}
-            resolve([]);
+            resolve(result);
+          };
+          tx.onerror = function() {
+            try { db.close(); } catch(e) {}
+            resolve(result);
+          };
+          tx.onabort = function() {
+            try { db.close(); } catch(e) {}
+            resolve(result);
           };
         } catch (txErr) {
           try { db.close(); } catch(e) {}
@@ -2019,13 +2074,21 @@ function loadPrefs() {
           try {
             var tx = db.transaction(["entries"], "readonly");
             var req = tx.objectStore("entries").getAll();
+            var result = [];
             req.onsuccess = function() {
-              try { db.close(); } catch(e) {}
-              resolve(req.result || []);
+              result = req.result || [];
             };
-            req.onerror = function() {
+            tx.oncomplete = function() {
               try { db.close(); } catch(e) {}
-              resolve([]);
+              resolve(result);
+            };
+            tx.onerror = function() {
+              try { db.close(); } catch(e) {}
+              resolve(result);
+            };
+            tx.onabort = function() {
+              try { db.close(); } catch(e) {}
+              resolve(result);
             };
           } catch(txErr) {
             try { db.close(); } catch(e) {}
@@ -2051,61 +2114,6 @@ function loadPrefs() {
       links: wikiLinks
     };
   }
-
-  async function refreshBackupCounts() {
-    try {
-      var tbList = await fetchTBRecords();
-      var dkList = await fetchDKRecords();
-      var owData = await fetchOWRecords();
-
-      var tbEl = document.getElementById('count-tb');
-      var dkEl = document.getElementById('count-dk');
-      var owEl = document.getElementById('count-ow');
-
-      if (tbEl) tbEl.textContent = tbList.length + ' Einträge';
-      if (dkEl) dkEl.textContent = dkList.length + ' Einträge';
-      if (owEl) owEl.textContent = owData.entries.length + ' Artikel';
-
-      updateBackupSelectionSummary();
-    } catch (e) {}
-  }
-
-  function updateBackupSelectionSummary() {
-    var chkTB = document.getElementById('chk-db-tb');
-    var chkOW = document.getElementById('chk-db-ow');
-    var chkDK = document.getElementById('chk-db-dk');
-    var chkAll = document.getElementById('chk-db-all');
-    var sumEl = document.getElementById('backupSelectionSummary');
-
-    var count = 0;
-    if (chkTB && chkTB.checked) count++;
-    if (chkOW && chkOW.checked) count++;
-    if (chkDK && chkDK.checked) count++;
-
-    if (chkAll) {
-      chkAll.checked = (count === 3);
-      chkAll.indeterminate = (count > 0 && count < 3);
-    }
-    if (sumEl) {
-      sumEl.textContent = count + ' von 3 ausgewählt';
-    }
-  }
-
-  var chkAllEl = document.getElementById('chk-db-all');
-  if (chkAllEl) {
-    chkAllEl.addEventListener('change', function() {
-      var state = this.checked;
-      var subChks = document.querySelectorAll('.sub-db-chk');
-      subChks.forEach(function(cb) { cb.checked = state; });
-      updateBackupSelectionSummary();
-    });
-  }
-
-  document.querySelectorAll('.sub-db-chk').forEach(function(cb) {
-
-    cb.addEventListener('change', updateBackupSelectionSummary);
-
-  });
 
   async function refreshBackupCounts() {
     try {
@@ -2437,6 +2445,8 @@ function loadPrefs() {
         var importedCount = 0;
         var importedDocsList = [];
 
+        pushToFrame('PREPARE_DB_OP');
+
         // Restore TB with full binary files
         if (selTB && tbList.length > 0) {
           for (var _t = 0; _t < tbList.length; _t++) { var _dTB = tbList[_t]; if (_dTB) { var _refTB = _dTB.fileRef || (_dTB.vaultObjectName ? ('vault_objects/' + _dTB.vaultObjectName) : ''); if (_refTB && zip.file(_refTB)) { var _b64TB = await zip.file(_refTB).async("base64"); _dTB.fileData = "data:" + (_dTB.fileType || "application/pdf") + ";base64," + _b64TB; } } } var dbTB = await openSecureIDB("TestBankDB", "documents");
@@ -2451,6 +2461,7 @@ function loadPrefs() {
             await new Promise(function(res) {
               txTB.oncomplete = function() { try { dbTB.close(); } catch(e){} res(); };
               txTB.onerror = function() { try { dbTB.close(); } catch(e){} res(); };
+              txTB.onabort = function() { try { dbTB.close(); } catch(e){} res(); };
             });
           }
         }
@@ -2469,6 +2480,7 @@ function loadPrefs() {
             await new Promise(function(res) {
               txDK.oncomplete = function() { try { dbDK.close(); } catch(e){} res(); };
               txDK.onerror = function() { try { dbDK.close(); } catch(e){} res(); };
+              txDK.onabort = function() { try { dbDK.close(); } catch(e){} res(); };
             });
           }
         }
@@ -2491,6 +2503,7 @@ function loadPrefs() {
             await new Promise(function(res) {
               txOW.oncomplete = function() { try { dbOW.close(); } catch(e){} res(); };
               txOW.onerror = function() { try { dbOW.close(); } catch(e){} res(); };
+              txOW.onabort = function() { try { dbOW.close(); } catch(e){} res(); };
             });
           }
           localStorage.setItem('offline_wiki_db', JSON.stringify(Array.from(mapOW.values()))); if (owLinksZip.length > 0) { try { var _curL = JSON.parse(localStorage.getItem('wiki_links') || '[]'); var _uSet = new Set(_curL.map(function(x){return x.url;})); owLinksZip.forEach(function(l){ if (l && l.name && l.url && !_uSet.has(l.url)) { _curL.push({name: l.name, url: l.url}); _uSet.add(l.url); } }); localStorage.setItem('wiki_links', JSON.stringify(_curL)); } catch(_eL){} }
@@ -2504,7 +2517,11 @@ function loadPrefs() {
         } else if (owEntries.length > 0 && tbList.length === 0 && dkList.length === 0 && appState.tool !== 'wiki') {
           switchTool('wiki');
         } else {
-          pushToFrame('RELOAD_DATA');
+          pushToFrame('RELOAD_DATA', { forceRefresh: true });
+          var frameEl = document.getElementById('tool-frame');
+          if (frameEl && frameEl.contentWindow) {
+            try { frameEl.contentWindow.location.reload(); } catch(err){}
+          }
         }
         await refreshBackupCounts();
         showBackupStatus('✓ Vollständige Wiederherstellung abgeschlossen: ' + importedCount + ' Dokumente & reale Dateien erfolgreich importiert!', 'success');
@@ -2538,6 +2555,8 @@ function loadPrefs() {
         var importedCount = 0;
         var importedDocsList = [];
 
+        pushToFrame('PREPARE_DB_OP');
+
         // Check if file is empty headers only
         if (parsed && parsed.databases) {
           var tbDocs = (parsed.databases.TB && Array.isArray(parsed.databases.TB)) ? parsed.databases.TB : [];
@@ -2564,6 +2583,7 @@ function loadPrefs() {
               await new Promise(function(res) {
                 txTB.oncomplete = function() { try { dbTB.close(); } catch(e){} res(); };
                 txTB.onerror = function() { try { dbTB.close(); } catch(e){} res(); };
+                txTB.onabort = function() { try { dbTB.close(); } catch(e){} res(); };
               });
             }
           }
@@ -2580,6 +2600,7 @@ function loadPrefs() {
               await new Promise(function(res) {
                 txDK.oncomplete = function() { try { dbDK.close(); } catch(e){} res(); };
                 txDK.onerror = function() { try { dbDK.close(); } catch(e){} res(); };
+                txDK.onabort = function() { try { dbDK.close(); } catch(e){} res(); };
               });
             }
           }
@@ -2601,6 +2622,7 @@ function loadPrefs() {
               await new Promise(function(res) {
                 txOW2.oncomplete = function() { try { dbOW2.close(); } catch(e){} res(); };
                 txOW2.onerror = function() { try { dbOW2.close(); } catch(e){} res(); };
+                txOW2.onabort = function() { try { dbOW2.close(); } catch(e){} res(); };
               });
             }
             localStorage.setItem('offline_wiki_db', JSON.stringify(Array.from(mapOW2.values()))); if (parsed.databases.OW && Array.isArray(parsed.databases.OW.links) && parsed.databases.OW.links.length > 0) { try { var _curL2 = JSON.parse(localStorage.getItem('wiki_links') || '[]'); var _uSet2 = new Set(_curL2.map(function(x){return x.url;})); parsed.databases.OW.links.forEach(function(l){ if (l && l.name && l.url && !_uSet2.has(l.url)) { _curL2.push({name: l.name, url: l.url}); _uSet2.add(l.url); } }); localStorage.setItem('wiki_links', JSON.stringify(_curL2)); } catch(_eL2){} }
@@ -2635,6 +2657,7 @@ function loadPrefs() {
               await new Promise(function(res) {
                 txDK3.oncomplete = function() { try { dbDK3.close(); } catch(e){} res(); };
                 txDK3.onerror = function() { try { dbDK3.close(); } catch(e){} res(); };
+                txDK3.onabort = function() { try { dbDK3.close(); } catch(e){} res(); };
               });
             }
           } else if (selTB) {
@@ -2649,6 +2672,7 @@ function loadPrefs() {
               await new Promise(function(res) {
                 txTB3.oncomplete = function() { try { dbTB3.close(); } catch(e){} res(); };
                 txTB3.onerror = function() { try { dbTB3.close(); } catch(e){} res(); };
+                txTB3.onabort = function() { try { dbTB3.close(); } catch(e){} res(); };
               });
             }
           }
@@ -2662,7 +2686,11 @@ function loadPrefs() {
         } else if (selOW && !selTB && !selDK && appState.tool !== 'wiki') {
           switchTool('wiki');
         } else {
-          pushToFrame('RELOAD_DATA');
+          pushToFrame('RELOAD_DATA', { forceRefresh: true });
+          var frameEl2 = document.getElementById('tool-frame');
+          if (frameEl2 && frameEl2.contentWindow) {
+            try { frameEl2.contentWindow.location.reload(); } catch(err){}
+          }
         }
         await refreshBackupCounts();
         if (importedCount === 0) {
@@ -2695,13 +2723,12 @@ function loadPrefs() {
     if (selOW) names.push('Offline-Wiki (OW)');
     if (selDK) names.push('Dokumentation (DK)');
 
-    if (!confirm('Möchten Sie die folgenden Datenbanken wirklich leeren?\n\n• ' + names.join('\n• ') + '\n\nAlle lokalen Einträge dieser Datenbanken werden gelöscht.')) {
+    var confirmMsg = 'ACHTUNG: Möchten Sie die folgenden Datenbanken wirklich UNWIDERRUFLICH zurücksetzen?\n\n• ' + names.join('\n• ') + '\n\nAlle lokalen Einträge und Dateien dieser Datenbanken werden vollständig gelöscht!';
+    if (!confirm(confirmMsg)) {
       return;
     }
 
-    if (!confirm('LETZTE WARNUNG: Diese Aktion ist unwiderruflich!\n\nSind Sie absolut sicher, dass Sie (' + names.join(', ') + ') jetzt zurücksetzen möchten?')) {
-      return;
-    }
+    pushToFrame('PREPARE_DB_OP');
 
     try {
       if (selTB) {
@@ -2712,6 +2739,7 @@ function loadPrefs() {
           await new Promise(function(res) {
             txTB.oncomplete = function() { try { dbTB.close(); } catch(e) {} res(); };
             txTB.onerror = function() { try { dbTB.close(); } catch(e) {} res(); };
+            txTB.onabort = function() { try { dbTB.close(); } catch(e) {} res(); };
           });
         } else if (dbTB) {
           try { dbTB.close(); } catch(e) {}
@@ -2726,6 +2754,7 @@ function loadPrefs() {
           await new Promise(function(res) {
             txDK.oncomplete = function() { try { dbDK.close(); } catch(e) {} res(); };
             txDK.onerror = function() { try { dbDK.close(); } catch(e) {} res(); };
+            txDK.onabort = function() { try { dbDK.close(); } catch(e) {} res(); };
           });
         } else if (dbDK) {
           try { dbDK.close(); } catch(e) {}
@@ -2743,6 +2772,7 @@ function loadPrefs() {
             await new Promise(function(res) {
               txOW.oncomplete = function() { try { dbOW.close(); } catch(e) {} res(); };
               txOW.onerror = function() { try { dbOW.close(); } catch(e) {} res(); };
+              txOW.onabort = function() { try { dbOW.close(); } catch(e) {} res(); };
             });
           } else if (dbOW) {
             try { dbOW.close(); } catch(e) {}
@@ -2750,7 +2780,7 @@ function loadPrefs() {
         } catch(e) {}
       }
 
-      pushToFrame('RELOAD_DATA');
+      pushToFrame('RELOAD_DATA', { reset: true });
       await refreshBackupCounts();
       showBackupStatus('✓ Ausgewählte Datenbanken (' + names.join(', ') + ') wurden erfolgreich geleert.', 'success');
     } catch (err) {
