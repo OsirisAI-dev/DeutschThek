@@ -58,7 +58,7 @@
         osirisLoadWithFallback(['lib/htmldocx/v1/html-docx.js', 'lib/htmldocx/html-docx.js', '../lib/htmldocx/v1/html-docx.js', 'html-docx.js'], 'https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.js', 'htmlDocx'),
       
         osirisLoadWithFallback(['lib/peerjs/v1/peerjs.min.js', 'lib/peerjs/peerjs.min.js', '../lib/peerjs/v1/peerjs.min.js', '../lib/peerjs/peerjs.min.js', 'peerjs.min.js'], 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js', 'Peer'),
-        osirisLoadWithFallback(['lib/pdf/v1/pdf.worker.min.js', 'lib/pdf/pdf.worker.min.js', '../lib/pdf/v1/pdf.worker.min.js', 'pdf.worker.min.js'], 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js', 'pdfjsWorker'),
+        Promise.resolve(true),
       ]);
     </script>
     <script>
@@ -1043,7 +1043,7 @@
         }
     }
 
-    function seedDoktypDictionary() {
+    function seedDoktypDictionary() { if (Array.isArray(window._docMetaCache) && window._docMetaCache.length > 0) { const standardTypes = ['LEHRSKIZZE', 'LERNKARTEN', 'LEHRBÜCHER', 'SONSTIGES']; window._docMetaCache.forEach(doc => { if (doc.typ && !standardTypes.includes(doc.typ)) saveDoktypToDictionary(doc.typ); }); refreshDoktypOptions(); return; }
         if (!idb) return;
         const tx = idb.transaction(["documents"], "readonly");
         tx.objectStore("documents").getAll().onsuccess = (e) => {
@@ -1112,7 +1112,7 @@
         }
     }
 
-    function seedDictionaryFromDB() {
+    function seedDictionaryFromDB() { if (Array.isArray(window._docMetaCache) && window._docMetaCache.length > 0) { window._docMetaCache.forEach(item => { ['thema', 'lektion', 'buch'].forEach(field => { if (item[field]) saveToDictionary(field, item[field]); }); }); return; }
         if (!idb) return;
         const tx = idb.transaction(["documents"], "readonly");
         tx.objectStore("documents").getAll().onsuccess = (e) => {
@@ -1138,7 +1138,7 @@
     }
 
     // --- IndexedDB Initialization ---
-    const request = indexedDB.open("DokumentationDB", 1);
+    const request = indexedDB.open("DokumentationDB"); window._docMetaCache = window._docMetaCache || [];
     request.onupgradeneeded = (e) => {
         idb = e.target.result;
         if (!idb.objectStoreNames.contains("documents")) {
@@ -2065,13 +2065,13 @@
     function findMatchingEntry(file, hash) {
         return new Promise((resolve) => {
             // Ultra-fast in-memory cache check (0.01ms) - bypasses heavy IndexedDB deserialization
-            if (window._docMetaCache && window._docMetaCache.length > 0) {
+            if (Array.isArray(window._docMetaCache)) {
                 const items = window._docMetaCache.filter(it => it.id !== window.editingId);
                 let match = hash ? items.find(it => it.fileHash && it.fileHash === hash) : null;
                 if (!match) {
                     match = items.find(it => it.fileName === file.name && it.fileSize === file.size);
                 }
-                if (match) { resolve(match); return; }
+                resolve(match || null); return;
             }
             if (!idb) { resolve(null); return; }
             const tx = idb.transaction(["documents"], "readonly");
@@ -2173,7 +2173,7 @@
         let binary = '';
         if (typeof TextDecoder !== 'undefined') {
             try {
-                binary = new TextDecoder('latin1').decode(bytes);
+                binary = ''; // Force safe chunked String.fromCharCode path (avoids Chrome windows-1252 btoa crash)
             } catch (e) {
                 binary = '';
             }
@@ -2347,11 +2347,11 @@
                 }
             }
 
-            await window.OSIRIS_LIBS_READY;
+            // Instant non-blocking check (do not await external libs here)
             const pdfjsLib = window['pdfjs-dist/build/pdf'] || window.pdfjsLib;
             if (!pdfjsLib) return null;
             pdfjsLib.GlobalWorkerOptions.workerSrc = 'lib/pdf/v1/pdf.worker.min.js';
-            const loadingTask = pdfjsLib.getDocument({ data: buffer.slice(0), isEvalSupported: false });
+            return null; const loadingTask = pdfjsLib.getDocument({ data: buffer.slice(0), isEvalSupported: false });
             const pdf = await loadingTask.promise;
             const metadata = await pdf.getMetadata();
             const raw = metadata && metadata.info && (metadata.info[OSIRIS_META_KEY] || (metadata.info.Custom && metadata.info.Custom[OSIRIS_META_KEY]));
@@ -2478,13 +2478,13 @@
         let rawBuf = null;
         // Deep Security Inspection (Magic Bytes, 25MB limit, PDF /JavaScript, DOCX VBA Macros)
         try {
-            await window.OSIRIS_LIBS_READY;
+            // Instant non-blocking check (do not await external libs here)
             rawBuf = await file.arrayBuffer();
             // Cache single shared raw buffer & pre-converted DataURL for instant 0ms save
             e.target._cachedRawBuf = rawBuf;
             e.target._cachedFileName = file.name;
             e.target._cachedFileSize = file.size;
-            e.target._cachedDataUrl = bytesToDataUrl(new Uint8Array(rawBuf), file.type || 'application/pdf');
+            e.target._cachedDataUrl = null; try { const _fr = new FileReader(); _fr.onload = (ev) => { if (e.target && e.target._cachedFileName === file.name) e.target._cachedDataUrl = ev.target.result; }; _fr.readAsDataURL(file); } catch (_e) {}
 
             if (window.OsirisSecurity) {
                 const secCheck = window.OsirisSecurity.validateMagicBytes(new Uint8Array(rawBuf), file.name);
@@ -2517,7 +2517,7 @@
         }
 
         // No local record of this file — check whether the file itself carries
-        // Osiris metadata embedded during a previous save (e.g. on another device).
+        hideDuplicateNotice(statusEl); // Instant duplicate check complete
         setSaveBtnEnabled(true);
         const embeddedMeta = await readEmbeddedMetaFromFile(file, rawBuf);
         if (e.target.files[0] !== file) return; // guard again after async work
@@ -2536,7 +2536,7 @@
         try {
             const toggle = document.getElementById('swarm-auto-share-toggle');
             if (toggle) return toggle.checked;
-            return localStorage.getItem('swarm_auto_share_import') === 'true';
+            return localStorage.getItem('osiris_swarm_enabled') === 'true';
         } catch (e) {
             return false;
         }
@@ -2545,7 +2545,7 @@
     function toggleSwarmAutoShare(el) {
         const isChecked = !!(el && el.checked);
         try {
-            localStorage.setItem('swarm_auto_share_import', isChecked ? 'true' : 'false');
+            localStorage.setItem('swarm_auto_share_import', isChecked ? 'true' : 'false'); if (window.EduHybridShare && window.EduHybridShare.setSwarmEnabled) window.EduHybridShare.setSwarmEnabled(isChecked); if (window.parent && window.parent !== window && window.parent.EduHybridShare && window.parent.EduHybridShare.setSwarmEnabled) window.parent.EduHybridShare.setSwarmEnabled(isChecked);
         } catch (e) {}
         document.querySelectorAll('#swarm-auto-share-toggle').forEach(t => { t.checked = isChecked; });
     }
@@ -3025,7 +3025,7 @@ function saveEntry() {
 
     function renderResults() {
         if (!idb) {
-            const req = indexedDB.open("DokumentationDB", 1);
+            const req = indexedDB.open("DokumentationDB");
             req.onsuccess = (e) => {
                 idb = e.target.result;
                 renderResults();
@@ -3048,7 +3048,7 @@ function saveEntry() {
         try {
             tx = idb.transaction(["documents"], "readonly");
         } catch (err) {
-            const req = indexedDB.open("DokumentationDB", 1);
+            const req = indexedDB.open("DokumentationDB");
             req.onsuccess = (e) => {
                 idb = e.target.result;
                 renderResults();
@@ -3350,7 +3350,7 @@ function saveEntry() {
     }
 
     async function loadPdfDocumentSafe(pdfjsLib, bytes) {
-        ensurePdfWorkerConfigured(pdfjsLib);
+        if (window.location.protocol === 'file:' && !window.pdfjsWorker && typeof osirisLoadWithFallback === 'function') { try { await osirisLoadWithFallback(['lib/pdf/v1/pdf.worker.min.js', 'lib/pdf/pdf.worker.min.js', '../lib/pdf/v1/pdf.worker.min.js'], null, 'pdfjsWorker'); } catch (_e) {} } ensurePdfWorkerConfigured(pdfjsLib);
         try {
             const loadingTask = pdfjsLib.getDocument({ data: bytes, isEvalSupported: false });
             return await loadingTask.promise;
@@ -3446,13 +3446,13 @@ function saveEntry() {
         const reader = new FileReader();
         reader.onload = async function(e) {
             try {
-                await window.OSIRIS_LIBS_READY;
+                // Instant non-blocking check (do not await external libs here)
                 const parsed = safeJsonParse(e.target.result);
                 // Support both full DB array [...] and single .edu.json package { app: 'OsirisEduHub', document: {...} }
                 let rawList = [];
                 if (Array.isArray(parsed)) {
                     rawList = parsed;
-                } else if (parsed && parsed.app === 'OsirisEduHub' && parsed.document) {
+                } else if (parsed && parsed.databases && Array.isArray(parsed.databases.DK)) { rawList = parsed.databases.DK; } else if (parsed && parsed.app === 'OsirisEduHub' && parsed.document) {
                     rawList = [parsed.document];
                 } else {
                     alert("Ungültiges JSON Format.");
@@ -3496,7 +3496,7 @@ function saveEntry() {
                 const tx = idb.transaction(["documents"], "readwrite");
                 const store = tx.objectStore("documents");
                 validEntries.forEach(item => store.put(item));
-                tx.oncomplete = () => {
+                tx.oncomplete = () => { window._docMetaCache = null; ensureMetaCache();
                     if (isSwarmAutoShareEnabled()) { validEntries.forEach(item => autoShareToSwarm(item)); }
                     const msg = blockedCount > 0
                         ? `${validEntries.length} Dokument(e) importiert (${blockedCount} unsichere Einträge blockiert).`
@@ -3514,8 +3514,8 @@ function saveEntry() {
         if(confirm("Möchten Sie die gesamte Datenbank wirklich löschen?")) {
             if(confirm("LETZTE WARNUNG: Alle Dokumente werden gelöscht! Fortfahren?")) {
                 const tx = idb.transaction(["documents"], "readwrite");
-                tx.objectStore("documents").clear();
-                tx.oncomplete = () => {
+                tx.objectStore("documents").clear(); window._docMetaCache = [];
+                tx.oncomplete = () => { window._docMetaCache = null; ensureMetaCache();
                     renderResults();
                     alert("Datenbank wurde zurückgesetzt.");
                 };
@@ -3694,7 +3694,7 @@ function saveEntry() {
             if (btn) btn.disabled = true;
             setStatus('LADE BIBLIOTHEKEN...');
 
-            await window.OSIRIS_LIBS_READY;
+            // Instant non-blocking check (do not await external libs here)
 
             const pdfjsLib = window['pdfjs-dist/build/pdf'] || window.pdfjsLib;
             if (!pdfjsLib) {

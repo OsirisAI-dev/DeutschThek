@@ -15,6 +15,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="DeutschThek">
 
+<script src="lib/jszip/jszip.min.js"></script>
 <script src="data/official-catalog.js"></script>
 <script src="js/core/community-swarm.js?v=3.5"></script>
 
@@ -293,7 +294,7 @@
   .swarm-arrow-icon {
     transition: transform 0.2s ease;
   }
-  
+
   /* Online Status Indicator Colors applied directly to the Schwarm button group */
   .swarm-btn-group.status-online .swarm-hub-btn { background: #16a34a !important; }
   .swarm-btn-group.status-online .swarm-arrow-btn { background: #15803d !important; }
@@ -693,7 +694,6 @@
     background: var(--hub-bg);
   }
 
-
   /* Backup & Restore Modal */
   .hub-backup-section {
     padding: 16px 22px 10px;
@@ -921,7 +921,6 @@
         </svg>
       </button>
 
-      
       <!-- Centralized Backup & Restore Button (Icon-only with hovering tooltip hint) -->
       <button class="hub-btn icon-btn" id="backupBtn" title="Zentrale Datensicherung (ALLE · TB · OW · DK)" aria-label="Datensicherung">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1199,9 +1198,11 @@
             </label>
           </div>
         </div>
+
       </div>
 
       <!-- Centralized Actions -->
+
       <div class="backup-actions-grid">
         <!-- 1. Export Button -->
         <button class="backup-action-btn export-action" id="btnBackupExport">
@@ -1211,8 +1212,8 @@
             <line x1="12" y1="15" x2="12" y2="3"></line>
           </svg>
           <div class="btn-text-col">
-            <strong>Lokal exportieren (.json / .db)</strong>
-            <small id="exportFormatLabel">Sichert gewählte Datenbanken offline als .json oder .db</small>
+            <strong>Vollständiges Backup exportieren</strong>
+            <small id="exportFormatLabel">Bündelt alle echten Dateien &amp; Metadaten für 100% browserübergreifende Portabilität</small>
           </div>
         </button>
 
@@ -1224,46 +1225,41 @@
             <line x1="12" y1="3" x2="12" y2="15"></line>
           </svg>
           <div class="btn-text-col">
-            <strong>Wiederherstellen / Importieren (.json &amp; .db)</strong>
-            <small>Liest Master-Backup (.json oder .db) mit Zero-Trust-Prüfung ein</small>
+            <strong>Wiederherstellen / Importieren (.dtk.zip / .db / .json)</strong>
+            <small>Liest ZIP-Bundle mit echten Dateien oder Master-Backup ein</small>
           </div>
         </button>
 
         <!-- Format Selector Bar -->
-        <div style="grid-column: 1 / -1; display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; padding:8px 14px; background:var(--hub-surface); border:1px solid var(--hub-border); border-radius:8px;">
+        <div style="grid-column: 1 / -1; display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; padding:10px 14px; background:var(--hub-surface); border:1px solid var(--hub-border); border-radius:8px;">
           <span style="font-size:0.83rem; font-weight:700; color:var(--hub-text); display:flex; align-items:center; gap:6px;">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
             Export-Format:
           </span>
-          <div style="display:flex; gap:16px; font-size:0.83rem;">
-            <label style="cursor:pointer; display:flex; align-items:center; gap:6px;">
-              <input type="radio" name="export-format" value="json" id="fmt-json" checked>
-              <span><strong>.json</strong> (Web-Standard)</span>
+          <div style="display:flex; gap:16px; font-size:0.83rem; flex-wrap:wrap;">
+            <label style="cursor:pointer; display:flex; align-items:center; gap:6px;" title="Bündelt alle Dokumente und deren vollständige Originaldateien (PDF, DOCX) in ein ZIP-Archiv">
+              <input type="radio" name="export-format" value="zip" id="fmt-zip" checked>
+              <span><strong>.dtk.zip</strong> (Vollständiges ZIP-Paket mit Dateien — Empfohlen)</span>
             </label>
             <label style="cursor:pointer; display:flex; align-items:center; gap:6px;">
               <input type="radio" name="export-format" value="db" id="fmt-db">
-              <span><strong>.db</strong> (Master DB Snapshot)</span>
+              <span><strong>.db</strong> (Snapshot)</span>
+            </label>
+            <label style="cursor:pointer; display:flex; align-items:center; gap:6px;">
+              <input type="radio" name="export-format" value="json" id="fmt-json">
+              <span><strong>.json</strong></span>
             </label>
           </div>
         </div>
 
-        <!-- 3. Starter Seed Button -->
-        <button type="button" class="backup-action-btn" id="btnBackupSeed" style="border-color:rgba(16,185,129,0.5); background:rgba(16,185,129,0.06); grid-column: 1 / -1;">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
-            <path d="M12 2v8m0 0l3-3m-3 3L9 7m3 7v8m0-8l4 4m-4-4l-4 4"></path>
-            <circle cx="12" cy="12" r="3"></circle>
-          </svg>
-          <div class="btn-text-col" style="text-align:left;">
-            <strong style="color:#059669;">🌱 Starter-Katalog einspielen (TB, OW, DK)</strong>
-            <small>Fügt sofort 7 praxiserprobte deutsche Lehrplandaten, Tests &amp; Wiki-Einträge hinzu (ideal zum Testen)</small>
-          </div>
-        </button>
+        <input type="file" id="backupFileInput" style="display:none;" accept=".dtk.zip,.zip,.db,.json,.dtk,.edu.json,application/zip,application/json">
+      </div>
 
-        <input type="file" id="backupFileInput" style="display:none;" accept=".json,.db,.dtk,.edu.json,application/json">
+      <!-- Swarm Auto-Share Toggle Option -->
+      <div class="backup-swarm-toggle-bar"  style="grid-column: 1 / -1; padding: 12px 16px; background: var(--hub-surface); border: 1px solid var(--hub-border); border-radius: 8px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
 
-        <!-- Swarm Auto-Share Toggle Option -->
-        <div class="backup-swarm-toggle-bar" style="grid-column: 1 / -1; padding: 12px 16px; background: var(--hub-surface); border: 1px solid var(--hub-border); border-radius: 8px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
           <div style="display:flex; align-items:center; gap:8px; font-size:0.86rem; color:var(--hub-text);">
+
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
               <circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line>
               <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10z"></path><path d="M12 2a15.3 15.3 0 0 0-4 10 15.3 15.3 0 0 0 4 10z"></path>
@@ -1310,7 +1306,6 @@
     </div>
   </div>
 </div>
-
 
 <script>
 (function () {
@@ -1361,7 +1356,7 @@
     }
     return true;
   }
-  
+
     function isSwarmAutoShareEnabled() {
         try {
             const toggle = document.getElementById('swarm-auto-share-toggle');
@@ -1594,7 +1589,7 @@ function loadPrefs() {
   });
 
   if (appState.font) document.documentElement.style.setProperty('--hub-font-family', appState.font);
-  
+
   /* ---------- FAQ Scroll & Toggle Controls ---------- */
   var hubFaqList = document.getElementById('hubFaqList');
   var faqScrollUpBtn = document.getElementById('faqScrollUpBtn');
@@ -1608,7 +1603,7 @@ function loadPrefs() {
     var maxScroll = hubFaqList.scrollHeight - hubFaqList.clientHeight;
     var atTop = st <= 15;
     var atBottom = maxScroll <= 5 || st >= maxScroll - 15;
-    
+
     faqScrollUpBtn.classList.toggle('is-disabled', atTop);
     faqScrollDownBtn.classList.toggle('is-disabled', atBottom);
   }
@@ -1863,7 +1858,6 @@ function loadPrefs() {
     } catch (e) {}
   }
 
-  
   /* ---------- Centralized Backup & Restore System ---------- */
   function openBackupModal() {
     var m = document.getElementById('backup-modal');
@@ -2101,188 +2095,84 @@ function loadPrefs() {
   }
 
   document.querySelectorAll('.sub-db-chk').forEach(function(cb) {
+
     cb.addEventListener('change', updateBackupSelectionSummary);
+
   });
 
-  // --- DeutschThek Starter Catalog (TB, OW, DK) ---
-  var STARTER_CATALOG_DATA = {
-    TB: [
-      {
-        id: "tb_starter_gym9_analyse",
-        sourceDb: "TestBankDB",
-        thema: "Textanalyse & dialektische Erörterung",
-        typ: "Schulaufgabe",
-        niveau: "Gymnasium",
-        klasse: "9. Klasse",
-        fach: "Deutsch",
-        schulart: "Gymnasium",
-        jahr: "2026",
-        createdAt: 1730000000000,
-        fileName: "Schulaufgabe_9_Eroerterung.pdf",
-        questions: [
-          {
-            id: "q1",
-            type: "mc",
-            text: "Welche Struktur kennzeichnet die dialektische Erörterung nach dem Sanduhr-Prinzip?",
-            options: [
-              "Gegenposition (stärkstes zu schwächstes Argument) -> eigene Position (schwächstes zu stärkstes Argument)",
-              "Abwechselnd These und Gegenthese für jedes Argument",
-              "Nur eine einzige Position ohne Berücksichtigung der Gegenseite"
-            ],
-            correctIndex: 0,
-            explanation: "Beim Sanduhr-Prinzip beginnt man mit der Gegenseite (absteigend) und stärkt danach die eigene Position (aufsteigend)."
-          }
-        ],
-        text: "Materialgestütztes Schreiben und dialektische Argumentation zum Thema Digitale Medien im Deutschunterricht."
-      },
-      {
-        id: "tb_starter_gym10_konjunktiv",
-        sourceDb: "TestBankDB",
-        thema: "Grammatik & Stilistik: Konjunktiv I & II in der indirekten Rede",
-        typ: "Stegreifaufgabe",
-        niveau: "Gymnasium / Realschule",
-        klasse: "10. Klasse",
-        fach: "Deutsch",
-        schulart: "Gymnasium",
-        jahr: "2026",
-        createdAt: 1730000001000,
-        fileName: "Stegreifaufgabe_10_Konjunktiv.pdf",
-        questions: [
-          {
-            id: "q1",
-            type: "mc",
-            text: "Wann muss in der indirekten Rede Konjunktiv II statt Konjunktiv I verwendet werden?",
-            options: [
-              "Wenn die Form des Konjunktiv I mit dem Indikativ Präsens übereinstimmt",
-              "Nur in der Vergangenheit",
-              "Immer bei Zitaten von Politikern"
-            ],
-            correctIndex: 0,
-            explanation: "Fällt Konjunktiv I formal mit dem Indikativ zusammen (z.B. bei 'sie haben'), weicht man auf Konjunktiv II aus."
-          }
-        ],
-        text: "Übungen zur korrekten distanzierten Redewiedergabe in journalistischen und wissenschaftlichen Texten."
-      }
-    ],
-    DK: [
-      {
-        id: "dk_starter_curriculum_by",
-        sourceDb: "DokumentationDB",
-        thema: "LehrplanPLUS Bayern: Fachlehrplan Deutsch 9-10",
-        typ: "Lehrplan",
-        niveau: "Gymnasium",
-        klasse: "9-10",
-        fach: "Deutsch",
-        schulart: "Gymnasium",
-        jahr: "2026",
-        doktyp: "Lehrplan",
-        createdAt: 1730000002000,
-        fileName: "LehrplanPLUS_Deutsch_Gym9_10.pdf",
-        text: "Offizielle Kompetenzerwartungen: Literarische Texte des 19. und 20. Jahrhunderts erschließen, Argumentieren & Diskutieren, Reflexion über Sprache und Sprachwandel."
-      },
-      {
-        id: "dk_starter_operatoren_abitur",
-        sourceDb: "DokumentationDB",
-        thema: "Operatoren-Katalog Deutsch (AFB I bis III) für Oberstufe & Abitur",
-        typ: "Handreichung",
-        niveau: "Oberstufe",
-        klasse: "11-12",
-        fach: "Deutsch",
-        schulart: "Gymnasium",
-        jahr: "2026",
-        doktyp: "Handreichung",
-        createdAt: 1730000003000,
-        fileName: "Operatoren_Deutsch_Abitur.pdf",
-        text: "Systematische Aufstellung: Anforderungsbereich I (nennen, darstellen), Anforderungsbereich II (charakterisieren, analysieren, vergleichen), Anforderungsbereich III (beurteilen, bewerten, erörtern)."
-      }
-    ],
-    OW: [
-      {
-        id: "ow_starter_rhetorik",
-        title: "Rhetorische Stilmittel in der Literatur",
-        category: "Stilistik & Rhetorik",
-        text: "Systematische Übersicht wichtiger Tropen und Figuren: Alliteration, Anapher, Antithese, Chiasmus, Hyperbel, Metapher, Oxymoron, Parallelismus, Personifikation und rhetorische Frage mit Musteranalysen.",
-        updatedAt: "2026-10-27T12:00:00Z"
-      },
-      {
-        id: "ow_starter_eroerterung",
-        title: "Methodik der dialektischen Erörterung",
-        category: "Aufsatzlehre",
-        text: "Leitfaden zur schlüssigen Argumentation: Einleitung mit Hinführung zum Thema, dialektische Antithese und These (Sanduhr- oder Ping-Pong-Methode) mit Stützung (Beleg, Beispiel) und abschließendem Synthese-Urteil.",
-        updatedAt: "2026-10-27T12:00:00Z"
-      },
-      {
-        id: "ow_starter_kurzgeschichte",
-        title: "Merkmale und Analyse der modernen Kurzgeschichte",
-        category: "Epik & Textgattungen",
-        text: "Gattungsmerkmale: Unmittelbarer Einstieg ohne Exposition, Alltäglichkeit der Figuren und Handlung, Wendepunkt (Peripetie), offener Schluss und hohe sprachliche Verdichtung.",
-        updatedAt: "2026-10-27T12:00:00Z"
-      }
-    ]
-  };
-
-  async function seedStarterCatalog() {
-    var btn = document.getElementById('btnBackupSeed');
-    if (btn) { btn.style.pointerEvents = 'none'; btn.style.opacity = '0.7'; }
+  async function refreshBackupCounts() {
     try {
-      showBackupStatus('🌱 Lade Starter-Katalog in TB, OW und DK...', 'info');
-      var addedCount = 0;
+      var tbList = await fetchTBRecords();
+      var dkList = await fetchDKRecords();
+      var owData = await fetchOWRecords();
 
-      // Seed TB
-      var dbTB = await openSecureIDB("TestBankDB", "documents");
-      if (dbTB && dbTB.objectStoreNames.contains("documents")) {
-        var txTB = dbTB.transaction(["documents"], "readwrite");
-        var stTB = txTB.objectStore("documents");
-        STARTER_CATALOG_DATA.TB.forEach(function(d) { stTB.put(d); addedCount++; });
-        await new Promise(function(res) {
-          txTB.oncomplete = function() { try { dbTB.close(); } catch(e){} res(); };
-          txTB.onerror = function() { try { dbTB.close(); } catch(e){} res(); };
-        });
-      } else if (dbTB) { try { dbTB.close(); } catch(e){} }
-
-      // Seed DK
-      var dbDK = await openSecureIDB("DokumentationDB", "documents");
-      if (dbDK && dbDK.objectStoreNames.contains("documents")) {
-        var txDK = dbDK.transaction(["documents"], "readwrite");
-        var stDK = txDK.objectStore("documents");
-        STARTER_CATALOG_DATA.DK.forEach(function(d) { stDK.put(d); addedCount++; });
-        await new Promise(function(res) {
-          txDK.oncomplete = function() { try { dbDK.close(); } catch(e){} res(); };
-          txDK.onerror = function() { try { dbDK.close(); } catch(e){} res(); };
-        });
-      } else if (dbDK) { try { dbDK.close(); } catch(e){} }
-
-      // Seed OW (IndexedDB + localStorage)
-      var curOW = [];
-      try { curOW = JSON.parse(localStorage.getItem('offline_wiki_db') || '[]'); } catch(e){}
-      var mapOW = new Map();
-      curOW.forEach(function(item) { if (item && item.id) mapOW.set(item.id, item); });
-      var dbOW = await openSecureIDB("OfflineWikiIDB", "entries");
-      var txOW = (dbOW && dbOW.objectStoreNames.contains("entries")) ? dbOW.transaction(["entries"], "readwrite") : null;
-      var stOW = txOW ? txOW.objectStore("entries") : null;
-
-      STARTER_CATALOG_DATA.OW.forEach(function(item) {
-        mapOW.set(item.id, item);
-        if (stOW) stOW.put(item);
-        addedCount++;
+      // Show REAL uploaded files and documents (excluding empty headers and mock items)
+      var tbReal = tbList.filter(function(d) {
+        return d && !String(d.id).startsWith('tb_starter_') && (
+          (d.fileData && d.fileData.length > 50) ||
+          (d.fileName && d.fileName.length > 0) ||
+          (Array.isArray(d.questions) && d.questions.length > 0)
+        );
       });
-      if (txOW) {
-        await new Promise(function(res) {
-          txOW.oncomplete = function() { try { dbOW.close(); } catch(e){} res(); };
-          txOW.onerror = function() { try { dbOW.close(); } catch(e){} res(); };
-        });
-      } else if (dbOW) { try { dbOW.close(); } catch(e){} }
-      localStorage.setItem('offline_wiki_db', JSON.stringify(Array.from(mapOW.values())));
 
-      pushToFrame('RELOAD_DATA');
-      await refreshBackupCounts();
-      showBackupStatus('✓ Starter-Katalog geladen: ' + addedCount + ' Ressourcen verfügbar (2 TB, 3 OW, 2 DK). Sie können nun direkt ein Master-Backup (.json oder .db) exportieren!', 'success');
-    } catch(err) {
-      showBackupStatus('Fehler beim Laden des Starter-Katalogs: ' + err.message, 'error');
-    } finally {
-      if (btn) { btn.style.pointerEvents = 'auto'; btn.style.opacity = '1'; }
+      var dkReal = dkList.filter(function(d) {
+        return d && !String(d.id).startsWith('dk_starter_') && (
+          (d.fileData && d.fileData.length > 50) ||
+          (d.fileName && d.fileName.length > 0) ||
+          (d.text && d.text.trim().length > 0)
+        );
+      });
+
+      var owReal = (owData.entries || []).filter(function(e) {
+        return e && !String(e.id).startsWith('ow_starter_') && e.text && e.text.trim().length > 0;
+      });
+
+      var tbEl = document.getElementById('count-tb');
+      var dkEl = document.getElementById('count-dk');
+      var owEl = document.getElementById('count-ow');
+
+      if (tbEl) tbEl.textContent = tbReal.length + ' reale Dateien';
+      if (dkEl) dkEl.textContent = dkReal.length + ' reale Dateien';
+      if (owEl) owEl.textContent = owReal.length + ' Artikel';
+
+      updateBackupSelectionSummary();
+    } catch (e) {}
+  }
+
+  function updateBackupSelectionSummary() {
+    var chkTB = document.getElementById('chk-db-tb');
+    var chkOW = document.getElementById('chk-db-ow');
+    var chkDK = document.getElementById('chk-db-dk');
+    var chkAll = document.getElementById('chk-db-all');
+    var sumEl = document.getElementById('backupSelectionSummary');
+
+    var count = 0;
+    if (chkTB && chkTB.checked) count++;
+    if (chkOW && chkOW.checked) count++;
+    if (chkDK && chkDK.checked) count++;
+
+    if (chkAll) {
+      chkAll.checked = (count === 3);
+      chkAll.indeterminate = (count > 0 && count < 3);
+    }
+    if (sumEl) {
+      sumEl.textContent = count + ' von 3 ausgewählt';
     }
   }
+
+  var chkAllEl = document.getElementById('chk-db-all');
+  if (chkAllEl) {
+    chkAllEl.addEventListener('change', function() {
+      var state = this.checked;
+      var subChks = document.querySelectorAll('.sub-db-chk');
+      subChks.forEach(function(cb) { cb.checked = state; });
+      updateBackupSelectionSummary();
+    });
+  }
+
+  document.querySelectorAll('.sub-db-chk').forEach(function(cb) {
+    cb.addEventListener('change', updateBackupSelectionSummary);
+  });
 
   async function handleBackupExport() {
     var btn = document.getElementById('btnBackupExport');
@@ -2304,46 +2194,172 @@ function loadPrefs() {
     }
 
     try {
-      var backupData = {
-        app: 'DeutschThekMasterBackup',
-        version: '2.0',
-        exportedAt: new Date().toISOString(),
-        selected: [],
-        databases: {},
-        meta: {
-          appTitle: 'DeutschThek Edu Hub'
-        }
-      };
+      var allTB = selTB ? await fetchTBRecords() : [];
+      var allDK = selDK ? await fetchDKRecords() : [];
+      var allOWData = selOW ? await fetchOWRecords() : { entries: [], links: [] };
 
-      if (selTB) {
-        backupData.selected.push('TB');
-        backupData.databases.TB = await fetchTBRecords();
-      }
-      if (selOW) {
-        backupData.selected.push('OW');
-        backupData.databases.OW = await fetchOWRecords();
-      }
-      if (selDK) {
-        backupData.selected.push('DK');
-        backupData.databases.DK = await fetchDKRecords();
-        try {
-          backupData.meta.docu_dict_doktyp = JSON.parse(localStorage.getItem('docu_dict_doktyp') || '[]');
-        } catch (e) {}
+      // Strictly filter to REAL documents (no empty shells or mock items)
+      var tbReal = allTB.filter(function(d) {
+        return d && !String(d.id).startsWith('tb_starter_') && (
+          (d.fileData && d.fileData.length > 50) ||
+          (d.fileName && d.fileName.length > 0) ||
+          (Array.isArray(d.questions) && d.questions.length > 0)
+        );
+      });
+
+      var dkReal = allDK.filter(function(d) {
+        return d && !String(d.id).startsWith('dk_starter_') && (
+          (d.fileData && d.fileData.length > 50) ||
+          (d.fileName && d.fileName.length > 0) ||
+          (d.text && d.text.trim().length > 0)
+        );
+      });
+
+      var owReal = (allOWData.entries || []).filter(function(e) {
+        return e && !String(e.id).startsWith('ow_starter_') && e.text && e.text.trim().length > 0;
+      });
+
+      var totalRealFiles = tbReal.length + dkReal.length + owReal.length;
+
+      // REQUIREMENT: If 0 real files exist, DO NOT export empty headers!
+      if (totalRealFiles === 0) {
+        showBackupStatus('❌ Export abgebrochen: Keine realen Dokumente oder Dateien in den ausgewählten Datenbanken vorhanden. Leere Header-Dateien werden nicht exportiert. Bitte laden Sie zuerst Unterrichtsmaterialien hoch.', 'error');
+        return;
       }
 
-      var totalCount = 0;
-      if (backupData.databases.TB && Array.isArray(backupData.databases.TB)) totalCount += backupData.databases.TB.length;
-      if (backupData.databases.DK && Array.isArray(backupData.databases.DK)) totalCount += backupData.databases.DK.length;
-      if (backupData.databases.OW && backupData.databases.OW.entries) totalCount += backupData.databases.OW.entries.length;
-
-      var isDbFmt = document.getElementById('fmt-db') && document.getElementById('fmt-db').checked;
-      var fileExt = isDbFmt ? '.db' : '.json';
-      var mimeType = isDbFmt ? 'application/octet-stream' : 'application/json;charset=utf-8';
+      var selectedFmt = 'zip';
+      if (document.getElementById('fmt-db') && document.getElementById('fmt-db').checked) selectedFmt = 'db';
+      if (document.getElementById('fmt-json') && document.getElementById('fmt-json').checked) selectedFmt = 'json';
 
       var now = new Date();
       var dateStr = now.toISOString().slice(0, 10);
       var timeStr = now.toTimeString().slice(0, 5).replace(':', '');
-      var filename = 'DeutschThek_Backup_' + backupData.selected.join('-') + '_' + dateStr + '_' + timeStr + fileExt;
+      var selDbs = [];
+      if (selTB) selDbs.push('TB');
+      if (selOW) selDbs.push('OW');
+      if (selDK) selDbs.push('DK');
+
+      // -------------------------------------------------------------
+      // OPTION 1: Full-Sized ZIP Bundle (.dtk.zip) via JSZip
+      // -------------------------------------------------------------
+      if (selectedFmt === 'zip' && typeof JSZip !== 'undefined') {
+        showBackupStatus('📦 Packe vollständiges ZIP-Bundle mit allen realen Dateien...', 'info');
+        var zip = new JSZip();
+        var filesFolder = zip.folder("files");
+
+        var manifestTB = [];
+        var manifestDK = [];
+        var totalBundledFiles = 0;
+        var totalBytes = 0;
+
+        // Bundle TB files
+        for (var i = 0; i < tbReal.length; i++) {
+          var docTB = Object.assign({}, tbReal[i]);
+          if (docTB.fileData && typeof docTB.fileData === 'string' && docTB.fileData.includes(',')) {
+            var partsTB = docTB.fileData.split(',');
+            var b64DataTB = partsTB[1];
+            var safeNameTB = (docTB.fileName || ('test_' + docTB.id + '.pdf')).replace(/[^a-zA-Z0-9._-]/g, '_');
+            var filePathInZipTB = 'tb_' + docTB.id + '_' + safeNameTB;
+            filesFolder.file(filePathInZipTB, b64DataTB, { base64: true });
+            totalBundledFiles++;
+            totalBytes += (docTB.fileSize || Math.round(b64DataTB.length * 0.75));
+            docTB.fileRef = 'files/' + filePathInZipTB;
+            delete docTB.fileData; // store separate in zip for performance
+          }
+          manifestTB.push(docTB);
+        }
+
+        // Bundle DK files
+        for (var j = 0; j < dkReal.length; j++) {
+          var docDK = Object.assign({}, dkReal[j]);
+          if (docDK.fileData && typeof docDK.fileData === 'string' && docDK.fileData.includes(',')) {
+            var partsDK = docDK.fileData.split(',');
+            var b64DataDK = partsDK[1];
+            var safeNameDK = (docDK.fileName || ('doc_' + docDK.id + '.pdf')).replace(/[^a-zA-Z0-9._-]/g, '_');
+            var filePathInZipDK = 'dk_' + docDK.id + '_' + safeNameDK;
+            filesFolder.file(filePathInZipDK, b64DataDK, { base64: true });
+            totalBundledFiles++;
+            totalBytes += (docDK.fileSize || Math.round(b64DataDK.length * 0.75));
+            docDK.fileRef = 'files/' + filePathInZipDK;
+            delete docDK.fileData;
+          }
+          manifestDK.push(docDK);
+        }
+
+        var manifest = {
+          app: "DeutschThekBundle",
+          version: "3.0",
+          bundleType: "FullSizedZipBackup",
+          exportedAt: now.toISOString(),
+          stats: {
+            totalDocuments: totalRealFiles,
+            totalBundledFiles: totalBundledFiles,
+            totalBytes: totalBytes
+          },
+          databases: {
+            TB: manifestTB,
+            DK: manifestDK,
+            OW: {
+              entries: owReal,
+              links: allOWData.links || []
+            }
+          },
+          meta: {
+            appTitle: "DeutschThek Edu Hub",
+            docu_dict_doktyp: JSON.parse(localStorage.getItem('docu_dict_doktyp') || '[]')
+          }
+        };
+
+        zip.file("manifest.json", JSON.stringify(manifest, null, 2));
+
+        var zipBlob = await zip.generateAsync({
+          type: "blob",
+          compression: "STORE",
+          compressionOptions: { level: 6 }
+        });
+
+        var zipFilename = 'DeutschThek_FullBackup_' + selDbs.join('-') + '_' + dateStr + '_' + timeStr + '.dtk.zip';
+        var urlZip = URL.createObjectURL(zipBlob);
+        var aZip = document.createElement('a');
+        aZip.href = urlZip;
+        aZip.download = zipFilename;
+        document.body.appendChild(aZip);
+        aZip.click();
+        setTimeout(function() {
+          if (aZip && aZip.parentNode) aZip.parentNode.removeChild(aZip);
+          URL.revokeObjectURL(urlZip);
+        }, 2000);
+
+        var sizeMb = (zipBlob.size / (1024 * 1024)).toFixed(2);
+        showBackupStatus('✓ Vollständiges ZIP-Backup exportiert: ' + zipFilename + ' (' + totalBundledFiles + ' echte Dateien gebündelt, ' + sizeMb + ' MB)', 'success');
+        return;
+      }
+
+      // -------------------------------------------------------------
+      // OPTION 2: Monolithic Full-Sized .db or .json (Base64 embedded)
+      // -------------------------------------------------------------
+      var fileExt = (selectedFmt === 'db') ? '.db' : '.json';
+      var mimeType = (selectedFmt === 'db') ? 'application/octet-stream' : 'application/json;charset=utf-8';
+      var filename = 'DeutschThek_Backup_' + selDbs.join('-') + '_' + dateStr + '_' + timeStr + fileExt;
+
+      var backupData = {
+        app: 'DeutschThekMasterBackup',
+        version: '3.0',
+        exportedAt: now.toISOString(),
+        selected: selDbs,
+        databases: {
+          TB: tbReal,
+          DK: dkReal,
+          OW: {
+            entries: owReal,
+            links: allOWData.links || []
+          }
+        },
+        meta: {
+          appTitle: 'DeutschThek Edu Hub',
+          docu_dict_doktyp: JSON.parse(localStorage.getItem('docu_dict_doktyp') || '[]')
+        }
+      };
 
       var blob = new Blob([JSON.stringify(backupData, null, 2)], { type: mimeType });
       var url = URL.createObjectURL(blob);
@@ -2357,11 +2373,7 @@ function loadPrefs() {
         URL.revokeObjectURL(url);
       }, 2000);
 
-      if (totalCount === 0) {
-        showBackupStatus('⚠️ Hinweis: Die gewählten Datenbanken enthalten aktuell 0 Einträge. Die Sicherung ' + filename + ' ist leer. Nutzen Sie "Starter-Katalog einspielen", um Datensätze zu laden.', 'warning');
-      } else {
-        showBackupStatus('✓ Sicherung erfolgreich exportiert: ' + filename + ' (' + totalCount + ' Einträge gesichert)', 'success');
-      }
+      showBackupStatus('✓ Sicherung erfolgreich exportiert: ' + filename + ' (' + totalRealFiles + ' reale Dokumente gesichert)', 'success');
     } catch (err) {
       showBackupStatus('Fehler beim Exportieren: ' + err.message, 'error');
     } finally {
@@ -2374,10 +2386,130 @@ function loadPrefs() {
 
   async function handleBackupImportFile(file) {
     if (!file) return;
+
+    var selTB = document.getElementById('chk-db-tb') ? document.getElementById('chk-db-tb').checked : true;
+    var selOW = document.getElementById('chk-db-ow') ? document.getElementById('chk-db-ow').checked : true;
+    var selDK = document.getElementById('chk-db-dk') ? document.getElementById('chk-db-dk').checked : true;
+
+    if (!selTB && !selOW && !selDK) {
+      selTB = true; selOW = true; selDK = true;
+      if (document.getElementById('chk-db-tb')) document.getElementById('chk-db-tb').checked = true;
+      if (document.getElementById('chk-db-ow')) document.getElementById('chk-db-ow').checked = true;
+      if (document.getElementById('chk-db-dk')) document.getElementById('chk-db-dk').checked = true;
+      if (document.getElementById('chk-db-all')) document.getElementById('chk-db-all').checked = true;
+      updateBackupSelectionSummary();
+    }
+
+    // ---------------------------------------------------------------
+    // CASE A: Full-Sized ZIP Bundle (.dtk.zip / .zip)
+    // ---------------------------------------------------------------
+    if (file.name.endsWith('.zip') || file.name.endsWith('.dtk.zip') || file.type.includes('zip')) {
+      showBackupStatus('📦 Lese und entpacke vollständiges ZIP-Bundle: ' + file.name + '...', 'info');
+      try {
+        if (typeof JSZip === 'undefined') {
+          throw new Error('JSZip-Bibliothek ist nicht verfügbar.');
+        }
+        var zip = await JSZip.loadAsync(file);
+        var manifestEntry = zip.file("manifest.json");
+        if (!manifestEntry) {
+          throw new Error("Ungültiges Archiv: manifest.json wurde im ZIP-Paket nicht gefunden.");
+        }
+        var manifestRaw = await manifestEntry.async("string");
+        var manifest = JSON.parse(manifestRaw);
+
+        var tbList = (manifest.databases && Array.isArray(manifest.databases.TB)) ? manifest.databases.TB : [];
+        var dkList = (manifest.databases && Array.isArray(manifest.databases.DK)) ? manifest.databases.DK : [];
+        var owEntries = (manifest.databases && manifest.databases.OW) ? (Array.isArray(manifest.databases.OW) ? manifest.databases.OW : (Array.isArray(manifest.databases.OW.entries) ? manifest.databases.OW.entries : [])) : []; var owLinksZip = (manifest.databases && manifest.databases.OW && Array.isArray(manifest.databases.OW.links)) ? manifest.databases.OW.links : [];
+
+        if (tbList.length === 0 && dkList.length === 0 && owEntries.length === 0) {
+          throw new Error("Das ZIP-Archiv enthält 0 reale Dokumente.");
+        }
+
+        var importedCount = 0;
+        var importedDocsList = [];
+
+        // Restore TB with full binary files
+        if (selTB && tbList.length > 0) {
+          for (var _t = 0; _t < tbList.length; _t++) { var _dTB = tbList[_t]; if (_dTB) { var _refTB = _dTB.fileRef || (_dTB.vaultObjectName ? ('vault_objects/' + _dTB.vaultObjectName) : ''); if (_refTB && zip.file(_refTB)) { var _b64TB = await zip.file(_refTB).async("base64"); _dTB.fileData = "data:" + (_dTB.fileType || "application/pdf") + ";base64," + _b64TB; } } } var dbTB = await openSecureIDB("TestBankDB", "documents");
+          if (dbTB && dbTB.objectStoreNames.contains("documents")) {
+            var txTB = dbTB.transaction(["documents"], "readwrite");
+            var stTB = txTB.objectStore("documents");
+            for (var t = 0; t < tbList.length; t++) {
+              var docTB = tbList[t];
+              var safeDocTB = window.OsirisSecurity ? window.OsirisSecurity.sanitizeDocRecord(docTB) : docTB;
+              if (safeDocTB) { stTB.put(safeDocTB); importedCount++; importedDocsList.push(safeDocTB); }
+            }
+            await new Promise(function(res) {
+              txTB.oncomplete = function() { try { dbTB.close(); } catch(e){} res(); };
+              txTB.onerror = function() { try { dbTB.close(); } catch(e){} res(); };
+            });
+          }
+        }
+
+        // Restore DK with full binary files
+        if (selDK && dkList.length > 0) {
+          for (var _d = 0; _d < dkList.length; _d++) { var _dDK = dkList[_d]; if (_dDK) { var _refDK = _dDK.fileRef || (_dDK.vaultObjectName ? ('vault_objects/' + _dDK.vaultObjectName) : ''); if (_refDK && zip.file(_refDK)) { var _b64DK = await zip.file(_refDK).async("base64"); _dDK.fileData = "data:" + (_dDK.fileType || "application/pdf") + ";base64," + _b64DK; } } } var dbDK = await openSecureIDB("DokumentationDB", "documents");
+          if (dbDK && dbDK.objectStoreNames.contains("documents")) {
+            var txDK = dbDK.transaction(["documents"], "readwrite");
+            var stDK = txDK.objectStore("documents");
+            for (var d = 0; d < dkList.length; d++) {
+              var docDK = dkList[d];
+              var safeDocDK = window.OsirisSecurity ? window.OsirisSecurity.sanitizeDocRecord(docDK) : docDK;
+              if (safeDocDK) { stDK.put(safeDocDK); importedCount++; importedDocsList.push(safeDocDK); }
+            }
+            await new Promise(function(res) {
+              txDK.oncomplete = function() { try { dbDK.close(); } catch(e){} res(); };
+              txDK.onerror = function() { try { dbDK.close(); } catch(e){} res(); };
+            });
+          }
+        }
+
+        // Restore OW
+        if (selOW && owEntries.length > 0) {
+          var curLocal = [];
+          try { curLocal = JSON.parse(localStorage.getItem('offline_wiki_db') || '[]'); } catch(e){}
+          var mapOW = new Map();
+          curLocal.forEach(function(i) { if (i && i.id) mapOW.set(i.id, i); });
+          var dbOW = await openSecureIDB("OfflineWikiIDB", "entries");
+          var txOW = (dbOW && dbOW.objectStoreNames.contains("entries")) ? dbOW.transaction(["entries"], "readwrite") : null;
+          var stOW = txOW ? txOW.objectStore("entries") : null;
+          owEntries.forEach(function(item) {
+            mapOW.set(item.id, item);
+            if (stOW) stOW.put(item);
+            importedCount++;
+          });
+          if (txOW) {
+            await new Promise(function(res) {
+              txOW.oncomplete = function() { try { dbOW.close(); } catch(e){} res(); };
+              txOW.onerror = function() { try { dbOW.close(); } catch(e){} res(); };
+            });
+          }
+          localStorage.setItem('offline_wiki_db', JSON.stringify(Array.from(mapOW.values()))); if (owLinksZip.length > 0) { try { var _curL = JSON.parse(localStorage.getItem('wiki_links') || '[]'); var _uSet = new Set(_curL.map(function(x){return x.url;})); owLinksZip.forEach(function(l){ if (l && l.name && l.url && !_uSet.has(l.url)) { _curL.push({name: l.name, url: l.url}); _uSet.add(l.url); } }); localStorage.setItem('wiki_links', JSON.stringify(_curL)); } catch(_eL){} }
+        }
+
+        pushToFrame('RELOAD_DATA');
+        await refreshBackupCounts();
+        showBackupStatus('✓ Vollständige Wiederherstellung abgeschlossen: ' + importedCount + ' Dokumente & reale Dateien erfolgreich importiert!', 'success');
+        return;
+      } catch(zipErr) {
+        showBackupStatus('Fehler beim Entpacken des ZIP-Bundles: ' + zipErr.message, 'error');
+        return;
+      }
+    }
+
+    // ---------------------------------------------------------------
+    // CASE B: Monolithic .json or .db file
+    // ---------------------------------------------------------------
     var reader = new FileReader();
     reader.onload = async function(e) {
       try {
         var rawText = e.target.result;
+
+        if (rawText && rawText.length >= 15 && rawText.slice(0, 15) === "SQLite format 3") {
+          showBackupStatus('ℹ️ Dies ist eine binäre SQLite-Datenbank. Nutzen Sie die Desktop-App DeutschThek Admin Publisher zum automatischen 1-Klick-Import & Konvertierung!', 'error');
+          return;
+        }
+
         var parsed;
         if (window.OsirisSecurity && window.OsirisSecurity.safeJsonParse) {
           parsed = window.OsirisSecurity.safeJsonParse(rawText);
@@ -2385,214 +2517,131 @@ function loadPrefs() {
           parsed = JSON.parse(rawText);
         }
 
-        // Check for binary SQLite header (0x53 0x51 0x4C 0x69 0x74 0x65 0x20 0x66 0x6F 0x72 0x6D 0x61 0x74 0x20 0x33 0x00)
-        if (rawText && rawText.length >= 15 && rawText.slice(0, 15) === "SQLite format 3") {
-          showBackupStatus('ℹ️ Dies ist eine binäre SQLite-Datenbank. Nutzen Sie die Desktop-App DeutschThek Admin Publisher zum automatischen 1-Klick-Import & Konvertierung!', 'error');
-          return;
-        }
-
-        var selTB = document.getElementById('chk-db-tb') ? document.getElementById('chk-db-tb').checked : true;
-        var selOW = document.getElementById('chk-db-ow') ? document.getElementById('chk-db-ow').checked : true;
-        var selDK = document.getElementById('chk-db-dk') ? document.getElementById('chk-db-dk').checked : true;
-
-        // Auto-enable categories if none was checked
-        if (!selTB && !selOW && !selDK) {
-          selTB = true; selOW = true; selDK = true;
-          if (document.getElementById('chk-db-tb')) document.getElementById('chk-db-tb').checked = true;
-          if (document.getElementById('chk-db-ow')) document.getElementById('chk-db-ow').checked = true;
-          if (document.getElementById('chk-db-dk')) document.getElementById('chk-db-dk').checked = true;
-          if (document.getElementById('chk-db-all')) document.getElementById('chk-db-all').checked = true;
-          if (typeof updateBackupSelectionSummary === 'function') updateBackupSelectionSummary();
-        }
-
         var importedCount = 0;
         var importedDocsList = [];
 
-        // Case 1: Master Backup format
-        if (parsed && parsed.app === 'DeutschThekMasterBackup' && parsed.databases) {
-          // Restore TB
-          if (selTB && parsed.databases.TB && Array.isArray(parsed.databases.TB)) {
+        // Check if file is empty headers only
+        if (parsed && parsed.databases) {
+          var tbDocs = (parsed.databases.TB && Array.isArray(parsed.databases.TB)) ? parsed.databases.TB : [];
+          var dkDocs = (parsed.databases.DK && Array.isArray(parsed.databases.DK)) ? parsed.databases.DK : [];
+          var owDocs = [];
+          if (Array.isArray(parsed.databases.OW)) owDocs = parsed.databases.OW;
+          else if (parsed.databases.OW && parsed.databases.OW.entries) owDocs = parsed.databases.OW.entries;
+
+          var totalInFile = tbDocs.length + dkDocs.length + owDocs.length;
+          if (totalInFile === 0) {
+            showBackupStatus('❌ Import abgebrochen: Diese Datei enthält nur Header und keine realen Dokumente (0 Einträge).', 'error');
+            return;
+          }
+
+          if (selTB && tbDocs.length > 0) {
             var dbTB = await openSecureIDB("TestBankDB", "documents");
             if (dbTB && dbTB.objectStoreNames.contains("documents")) {
               var txTB = dbTB.transaction(["documents"], "readwrite");
               var stTB = txTB.objectStore("documents");
-              parsed.databases.TB.forEach(function(doc) {
+              tbDocs.forEach(function(doc) {
                 var safeDoc = window.OsirisSecurity ? window.OsirisSecurity.sanitizeDocRecord(doc) : doc;
                 if (safeDoc) { stTB.put(safeDoc); importedCount++; importedDocsList.push(safeDoc); }
               });
               await new Promise(function(res) {
-                txTB.oncomplete = function() { try { dbTB.close(); } catch(e) {} res(); };
-                txTB.onerror = function() { try { dbTB.close(); } catch(e) {} res(); };
+                txTB.oncomplete = function() { try { dbTB.close(); } catch(e){} res(); };
+                txTB.onerror = function() { try { dbTB.close(); } catch(e){} res(); };
               });
-            } else if (dbTB) {
-              try { dbTB.close(); } catch(e) {}
             }
           }
 
-          // Restore DK
-          if (selDK && parsed.databases.DK && Array.isArray(parsed.databases.DK)) {
+          if (selDK && dkDocs.length > 0) {
             var dbDK = await openSecureIDB("DokumentationDB", "documents");
             if (dbDK && dbDK.objectStoreNames.contains("documents")) {
               var txDK = dbDK.transaction(["documents"], "readwrite");
               var stDK = txDK.objectStore("documents");
-              parsed.databases.DK.forEach(function(doc) {
+              dkDocs.forEach(function(doc) {
                 var safeDoc = window.OsirisSecurity ? window.OsirisSecurity.sanitizeDocRecord(doc) : doc;
                 if (safeDoc) { stDK.put(safeDoc); importedCount++; importedDocsList.push(safeDoc); }
               });
               await new Promise(function(res) {
-                txDK.oncomplete = function() { try { dbDK.close(); } catch(e) {} res(); };
-                txDK.onerror = function() { try { dbDK.close(); } catch(e) {} res(); };
+                txDK.oncomplete = function() { try { dbDK.close(); } catch(e){} res(); };
+                txDK.onerror = function() { try { dbDK.close(); } catch(e){} res(); };
               });
-            } else if (dbDK) {
-              try { dbDK.close(); } catch(e) {}
-            }
-            if (parsed.meta && parsed.meta.docu_dict_doktyp && Array.isArray(parsed.meta.docu_dict_doktyp)) {
-              try {
-                var secDok = window.OsirisSecurity;
-                var existingDok = JSON.parse(localStorage.getItem('docu_dict_doktyp') || '[]');
-                var cleanNewDok = parsed.meta.docu_dict_doktyp
-                  .filter(function(x) { return typeof x === 'string' && x.trim().length > 0; })
-                  .slice(0, 200)
-                  .map(function(x) { return secDok && secDok.clampString ? secDok.clampString(x, 80) : x.trim().slice(0, 80); });
-                var merged = Array.from(new Set(existingDok.concat(cleanNewDok)));
-                localStorage.setItem('docu_dict_doktyp', JSON.stringify(merged));
-              } catch(e) {}
             }
           }
 
-          // Restore OW
-          if (selOW && parsed.databases.OW) {
-            var secOW = window.OsirisSecurity;
-            var owEntries = [];
-            var owLinks = [];
-            if (Array.isArray(parsed.databases.OW)) {
-              owEntries = parsed.databases.OW;
-            } else if (parsed.databases.OW.entries && Array.isArray(parsed.databases.OW.entries)) {
-              owEntries = parsed.databases.OW.entries;
-              owLinks = Array.isArray(parsed.databases.OW.links) ? parsed.databases.OW.links : [];
-            }
-            if (owEntries.length > 0) {
-              var curLocal = [];
-              try { curLocal = JSON.parse(localStorage.getItem('offline_wiki_db') || '[]'); } catch(e) {}
-              var mapOW = new Map();
-              curLocal.forEach(function(i) { if (i && i.id) mapOW.set(i.id, i); });
-              var dbOW = await openSecureIDB("OfflineWikiIDB", "entries");
-              var txOW = null;
-              var stOW = null;
-              if (dbOW && dbOW.objectStoreNames.contains("entries")) {
-                txOW = dbOW.transaction(["entries"], "readwrite");
-                stOW = txOW.objectStore("entries");
-              }
-              owEntries.forEach(function(i) {
-                var safeEntry = secOW && secOW.sanitizeWikiEntry ? secOW.sanitizeWikiEntry(i) : i;
-                if (safeEntry && safeEntry.id) {
-                  mapOW.set(safeEntry.id, safeEntry);
-                  if (stOW) stOW.put(safeEntry);
-                  importedCount++;
-                }
+          if (selOW && owDocs.length > 0) {
+            var curLocal2 = [];
+            try { curLocal2 = JSON.parse(localStorage.getItem('offline_wiki_db') || '[]'); } catch(e){}
+            var mapOW2 = new Map();
+            curLocal2.forEach(function(i) { if (i && i.id) mapOW2.set(i.id, i); });
+            var dbOW2 = await openSecureIDB("OfflineWikiIDB", "entries");
+            var txOW2 = (dbOW2 && dbOW2.objectStoreNames.contains("entries")) ? dbOW2.transaction(["entries"], "readwrite") : null;
+            var stOW2 = txOW2 ? txOW2.objectStore("entries") : null;
+            owDocs.forEach(function(item) {
+              mapOW2.set(item.id, item);
+              if (stOW2) stOW2.put(item);
+              importedCount++;
+            });
+            if (txOW2) {
+              await new Promise(function(res) {
+                txOW2.oncomplete = function() { try { dbOW2.close(); } catch(e){} res(); };
+                txOW2.onerror = function() { try { dbOW2.close(); } catch(e){} res(); };
               });
-              if (txOW) {
-                await new Promise(function(res) {
-                  txOW.oncomplete = function() { try { dbOW.close(); } catch(e) {} res(); };
-                  txOW.onerror = function() { try { dbOW.close(); } catch(e) {} res(); };
-                });
-              } else if (dbOW) {
-                try { dbOW.close(); } catch(e) {}
-              }
-              localStorage.setItem('offline_wiki_db', JSON.stringify(Array.from(mapOW.values())));
             }
-            if (owLinks.length > 0) {
-              try {
-                var curLinks = JSON.parse(localStorage.getItem('wiki_links') || '[]');
-                var mapLinks = new Map();
-                curLinks.forEach(function(l) { if (l && l.url) mapLinks.set(l.url, l); });
-                owLinks.forEach(function(l) {
-                  var safeLink = secOW && secOW.sanitizeLinkEntry ? secOW.sanitizeLinkEntry(l) : l;
-                  if (safeLink && safeLink.url) mapLinks.set(safeLink.url, safeLink);
-                });
-                localStorage.setItem('wiki_links', JSON.stringify(Array.from(mapLinks.values())));
-              } catch(e) {}
-            }
+            localStorage.setItem('offline_wiki_db', JSON.stringify(Array.from(mapOW2.values()))); if (parsed.databases.OW && Array.isArray(parsed.databases.OW.links) && parsed.databases.OW.links.length > 0) { try { var _curL2 = JSON.parse(localStorage.getItem('wiki_links') || '[]'); var _uSet2 = new Set(_curL2.map(function(x){return x.url;})); parsed.databases.OW.links.forEach(function(l){ if (l && l.name && l.url && !_uSet2.has(l.url)) { _curL2.push({name: l.name, url: l.url}); _uSet2.add(l.url); } }); localStorage.setItem('wiki_links', JSON.stringify(_curL2)); } catch(_eL2){} }
           }
         } else {
-          // Case 2: Legacy single-database export (Array of items or .edu.json package)
           var items = [];
-          if (Array.isArray(parsed)) {
-            items = parsed;
-          } else if (parsed && parsed.document) {
-            items = [parsed.document];
-          } else {
-            showBackupStatus('Unbekanntes oder ungültiges JSON-Format.', 'error');
+          if (Array.isArray(parsed)) items = parsed;
+          else if (parsed && parsed.document) items = [parsed.document];
+          else {
+            showBackupStatus('Unbekanntes oder ungültiges Dateiformat.', 'error');
+            return;
+          }
+
+          if (items.length === 0) {
+            showBackupStatus('❌ Import abgebrochen: Diese Datei enthält 0 Dokumente.', 'error');
             return;
           }
 
           var sample = items[0] || {};
           var isDK = (selDK && !selTB && !selOW) || ('doktyp' in sample || 'stuf' in sample || 'fach' in sample);
           var isOW = (selOW && !selTB && !selDK) || ('text' in sample && !('fileData' in sample) && 'title' in sample);
-          var isTB = (selTB && !selDK && !selOW) || (!isDK && !isOW);
 
           if (isDK && selDK) {
-            var dbDK2 = await openSecureIDB("DokumentationDB", "documents");
-            if (dbDK2 && dbDK2.objectStoreNames.contains("documents")) {
-              var txDK2 = dbDK2.transaction(["documents"], "readwrite");
-              var stDK2 = txDK2.objectStore("documents");
+            var dbDK3 = await openSecureIDB("DokumentationDB", "documents");
+            if (dbDK3 && dbDK3.objectStoreNames.contains("documents")) {
+              var txDK3 = dbDK3.transaction(["documents"], "readwrite");
+              var stDK3 = txDK3.objectStore("documents");
               items.forEach(function(doc) {
                 var safeDoc = window.OsirisSecurity ? window.OsirisSecurity.sanitizeDocRecord(doc) : doc;
-                if (safeDoc) { stDK2.put(safeDoc); importedCount++; importedDocsList.push(safeDoc); }
+                if (safeDoc) { stDK3.put(safeDoc); importedCount++; importedDocsList.push(safeDoc); }
               });
               await new Promise(function(res) {
-                txDK2.oncomplete = function() { try { dbDK2.close(); } catch(e) {} res(); };
-                txDK2.onerror = function() { try { dbDK2.close(); } catch(e) {} res(); };
+                txDK3.oncomplete = function() { try { dbDK3.close(); } catch(e){} res(); };
+                txDK3.onerror = function() { try { dbDK3.close(); } catch(e){} res(); };
               });
-            } else if (dbDK2) {
-              try { dbDK2.close(); } catch(e) {}
             }
-          } else if (isOW && selOW) {
-            var secOW2 = window.OsirisSecurity;
-            var curLocal2 = [];
-            try { curLocal2 = JSON.parse(localStorage.getItem('offline_wiki_db') || '[]'); } catch(e) {}
-            var mapOW2 = new Map();
-            curLocal2.forEach(function(i) { if (i && i.id) mapOW2.set(i.id, i); });
-            items.forEach(function(i) {
-              var safeEntry2 = secOW2 && secOW2.sanitizeWikiEntry ? secOW2.sanitizeWikiEntry(i) : i;
-              if (safeEntry2 && safeEntry2.id) { mapOW2.set(safeEntry2.id, safeEntry2); importedCount++; }
-            });
-            localStorage.setItem('offline_wiki_db', JSON.stringify(Array.from(mapOW2.values())));
           } else if (selTB) {
-            var dbTB2 = await openSecureIDB("TestBankDB", "documents");
-            if (dbTB2 && dbTB2.objectStoreNames.contains("documents")) {
-              var txTB2 = dbTB2.transaction(["documents"], "readwrite");
-              var stTB2 = txTB2.objectStore("documents");
+            var dbTB3 = await openSecureIDB("TestBankDB", "documents");
+            if (dbTB3 && dbTB3.objectStoreNames.contains("documents")) {
+              var txTB3 = dbTB3.transaction(["documents"], "readwrite");
+              var stTB3 = txTB3.objectStore("documents");
               items.forEach(function(doc) {
                 var safeDoc = window.OsirisSecurity ? window.OsirisSecurity.sanitizeDocRecord(doc) : doc;
-                if (safeDoc) { stTB2.put(safeDoc); importedCount++; importedDocsList.push(safeDoc); }
+                if (safeDoc) { stTB3.put(safeDoc); importedCount++; importedDocsList.push(safeDoc); }
               });
               await new Promise(function(res) {
-                txTB2.oncomplete = function() { try { dbTB2.close(); } catch(e) {} res(); };
-                txTB2.onerror = function() { try { dbTB2.close(); } catch(e) {} res(); };
+                txTB3.oncomplete = function() { try { dbTB3.close(); } catch(e){} res(); };
+                txTB3.onerror = function() { try { dbTB3.close(); } catch(e){} res(); };
               });
-            } else if (dbTB2) {
-              try { dbTB2.close(); } catch(e) {}
             }
           }
         }
 
-        if (isSwarmAutoShareEnabled() && window.EduHybridShare && typeof window.EduHybridShare.toggleShareDocToSwarm === 'function') {
-          try {
-            for (var k = 0; k < importedDocsList.length; k++) {
-              var itm = importedDocsList[k];
-              if (itm && itm.id) {
-                window.EduHybridShare.toggleShareDocToSwarm(itm.id, true, itm);
-              }
-            }
-          } catch(e) {}
-        }
         pushToFrame('RELOAD_DATA');
         await refreshBackupCounts();
         if (importedCount === 0) {
-          showBackupStatus('ℹ️ Wiederherstellung abgeschlossen: Die Datei enthält 0 Datensätze für die ausgewählten Kategorien. (Tipp: Nutzen Sie "Starter-Katalog einspielen")', 'warning');
+          showBackupStatus('❌ Import abgebrochen: Die Datei enthält keine realen Dokumente für die gewählten Kategorien.', 'error');
         } else {
-          showBackupStatus('✓ Wiederherstellung erfolgreich abgeschlossen: ' + importedCount + ' Einträge importiert.', 'success');
+          showBackupStatus('✓ Wiederherstellung erfolgreich abgeschlossen: ' + importedCount + ' Dokumente importiert.', 'success');
         }
       } catch (err) {
         showBackupStatus('Fehler beim Wiederherstellen: ' + err.message, 'error');
@@ -2602,7 +2651,9 @@ function loadPrefs() {
   }
 
   async function handleBackupReset() {
+
     var selTB = document.getElementById('chk-db-tb').checked;
+
     var selOW = document.getElementById('chk-db-ow').checked;
     var selDK = document.getElementById('chk-db-dk').checked;
 
@@ -2685,9 +2736,6 @@ function loadPrefs() {
   var btnExportEl = document.getElementById('btnBackupExport');
   if (btnExportEl) btnExportEl.addEventListener('click', handleBackupExport);
 
-  var btnSeedEl = document.getElementById('btnBackupSeed');
-  if (btnSeedEl) btnSeedEl.addEventListener('click', seedStarterCatalog);
-
   var btnImportEl = document.getElementById('btnBackupImport');
   var fileInputEl = document.getElementById('backupFileInput');
   if (btnImportEl && fileInputEl) {
@@ -2711,7 +2759,6 @@ function loadPrefs() {
     }
   });
 
-  
   // Initialize Swarm directly in Hub for instant cross-device discovery
   if (window.EduHybridShare) {
     EduHybridShare.init({
@@ -2774,8 +2821,6 @@ function loadPrefs() {
   switchTool(appState.tool);
 })();
 </script>
-
-
 
 </body>
 </html>

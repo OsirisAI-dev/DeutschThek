@@ -737,7 +737,7 @@
 
     async function fetchOfficialCatalog(force) {
         const now = Date.now();
-        if (!force && cachedOfficialCatalog && (now - lastOfficialCatalogFetchTime < 30000)) {
+        if (window.location.protocol === 'file:') { cachedOfficialCatalog = (window.OFFICIAL_CATALOG_DATA && Array.isArray(window.OFFICIAL_CATALOG_DATA.documents)) ? window.OFFICIAL_CATALOG_DATA : (cachedOfficialCatalog || { version: 1, documents: [] }); lastOfficialCatalogFetchTime = now; return cachedOfficialCatalog; } if (!force && cachedOfficialCatalog && (now - lastOfficialCatalogFetchTime < 30000)) {
             return cachedOfficialCatalog;
         }
 
@@ -776,7 +776,7 @@
             return 0;
         }
 
-        await refreshLocalCatalog();
+        if (isSwarmEnabled()) await refreshLocalCatalog();
         let newCount = 0;
 
         for (const doc of catalog.documents) {
@@ -795,7 +795,7 @@
             if (alreadyStaged) continue;
 
             let fileData = doc.fileData;
-            if (!fileData && doc.filePath) {
+            if (!fileData && doc.filePath && window.location.protocol !== 'file:') {
                 try {
                     const fileResp = await fetch(doc.filePath);
                     if (fileResp.ok) {
@@ -868,7 +868,7 @@
     }
 
     async function exportOfficialCatalogJson() {
-        await refreshLocalCatalog();
+        if (isSwarmEnabled()) await refreshLocalCatalog();
         const exportDocs = [];
         const dbs = ['DokumentationDB', 'TestBankDB'];
 
@@ -1026,7 +1026,7 @@
     }
 
     async function syncAllAvailableDocs() {
-        await refreshLocalCatalog();
+        if (isSwarmEnabled()) await refreshLocalCatalog();
 
         // 1. Sync official Git catalog first
         let officialCount = 0;
@@ -1355,7 +1355,7 @@
 
     async function refreshLocalDbHashes() {
         window.knownLocalHashes = window.knownLocalHashes || new Set();
-        window.knownLocalFileKeys = window.knownLocalFileKeys || new Set();
+        window.knownLocalFileKeys = window.knownLocalFileKeys || new Set(); if (window._localHashesLoaded && (Date.now() - (window._lastHashRefreshTime || 0) < 30000)) return; window._lastHashRefreshTime = Date.now(); window._localHashesLoaded = true; if (Array.isArray(window._docMetaCache) && window._docMetaCache.length > 0) { window._docMetaCache.forEach(d => { if (!d) return; if (d.fileHash) window.knownLocalHashes.add(String(d.fileHash).toLowerCase().trim()); if (d.fileName && d.fileSize) window.knownLocalFileKeys.add(String(d.fileName).toLowerCase().trim() + '_' + d.fileSize); if (d.id && d.fileName) window.knownLocalFileKeys.add(d.id + '_' + String(d.fileName).toLowerCase().trim()); }); return; }
         const dbsToScan = ['DokumentationDB', 'TestBankDB'];
 
         for (const dbName of dbsToScan) {
@@ -1421,7 +1421,7 @@
             return true;
         }
 
-        // 2. Authoritative IndexedDB scan across both databases
+        if (window._localHashesLoaded || Array.isArray(window._docMetaCache)) return false; // 2. Authoritative IndexedDB scan across both databases
         const dbsToScan = ['DokumentationDB', 'TestBankDB'];
         for (const dbName of dbsToScan) {
             const found = await new Promise(resolve => {
@@ -1658,7 +1658,7 @@
         return `${LOBBY_PREFIX}${cleanRoom}-${slotNum}`;
     }
 
-    async function initWebRtcSwarm() {
+    function isSwarmEnabled() { try { return localStorage.getItem('osiris_swarm_enabled') === 'true'; } catch (e) { return false; } } function setSwarmEnabled(val) { try { localStorage.setItem('osiris_swarm_enabled', val ? 'true' : 'false'); } catch (e) {} if (!val) { if (peerJsInstance) { try { peerJsInstance.destroy(); } catch (e) {} peerJsInstance = null; } webrtcConnections.forEach(c => { try { c.close(); } catch (e) {} }); webrtcConnections.clear(); webrtcStatus = 'offline'; } else { initWebRtcSwarm(); syncOfficialCatalog(true).catch(() => {}); } updateSwarmBadge(); renderSwarmModalContent(); } function toggleSwarmEnabled(forceState) { const next = typeof forceState === 'boolean' ? forceState : !isSwarmEnabled(); setSwarmEnabled(next); showSwarmToast(next ? 'Community-Schwarm aktiviert (Online)' : 'Community-Schwarm deaktiviert (Offline)', next ? 'success' : 'info'); return next; } async function initWebRtcSwarm() { if (!isSwarmEnabled()) { webrtcStatus = 'offline'; updateSwarmBadge(); return; }
         // If running inside a subframe (e.g. iframe under index.html), let the top/parent frame manage the WebRTC mesh
         if (window.parent && window.parent !== window && window.parent.EduHybridShare && window.parent.EduHybridShare !== window.EduHybridShare) {
             console.log('[Osiris Swarm] Subframe detected: delegating WebRTC mesh to parent hub window.');
@@ -1716,7 +1716,7 @@
         }
 
         const peer = new window.Peer(peerId, {
-            debug: 1,
+            debug: 0,
             config: {
                 iceServers: [
                     {
@@ -1760,7 +1760,7 @@
                 // This slot is taken by another teacher: try the next slot
                 attemptClaimLobbySlot((currentSlot || 1) + 1);
             } else {
-                console.warn('[Osiris Swarm] WebRTC Peer Error:', err.type, err.message);
+                if (err && err.type === 'peer-unavailable') return; console.warn('[Osiris Swarm] WebRTC Peer Error:', err.type, err.message);
                 if (!peerJsInstance && isLobbySlot) {
                     attemptClaimLobbySlot((currentSlot || 1) + 1);
                 }
@@ -1781,7 +1781,7 @@
         if (!peerJsInstance || !myWebrtcId) return;
 
         // Try connecting to all other lobby slots 1..8
-        for (let i = 1; i <= LOBBY_SLOT_COUNT; i++) {
+        if (!isSwarmEnabled()) return; const maxDialSlot = (currentLobbySlot && currentLobbySlot > 1) ? (currentLobbySlot - 1) : 0; for (let i = 1; i <= maxDialSlot; i++) {
             const targetId = getLobbySlotId(activeSwarmRoom, i);
             if (targetId !== myWebrtcId && !webrtcConnections.has(targetId)) {
                 connectToWebRtcPeer(targetId);
@@ -1857,7 +1857,7 @@
             renderSwarmModalContent();
         });
 
-        conn.on('error', () => {
+        conn.on('error', () => { try { conn.close(); } catch (e) {}
             webrtcConnections.delete(conn.peer);
         });
     }
@@ -2013,32 +2013,32 @@
 
     async function initSwarm(config) {
         if (config) Object.assign(currentConfig, config);
-        await refreshLocalCatalog();
+        if (isSwarmEnabled()) await refreshLocalCatalog();
 
         // 1. Init BroadcastChannel (local tabs)
         if ('BroadcastChannel' in window) {
             try {
                 broadcastChannel = new BroadcastChannel(SWARM_CHANNEL_NAME);
                 broadcastChannel.onmessage = handleSwarmMessage;
-                broadcastPresence();
+                if (isSwarmEnabled()) broadcastPresence();
             } catch (err) {
                 console.warn('BroadcastChannel init error:', err);
             }
         }
 
-        // 2. Init WebRTC PeerJS Mesh (Global cross-device mesh)
+        if (!isSwarmEnabled()) { webrtcStatus = 'offline'; updateSwarmBadge(); return; } // 2. Init WebRTC PeerJS Mesh (Global cross-device mesh)
         initWebRtcSwarm();
 
         // 3. Initial & periodic sync of official Git catalog (fresh updates on startup)
         syncOfficialCatalog(true).catch(e => console.warn('[Osiris Hybrid] Initial catalog sync error:', e));
 
         setInterval(() => {
-            syncOfficialCatalog(true).catch(e => {});
+            if (isSwarmEnabled()) syncOfficialCatalog(true).catch(e => {});
         }, 60000);
 
         // Periodic presence broadcast & mesh reconnection every 15s
         setInterval(() => {
-            broadcastPresence();
+            if (!isSwarmEnabled()) return; broadcastPresence();
             connectToLobbyMesh();
             pruneStalePeers();
         }, 15000);
@@ -2724,7 +2724,7 @@
             localCatalog = localCatalog.filter(d => Number(d.id) !== cleanId);
         }
 
-        await refreshLocalCatalog();
+        if (isSwarmEnabled()) await refreshLocalCatalog();
         broadcastPresence();
         updateSwarmBadge();
         renderSwarmModalContent();
@@ -2745,7 +2745,7 @@
     // =========================================================================
 
     function applyBadgeDom(stagedCount, newFilesCount, activePeers, totalShared) {
-        document.querySelectorAll('#swarm-status-badge, #headerSwarmBadge').forEach(badge => {
+        const _tBtn = document.getElementById('swarm-power-toggle-btn'); if (_tBtn) { const _on = isSwarmEnabled(); _tBtn.style.background = _on ? '#16a34a' : '#64748b'; _tBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg><span>' + (_on ? 'Schwarm: EIN' : 'Schwarm: AUS') + '</span>'; } document.querySelectorAll('#swarm-status-badge, #headerSwarmBadge').forEach(badge => { if (!isSwarmEnabled() && stagedCount === 0) { badge.className = 'swarm-pill'; badge.style.background = '#475569'; badge.textContent = 'Schwarm: Aus'; badge.title = 'P2P-Schwarm ist standardmäßig deaktiviert (Klicken zum Öffnen & Aktivieren)'; return; }
             if (stagedCount > 0) {
                 badge.className = 'swarm-pill is-active has-inbox';
                 badge.style.background = '#16a34a';
@@ -2795,7 +2795,7 @@
         // 2. Query remote files asynchronously
         let newFilesCount = 0;
         try {
-            const newFiles = await getNewRemoteFiles();
+            if (!isSwarmEnabled()) return; const newFiles = await getNewRemoteFiles();
             newFilesCount = newFiles.length;
         } catch (e) {}
 
@@ -3038,7 +3038,7 @@
                             <div id="swarm-ui-sub" style="font-size:0.75rem; color:${isDark ? '#94a3b8' : '#64748b'}; margin-top:2px;">${i18n.sub}</div>
                         </div>
                     </div>
-                    <button id="swarm-close-x" aria-label="Schließen" style="background:transparent; border:none; cursor:pointer; color:${isDark ? '#94a3b8' : '#64748b'}; padding:6px; display:flex; align-items:center; justify-content:center; border-radius:6px;">
+                    <button id="swarm-power-toggle-btn" type="button" onclick="window.EduHybridShare && window.EduHybridShare.toggleSwarmEnabled()" style="margin-left:auto; margin-right:10px; display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:999px; border:1px solid rgba(255,255,255,0.2); font-size:0.78rem; font-weight:700; cursor:pointer; background:${isSwarmEnabled() ? '#16a34a' : '#64748b'}; color:#fff;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg><span>${isSwarmEnabled() ? 'Schwarm: EIN' : 'Schwarm: AUS'}</span></button><button id="swarm-close-x" aria-label="Schließen" style="background:transparent; border:none; cursor:pointer; color:${isDark ? '#94a3b8' : '#64748b'}; padding:6px; display:flex; align-items:center; justify-content:center; border-radius:6px;">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                     </button>
                 </div>
@@ -3708,7 +3708,7 @@
         handleSwarmMessage: handleSwarmMessage,
         isAutoShareImportEnabled: isAutoShareImportEnabled,
         setAutoShareImport: setAutoShareImport,
-        init: initSwarm,
+        isSwarmEnabled: isSwarmEnabled, setSwarmEnabled: setSwarmEnabled, toggleSwarmEnabled: toggleSwarmEnabled, init: initSwarm,
         shareSocial: shareSocial,
         openSwarmModal: openSwarmModal,
         closeSwarmModal: closeSwarmModal,
