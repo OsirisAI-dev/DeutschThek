@@ -17,7 +17,7 @@
 
 <script src="lib/jszip/jszip.min.js"></script>
 <script src="data/official-catalog.js"></script>
-<script src="js/core/community-swarm.js?v=3.5"></script>
+<script src="js/core/community-swarm.js?v=3.6"></script>
 
 <script>
   (function () {
@@ -2805,7 +2805,7 @@ function loadPrefs() {
   // Service Worker Registration for 100% PWA Offline Capability
   if ('serviceWorker' in navigator && (window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
     window.addEventListener('load', function () {
-      navigator.serviceWorker.register('./sw.js?v=3.5', { scope: './' })
+      navigator.serviceWorker.register('./sw.js?v=3.6', { scope: './' })
         .then(function (reg) {
           console.log('[PWA] Service Worker registered with scope:', reg.scope);
         })
