@@ -2408,9 +2408,11 @@ function loadPrefs() {
     }
 
     // ---------------------------------------------------------------
-    // CASE A: Full-Sized ZIP Bundle (.dtk.zip / .zip)
+    // CASE A: Full-Sized ZIP Bundle (.dtk.zip / .zip / .dtk)
     // ---------------------------------------------------------------
-    if (file.name.endsWith('.zip') || file.name.endsWith('.dtk.zip') || file.type.includes('zip')) {
+    var isZipName = file.name && (file.name.toLowerCase().endsWith('.zip') || file.name.toLowerCase().endsWith('.dtk.zip') || file.name.toLowerCase().endsWith('.dtk'));
+    var isZipType = file.type && file.type.includes('zip');
+    if (isZipName || isZipType) {
       showBackupStatus('📦 Lese und entpacke vollständiges ZIP-Bundle: ' + file.name + '...', 'info');
       try {
         if (typeof JSZip === 'undefined') {
@@ -2495,7 +2497,15 @@ function loadPrefs() {
         }
 
         window._justImportedBackup = true;
-        pushToFrame('RELOAD_DATA');
+        if (tbList.length > 0 && dkList.length === 0 && owEntries.length === 0 && appState.tool !== 'bank') {
+          switchTool('bank');
+        } else if (dkList.length > 0 && tbList.length === 0 && owEntries.length === 0 && appState.tool !== 'docs') {
+          switchTool('docs');
+        } else if (owEntries.length > 0 && tbList.length === 0 && dkList.length === 0 && appState.tool !== 'wiki') {
+          switchTool('wiki');
+        } else {
+          pushToFrame('RELOAD_DATA');
+        }
         await refreshBackupCounts();
         showBackupStatus('✓ Vollständige Wiederherstellung abgeschlossen: ' + importedCount + ' Dokumente & reale Dateien erfolgreich importiert!', 'success');
         return;
@@ -2645,7 +2655,15 @@ function loadPrefs() {
         }
 
         window._justImportedBackup = true;
-        pushToFrame('RELOAD_DATA');
+        if (selTB && !selDK && !selOW && appState.tool !== 'bank') {
+          switchTool('bank');
+        } else if (selDK && !selTB && !selOW && appState.tool !== 'docs') {
+          switchTool('docs');
+        } else if (selOW && !selTB && !selDK && appState.tool !== 'wiki') {
+          switchTool('wiki');
+        } else {
+          pushToFrame('RELOAD_DATA');
+        }
         await refreshBackupCounts();
         if (importedCount === 0) {
           window._justImportedBackup = false;
