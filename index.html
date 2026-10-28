@@ -1870,12 +1870,21 @@ function loadPrefs() {
   function closeBackupModal() {
     var m = document.getElementById('backup-modal');
     if (m) m.style.display = 'none';
-    if (window._justImportedBackup) {
+    if (window._justImportedBackup || window._justResetBackup) {
       window._justImportedBackup = false;
-      pushToFrame('RELOAD_DATA', { forceRefresh: true });
+      window._justResetBackup = false;
+      pushToFrame('RELOAD_DATA', { forceRefresh: true, reset: true });
       var frame = document.getElementById('tool-frame');
-      if (frame && frame.contentWindow) {
-        try { frame.contentWindow.location.reload(); } catch(e){}
+      if (frame) {
+        try {
+          if (frame.contentWindow) {
+            frame.contentWindow.location.reload();
+          } else {
+            frame.src = frame.src;
+          }
+        } catch(e){
+          try { frame.src = frame.src; } catch(_e) {}
+        }
       }
     }
   }
@@ -2238,7 +2247,7 @@ function loadPrefs() {
 
       // REQUIREMENT: If 0 real files exist, DO NOT export empty headers!
       if (totalRealFiles === 0) {
-        showBackupStatus('❌ Export abgebrochen: Keine realen Dokumente oder Dateien in den ausgewählten Datenbanken vorhanden. Leere Header-Dateien werden nicht exportiert. Bitte laden Sie zuerst Unterrichtsmaterialien hoch.', 'error');
+        showBackupStatus('❌ Export abgebrochen: Keine realen Dokumente oder Dateien in den ausgewählten Datenbanken vorhanden (Datenbank ist leer). Leere Header-Dateien werden nicht exportiert. Bitte laden Sie zuerst Unterrichtsmaterialien hoch oder importieren Sie eine Sicherung.', 'error');
         return;
       }
 
@@ -2780,9 +2789,22 @@ function loadPrefs() {
         } catch(e) {}
       }
 
-      pushToFrame('RELOAD_DATA', { reset: true });
+      window._justResetBackup = true;
+      pushToFrame('RELOAD_DATA', { reset: true, forceRefresh: true });
+      var frameElReset = document.getElementById('tool-frame');
+      if (frameElReset) {
+        try {
+          if (frameElReset.contentWindow) {
+            frameElReset.contentWindow.location.reload();
+          } else {
+            frameElReset.src = frameElReset.src;
+          }
+        } catch(err) {
+          try { frameElReset.src = frameElReset.src; } catch(_e) {}
+        }
+      }
       await refreshBackupCounts();
-      showBackupStatus('✓ Ausgewählte Datenbanken (' + names.join(', ') + ') wurden erfolgreich geleert.', 'success');
+      showBackupStatus('✓ Ausgewählte Datenbanken (' + names.join(', ') + ') wurden erfolgreich geleert. Die Ansicht wurde zurückgesetzt.', 'success');
     } catch (err) {
       showBackupStatus('Fehler beim Zurücksetzen: ' + err.message, 'error');
     }

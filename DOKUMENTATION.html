@@ -967,6 +967,10 @@
                 try { idb.close(); } catch(e) {}
                 idb = null;
             }
+            if (msg.payload && msg.payload.reset) {
+                const container = document.getElementById('results-container');
+                if (container) container.innerHTML = '<div style="padding:20px; color:gray;">Keine Dokumente gefunden.</div>';
+            }
             if (typeof renderResults === 'function') renderResults();
             if (typeof seedDoktypDictionary === 'function') seedDoktypDictionary();
             if (typeof seedDictionaryFromDB === 'function') seedDictionaryFromDB();
@@ -3062,6 +3066,8 @@ function saveEntry() {
                 attachDbLifecycle(idb);
                 renderResults();
             };
+            req.onerror = () => { setTimeout(renderResults, 200); };
+            req.onblocked = () => { setTimeout(renderResults, 200); };
             return;
         }
 
@@ -3086,6 +3092,8 @@ function saveEntry() {
                 attachDbLifecycle(idb);
                 renderResults();
             };
+            req.onerror = () => { setTimeout(renderResults, 200); };
+            req.onblocked = () => { setTimeout(renderResults, 200); };
             return;
         }
         const store = tx.objectStore("documents");

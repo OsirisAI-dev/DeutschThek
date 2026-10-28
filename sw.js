@@ -4,7 +4,7 @@
  * Architecture: Stale-While-Revalidate with Instant Local Offline Fallback
  */
 
-const CACHE_NAME = 'deutschthek-pwa-v3.7';
+const CACHE_NAME = 'deutschthek-pwa-v3.8';
 
 // Core shell assets required for 100% offline startup
 const PRECACHE_ASSETS = [
