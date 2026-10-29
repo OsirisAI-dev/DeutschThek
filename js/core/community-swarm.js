@@ -486,9 +486,9 @@
         const cleanThema = clampString(raw.thema || raw.title || 'Unbenannt', MAX_META_STRING_LEN);
         const cleanLektion = clampString(raw.lektion || '—', MAX_META_STRING_LEN);
         const cleanBuch = clampString(raw.buch || '—', MAX_META_STRING_LEN);
-        const cleanKlassen = clampString(raw.klassen || 'Alle', 80);
+        const cleanKlassen = clampString(raw.klassen || raw.klasse || 'Alle', 80);
         const cleanJahr = clampString(raw.jahr || '2026', 20);
-        const cleanTyp = clampString(raw.typ || currentConfig.docTypeLabel, 80);
+        const cleanTyp = clampString(raw.typ || raw.doktyp || currentConfig.docTypeLabel, 80);
         const cleanSubTyp = Array.isArray(raw.subTyp)
             ? raw.subTyp.slice(0, 10).map(s => clampString(s, 80))
             : [];
@@ -496,8 +496,18 @@
         const cleanFileType = clampString(raw.fileType || 'application/pdf', 100);
         const cleanDataUrl = sanitizeDataUrl(raw.fileData);
 
-        return {
-            id: Number(raw.id) || Date.now(),
+        let cleanId;
+        if (typeof raw.id === 'number' && !isNaN(raw.id) && raw.id > 0) {
+            cleanId = raw.id;
+        } else if (typeof raw.id === 'string' && raw.id.trim().length > 0) {
+            const num = Number(raw.id);
+            cleanId = (!isNaN(num) && num > 0) ? num : raw.id.trim();
+        } else {
+            cleanId = Date.now() + Math.floor(Math.random() * 1000000);
+        }
+
+        return Object.assign({}, raw, {
+            id: cleanId,
             thema: cleanThema,
             lektion: cleanLektion,
             buch: cleanBuch,
@@ -505,33 +515,45 @@
             jahr: cleanJahr,
             typ: cleanTyp,
             subTyp: cleanSubTyp,
+            doktyp: raw.doktyp || cleanTyp,
             fileName: cleanFileName,
             fileType: cleanFileType,
             fileSize: Math.min(Math.max(0, Number(raw.fileSize) || 0), MAX_FILE_BYTES),
             fileHash: clampString(raw.fileHash || '', 64).replace(/[^a-f0-9]/gi, '').toLowerCase(),
-            fileData: cleanDataUrl,
+            fileData: cleanDataUrl || raw.fileData || '',
             date: clampString(raw.date || new Date().toLocaleDateString(), 40),
-            sourceDb: clampString(raw.sourceDb || '', 60)
-        };
+            sourceDb: clampString(raw.sourceDb || '', 60),
+            text: typeof raw.text === 'string' ? raw.text : (raw.content || ''),
+            questions: Array.isArray(raw.questions) ? raw.questions : []
+        });
     }
 
     function sanitizeWikiEntry(raw) {
         if (!raw || typeof raw !== 'object') return null;
-        return {
-            id: Number(raw.id) || Date.now(),
+        let cleanId;
+        if (typeof raw.id === 'number' && !isNaN(raw.id) && raw.id > 0) {
+            cleanId = raw.id;
+        } else if (typeof raw.id === 'string' && raw.id.trim().length > 0) {
+            const num = Number(raw.id);
+            cleanId = (!isNaN(num) && num > 0) ? num : raw.id.trim();
+        } else {
+            cleanId = Date.now() + Math.floor(Math.random() * 1000000);
+        }
+        return Object.assign({}, raw, {
+            id: cleanId,
             title: clampString(raw.title || 'Ohne Titel', 120),
             category: clampString(raw.category || 'Allgemein', 80),
             tags: clampString(raw.tags || '', 160),
             text: clampString(raw.text || '', 50000),
             date: clampString(raw.date || new Date().toISOString().slice(0,10), 40),
             files: Array.isArray(raw.files) ? raw.files.slice(0, 10).map(f => ({
-                id: Number(f.id) || Date.now(),
+                id: (typeof f.id === 'number' && !isNaN(f.id) && f.id > 0) ? f.id : (typeof f.id === 'string' && f.id ? f.id : (Date.now() + Math.floor(Math.random() * 1000))),
                 name: sanitizeFileName(f.name),
                 type: clampString(f.type || '', 80),
                 size: Math.min(Math.max(0, Number(f.size) || 0), MAX_FILE_BYTES),
                 data: sanitizeDataUrl(f.data)
             })).filter(f => f.data) : []
-        };
+        });
     }
 
     function sanitizeLinkEntry(raw) {
@@ -1562,6 +1584,7 @@
                     req.onsuccess = (e) => {
                         const db = e.target.result;
                         if (!db.objectStoreNames.contains('documents')) {
+                            try { db.close(); } catch(err) {}
                             resolve([]);
                             return;
                         }
@@ -1570,6 +1593,7 @@
                         const allReq = store.getAll();
                         allReq.onsuccess = async (ev) => {
                             const allDocs = ev.target.result || [];
+                            try { db.close(); } catch(err) {}
                             const filtered = allDocs.filter(d => sharedIds.includes(Number(d.id)));
 
                             const cleanDocs = await Promise.all(filtered.slice(0, MAX_CATALOG_ITEMS_PER_PEER).map(async d => {
@@ -1600,7 +1624,7 @@
                             }));
                             resolve(cleanDocs);
                         };
-                        allReq.onerror = () => resolve([]);
+                        allReq.onerror = () => { try { db.close(); } catch(err) {} resolve([]); };
                     };
                     req.onerror = () => resolve([]);
                 } catch (e) {

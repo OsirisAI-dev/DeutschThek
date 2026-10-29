@@ -70,10 +70,17 @@
       // pushes those directly to the embedded iframe on every toggle).
       (function () {
         try {
+          var hash = window.location.hash || '';
+          var hashFont = '';
+          if (hash.includes('font=')) {
+            var m = hash.match(/[#&]font=([^&]+)/);
+            if (m) hashFont = decodeURIComponent(m[1]);
+          }
           var p = JSON.parse(localStorage.getItem('osiris_hub_prefs') || '{}');
           var theme = p.theme || localStorage.getItem('wiki_theme') || 'light';
           document.documentElement.setAttribute('data-theme', theme);
-          if (p.font) document.documentElement.style.setProperty('--bank-font-family', p.font);
+          var fontToApply = hashFont || p.font;
+          if (fontToApply) document.documentElement.style.setProperty('--bank-font-family', fontToApply);
           window.__bankLang = 'DE';
         } catch (e) { window.__bankLang = 'DE'; }
       })();
@@ -176,8 +183,8 @@
         }
 
         .title-group { display: flex; flex-direction: column; }
-        .app-title-main { font-family: var(--bank-font-family, 'Brush Script MT', cursive); font-size: 1.15em; line-height: 1; margin: 0; color: var(--primary); transition: color 0.3s ease, font-size 0.2s ease; }
-        .app-title-sub { font-family: var(--bank-font-family, 'Brush Script MT', cursive); font-size: 0.62em; margin: -1px 0 0 22px; color: var(--text); opacity: 0.7; font-style: italic; }
+        .app-title-main { font-family: var(--bank-font-family, inherit); font-size: 1.15em; line-height: 1; margin: 0; color: var(--primary); transition: color 0.3s ease, font-size 0.2s ease; }
+        .app-title-sub { font-family: var(--bank-font-family, inherit); font-size: 0.62em; margin: -1px 0 0 22px; color: var(--text); opacity: 0.7; font-style: italic; }
 
         .toolbar { display: flex; align-items: center; gap: 8px; position: relative; }
         .toolbar button {
@@ -970,10 +977,13 @@
             if (msg.payload && msg.payload.reset) {
                 const container = document.getElementById('results-container');
                 if (container) container.innerHTML = '<div style="padding:20px; color:gray;">Keine Dokumente gefunden.</div>';
+                window._docMetaCache = [];
             }
-            if (typeof renderResults === 'function') renderResults();
-            if (typeof seedDoktypDictionary === 'function') seedDoktypDictionary();
-            if (typeof seedDictionaryFromDB === 'function') seedDictionaryFromDB();
+            setTimeout(function() {
+                if (typeof renderResults === 'function') renderResults();
+                if (typeof seedDoktypDictionary === 'function') seedDoktypDictionary();
+                if (typeof seedDictionaryFromDB === 'function') seedDictionaryFromDB();
+            }, 60);
         }
     });
 
@@ -3145,15 +3155,22 @@ function saveEntry() {
             container.innerHTML = '';
 
             const filtered = db.filter(item => {
+                if (!item) return false;
                 if (filterOnlyUpdates && !isDocAnUpdate(item)) return false;
-                const searchTxt = `${item.thema} ${item.lektion} ${item.buch} ${item.fileName}`.toLowerCase();
+                const themaStr = String(item.thema || '').toLowerCase();
+                const lektionStr = String(item.lektion || '').toLowerCase();
+                const buchStr = String(item.buch || '').toLowerCase();
+                const klassenStr = String(item.klassen || item.klasse || '').toLowerCase();
+                const fileStr = String(item.fileName || '').toLowerCase();
+                const typStr = String(item.typ || item.doktyp || '');
+                const searchTxt = `${themaStr} ${lektionStr} ${buchStr} ${fileStr} ${typStr}`;
                 if (q && !searchTxt.includes(q)) return false;
-                if (fBuch && item.buch !== fBuch) return false;
-                if (fJahr && !String(item.jahr).includes(fJahr)) return false;
-                if (fKlass && !item.klassen.toLowerCase().includes(fKlass)) return false;
-                if (fThema && !(item.thema.toLowerCase().includes(fThema) || fThema.includes(item.thema.toLowerCase()))) return false;
-                if (fLektion && !(item.lektion.toLowerCase().includes(fLektion) || fLektion.includes(item.lektion.toLowerCase()))) return false;
-                if (fTyp && item.typ !== fTyp) return false;
+                if (fBuch && String(item.buch || '').trim() !== fBuch) return false;
+                if (fJahr && !String(item.jahr || '').includes(fJahr)) return false;
+                if (fKlass && !klassenStr.includes(fKlass)) return false;
+                if (fThema && !(themaStr.includes(fThema) || fThema.includes(themaStr))) return false;
+                if (fLektion && !(lektionStr.includes(fLektion) || fLektion.includes(lektionStr))) return false;
+                if (fTyp && typStr !== fTyp) return false;
                 return true;
             });
 
@@ -3166,16 +3183,17 @@ function saveEntry() {
                 const card = document.createElement('div');
                 card.className = 'result-card';
                 
-                const safeId = Number(item.id) || 0;
-                const deleteBtnHtml = deleteMode ? `<button onclick="deleteEntry(${safeId}); event.stopPropagation();" style="background:#dc3545; color:white; border:none; padding:6px 12px; border-radius:5px; cursor:pointer; font-size:0.8rem; font-weight:bold;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle; margin-right:3px;"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>LÖSCHEN</button>` : '';
-                const editBtnHtml = editMode ? `<button onclick="editEntry(${safeId}); event.stopPropagation();" style="background:var(--accent); color:white; border:none; padding:6px 12px; border-radius:5px; cursor:pointer; font-size:0.8rem; font-weight:bold; margin-right:6px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle; margin-right:3px;"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>BEARBEITEN</button>` : '';
+                const safeId = (typeof item.id === 'number' && !isNaN(item.id)) ? item.id : JSON.stringify(String(item.id || ''));
+                const safeIdAttr = escapeHtml(String(safeId));
+                const deleteBtnHtml = deleteMode ? `<button onclick="deleteEntry(${safeIdAttr}); event.stopPropagation();" style="background:#dc3545; color:white; border:none; padding:6px 12px; border-radius:5px; cursor:pointer; font-size:0.8rem; font-weight:bold;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle; margin-right:3px;"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>LÖSCHEN</button>` : '';
+                const editBtnHtml = editMode ? `<button onclick="editEntry(${safeIdAttr}); event.stopPropagation();" style="background:var(--accent); color:white; border:none; padding:6px 12px; border-radius:5px; cursor:pointer; font-size:0.8rem; font-weight:bold; margin-right:6px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle; margin-right:3px;"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>BEARBEITEN</button>` : '';
                 const shortSha = item.fileHash ? `<span title="SHA-256 Integritäts-Hash" style="font-family:monospace; font-size:0.72rem; color:#28a745; margin-left:4px;">#${escapeHtml(String(item.fileHash).substring(0, 6).toUpperCase())}</span>` : '';
 
                 const isUpdate = isDocAnUpdate(item);
                 if (isUpdate) {
                     card.style.borderLeft = '4px solid #16a34a';
                 }
-                const updatePill = isUpdate ? `<span class="pill" style="background:#16a34a; color:white; font-weight:bold; box-shadow:0 0 6px rgba(22,163,74,0.35); display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:12px; font-size:0.75rem;" title="Über P2P-Schwarm aktualisiert"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg> UPDATE</span>` : '';
+                const updatePill = isUpdate ? `<span class="pill" style="background:#16a34a; color:white; font-weight:bold; box-shadow:0 0 6px rgba(22,163,74,0.35); display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:12px; font-size:0.75rem;" title="Über P2P-Schwarm aktualisiert"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M21 21v-5h-5"/></svg> UPDATE</span>` : '';
 
                 card.innerHTML = `
                     <div style="display:flex; justify-content:space-between; align-items:flex-start;">

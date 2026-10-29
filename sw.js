@@ -4,7 +4,7 @@
  * Architecture: Stale-While-Revalidate with Instant Local Offline Fallback
  */
 
-const CACHE_NAME = 'deutschthek-pwa-v3.8';
+const CACHE_NAME = 'deutschthek-pwa-v4.0';
 
 // Core shell assets required for 100% offline startup
 const PRECACHE_ASSETS = [
@@ -16,7 +16,7 @@ const PRECACHE_ASSETS = [
   './manifest.json',
   './data/official-catalog.js',
   './data/official-catalog.json',
-  './js/core/community-swarm.js?v=3.6',
+  './js/core/community-swarm.js?v=4.0',
   './js/apps/wiki-app.js',
   './assets/library-bg.webp',
   './assets/wiki-globe.webp',

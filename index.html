@@ -9,7 +9,14 @@
 <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
 <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
 <link rel="apple-touch-icon" href="assets/icon-192.png">
-<link rel="manifest" href="manifest.json">
+<script>
+  if (window.location.protocol.startsWith('http')) {
+    var mLink = document.createElement('link');
+    mLink.rel = 'manifest';
+    mLink.href = 'manifest.json';
+    document.head.appendChild(mLink);
+  }
+</script>
 <meta name="theme-color" content="#007aff">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -17,7 +24,7 @@
 
 <script src="lib/jszip/jszip.min.js"></script>
 <script src="data/official-catalog.js"></script>
-<script src="js/core/community-swarm.js?v=3.6"></script>
+<script src="js/core/community-swarm.js?v=4.0"></script>
 
 <script>
   (function () {
@@ -854,6 +861,17 @@
 </head>
 <body>
 
+<div id="file-protocol-warning" style="display:none; background:#fff3cd; color:#856404; padding:12px 20px; font-size:0.9rem; font-weight:600; text-align:center; border-bottom:2px solid #ffeeba; z-index:99999; position:relative;">
+  ⚠️ <strong>Wichtiger Hinweis (Protokoll file://):</strong> Sie haben DeutschThek direkt als lokale Datei geöffnet. Der Firefox-Sicherheitsstandard isoliert Dateien unter file:// voneinander, wodurch die Datenbanken der Unterseiten blockiert werden.
+  <br>👉 Bitte öffnen Sie DeutschThek über den lokalen Deskware-Server: <a href="http://127.0.0.1:5500/" style="color:#0056b3; text-decoration:underline; font-weight:bold; margin-left:6px;">http://127.0.0.1:5500 öffnen ➔</a>
+</div>
+<script>
+  if (window.location.protocol === 'file:') {
+    var warnEl = document.getElementById('file-protocol-warning');
+    if (warnEl) warnEl.style.display = 'block';
+  }
+</script>
+
 <div id="header-container">
   <header id="headerBar">
     <div class="brand-group">
@@ -923,10 +941,10 @@
 
       <!-- Centralized Backup & Restore Button (Icon-only with hovering tooltip hint) -->
       <button class="hub-btn icon-btn" id="backupBtn" title="Zentrale Datensicherung (ALLE · TB · OW · DK)" aria-label="Datensicherung">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
-          <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
-          <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect width="20" height="5" x="2" y="3" rx="1"></rect>
+          <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"></path>
+          <path d="M10 12h4"></path>
         </svg>
       </button>
 
@@ -1122,9 +1140,9 @@
     <div class="hub-modal-header">
       <div style="display:flex; align-items:center; gap:10px;">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--hub-accent); flex-shrink:0;">
-          <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
-          <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
-          <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+          <rect width="20" height="5" x="2" y="3" rx="1"></rect>
+          <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"></path>
+          <path d="M10 12h4"></path>
         </svg>
         <div>
           <h3 class="hub-modal-title">DEUTSCHTHEK · Zentrale Datensicherung</h3>
@@ -1206,10 +1224,11 @@
       <div class="backup-actions-grid">
         <!-- 1. Export Button -->
         <button class="backup-action-btn export-action" id="btnBackupExport">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#28a745; flex-shrink:0;">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="7 10 12 15 17 10"></polyline>
-            <line x1="12" y1="15" x2="12" y2="3"></line>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#28a745; flex-shrink:0;">
+            <rect width="20" height="5" x="2" y="3" rx="1"></rect>
+            <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"></path>
+            <path d="M12 11v6"></path>
+            <path d="m9 14 3 3 3-3"></path>
           </svg>
           <div class="btn-text-col">
             <strong>Vollständiges Backup exportieren</strong>
@@ -1219,10 +1238,11 @@
 
         <!-- 2. Import Button -->
         <button class="backup-action-btn import-action" id="btnBackupImport">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--hub-accent); flex-shrink:0;">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="17 8 12 3 7 8"></polyline>
-            <line x1="12" y1="3" x2="12" y2="15"></line>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--hub-accent); flex-shrink:0;">
+            <rect width="20" height="5" x="2" y="3" rx="1"></rect>
+            <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"></path>
+            <path d="M12 17v-6"></path>
+            <path d="m9 14 3-3 3 3"></path>
           </svg>
           <div class="btn-text-col">
             <strong>Wiederherstellen / Importieren (.dtk.zip / .db / .json)</strong>
@@ -1486,7 +1506,7 @@ function loadPrefs() {
     var frame = document.getElementById('tool-frame');
     if (frame) {
       var curTheme = appState.theme || document.documentElement.getAttribute('data-theme') || 'light';
-      frame.src = TOOLS[key].file + '#theme=' + curTheme;
+      frame.src = TOOLS[key].file + '#theme=' + curTheme + '&font=' + encodeURIComponent(appState.font || '');
     }
     savePrefs();
   }
@@ -1870,22 +1890,11 @@ function loadPrefs() {
   function closeBackupModal() {
     var m = document.getElementById('backup-modal');
     if (m) m.style.display = 'none';
-    if (window._justImportedBackup || window._justResetBackup) {
-      window._justImportedBackup = false;
+    var wasReset = !!window._justResetBackup;
+    var wasImport = !!window._justImportedBackup;
+    if (wasImport || wasReset) {
       window._justResetBackup = false;
-      pushToFrame('RELOAD_DATA', { forceRefresh: true, reset: true });
-      var frame = document.getElementById('tool-frame');
-      if (frame) {
-        try {
-          if (frame.contentWindow) {
-            frame.contentWindow.location.reload();
-          } else {
-            frame.src = frame.src;
-          }
-        } catch(e){
-          try { frame.src = frame.src; } catch(_e) {}
-        }
-      }
+      pushToFrame('RELOAD_DATA', { forceRefresh: true, reset: wasReset, imported: wasImport });
     }
   }
 
@@ -1906,6 +1915,49 @@ function loadPrefs() {
     setTimeout(function() {
       if (el) el.style.display = 'none';
     }, 5000);
+  }
+
+  async function ensureHubDatabasesReady() {
+    var targets = [
+      { name: "TestBankDB", store: "documents" },
+      { name: "DokumentationDB", store: "documents" },
+      { name: "OfflineWikiIDB", store: "entries" }
+    ];
+    for (var i = 0; i < targets.length; i++) {
+      var item = targets[i];
+      await new Promise(function(resolve) {
+        var req = indexedDB.open(item.name);
+        req.onupgradeneeded = function(e) {
+          var db = e.target.result;
+          if (!db.objectStoreNames.contains(item.store)) {
+            db.createObjectStore(item.store, { keyPath: "id" });
+          }
+        };
+        req.onsuccess = function(e) {
+          var db = e.target.result;
+          if (!db.objectStoreNames.contains(item.store)) {
+            var nextVer = (db.version || 1) + 1;
+            try { db.close(); } catch(err) {}
+            var upReq = indexedDB.open(item.name, nextVer);
+            upReq.onupgradeneeded = function(ev) {
+              var uDb = ev.target.result;
+              if (!uDb.objectStoreNames.contains(item.store)) {
+                uDb.createObjectStore(item.store, { keyPath: "id" });
+              }
+            };
+            upReq.onsuccess = function(ev) {
+              try { ev.target.result.close(); } catch(err) {}
+              resolve();
+            };
+            upReq.onerror = function() { resolve(); };
+          } else {
+            try { db.close(); } catch(err) {}
+            resolve();
+          }
+        };
+        req.onerror = function() { resolve(); };
+      });
+    }
   }
 
   function openSecureIDB(dbName, storeName) {
@@ -1994,81 +2046,63 @@ function loadPrefs() {
   }
 
   async function fetchTBRecords() {
-    var db = null;
-    try {
-      db = await openSecureIDB("TestBankDB", "documents");
-      if (!db || !db.objectStoreNames.contains("documents")) {
-        if (db) { try { db.close(); } catch(e) {} }
-        return [];
-      }
-      return await new Promise(function(resolve) {
-        try {
+    return new Promise(function(resolve) {
+      try {
+        var req = indexedDB.open("TestBankDB");
+        req.onsuccess = function(e) {
+          var db = e.target.result;
+          if (!db.objectStoreNames.contains("documents")) {
+            try { db.close(); } catch(_e) {}
+            resolve([]);
+            return;
+          }
           var tx = db.transaction(["documents"], "readonly");
-          var req = tx.objectStore("documents").getAll();
-          var result = [];
-          req.onsuccess = function() {
-            result = req.result || [];
+          var getReq = tx.objectStore("documents").getAll();
+          getReq.onsuccess = function() {
+            var res = getReq.result || [];
+            try { db.close(); } catch(_e) {}
+            resolve(res);
           };
-          tx.oncomplete = function() {
-            try { db.close(); } catch(e) {}
-            resolve(result);
+          getReq.onerror = function() {
+            try { db.close(); } catch(_e) {}
+            resolve([]);
           };
-          tx.onerror = function() {
-            try { db.close(); } catch(e) {}
-            resolve(result);
-          };
-          tx.onabort = function() {
-            try { db.close(); } catch(e) {}
-            resolve(result);
-          };
-        } catch (txErr) {
-          try { db.close(); } catch(e) {}
-          resolve([]);
-        }
-      });
-    } catch (e) {
-      if (db) { try { db.close(); } catch(err) {} }
-      return [];
-    }
+        };
+        req.onerror = function() { resolve([]); };
+      } catch(e) {
+        resolve([]);
+      }
+    });
   }
 
   async function fetchDKRecords() {
-    var db = null;
-    try {
-      db = await openSecureIDB("DokumentationDB", "documents");
-      if (!db || !db.objectStoreNames.contains("documents")) {
-        if (db) { try { db.close(); } catch(e) {} }
-        return [];
-      }
-      return await new Promise(function(resolve) {
-        try {
+    return new Promise(function(resolve) {
+      try {
+        var req = indexedDB.open("DokumentationDB");
+        req.onsuccess = function(e) {
+          var db = e.target.result;
+          if (!db.objectStoreNames.contains("documents")) {
+            try { db.close(); } catch(_e) {}
+            resolve([]);
+            return;
+          }
           var tx = db.transaction(["documents"], "readonly");
-          var req = tx.objectStore("documents").getAll();
-          var result = [];
-          req.onsuccess = function() {
-            result = req.result || [];
+          var getReq = tx.objectStore("documents").getAll();
+          getReq.onsuccess = function() {
+            var res = getReq.result || [];
+            try { db.close(); } catch(_e) {}
+            resolve(res);
           };
-          tx.oncomplete = function() {
-            try { db.close(); } catch(e) {}
-            resolve(result);
+          getReq.onerror = function() {
+            try { db.close(); } catch(_e) {}
+            resolve([]);
           };
-          tx.onerror = function() {
-            try { db.close(); } catch(e) {}
-            resolve(result);
-          };
-          tx.onabort = function() {
-            try { db.close(); } catch(e) {}
-            resolve(result);
-          };
-        } catch (txErr) {
-          try { db.close(); } catch(e) {}
-          resolve([]);
-        }
-      });
-    } catch (e) {
-      if (db) { try { db.close(); } catch(err) {} }
-      return [];
-    }
+        };
+        req.onerror = function() { resolve([]); };
+      } catch(e) {
+        resolve([]);
+      }
+    });
   }
 
   async function fetchOWRecords() {
@@ -2458,7 +2492,30 @@ function loadPrefs() {
 
         // Restore TB with full binary files
         if (selTB && tbList.length > 0) {
-          for (var _t = 0; _t < tbList.length; _t++) { var _dTB = tbList[_t]; if (_dTB) { var _refTB = _dTB.fileRef || (_dTB.vaultObjectName ? ('vault_objects/' + _dTB.vaultObjectName) : ''); if (_refTB && zip.file(_refTB)) { var _b64TB = await zip.file(_refTB).async("base64"); _dTB.fileData = "data:" + (_dTB.fileType || "application/pdf") + ";base64," + _b64TB; } } } var dbTB = await openSecureIDB("TestBankDB", "documents");
+          for (var _t = 0; _t < tbList.length; _t++) {
+            var _dTB = tbList[_t];
+            if (_dTB) {
+              var _refTB = _dTB.fileRef || (_dTB.vaultObjectName ? ('vault_objects/' + _dTB.vaultObjectName) : '');
+              if (_refTB) {
+                var cleanRefTB = _refTB.replace(/\\/g, '/');
+                var zipFileTB = zip.file(cleanRefTB) || zip.file(_refTB);
+                if (!zipFileTB) {
+                  var baseNameTB = cleanRefTB.split('/').pop();
+                  for (var zPath in zip.files) {
+                    if (zPath.endsWith(baseNameTB) && !zip.files[zPath].dir) {
+                      zipFileTB = zip.file(zPath);
+                      break;
+                    }
+                  }
+                }
+                if (zipFileTB) {
+                  var _b64TB = await zipFileTB.async("base64");
+                  _dTB.fileData = "data:" + (_dTB.fileType || "application/pdf") + ";base64," + _b64TB;
+                }
+              }
+            }
+          }
+          var dbTB = await openSecureIDB("TestBankDB", "documents");
           if (dbTB && dbTB.objectStoreNames.contains("documents")) {
             var txTB = dbTB.transaction(["documents"], "readwrite");
             var stTB = txTB.objectStore("documents");
@@ -2477,7 +2534,30 @@ function loadPrefs() {
 
         // Restore DK with full binary files
         if (selDK && dkList.length > 0) {
-          for (var _d = 0; _d < dkList.length; _d++) { var _dDK = dkList[_d]; if (_dDK) { var _refDK = _dDK.fileRef || (_dDK.vaultObjectName ? ('vault_objects/' + _dDK.vaultObjectName) : ''); if (_refDK && zip.file(_refDK)) { var _b64DK = await zip.file(_refDK).async("base64"); _dDK.fileData = "data:" + (_dDK.fileType || "application/pdf") + ";base64," + _b64DK; } } } var dbDK = await openSecureIDB("DokumentationDB", "documents");
+          for (var _d = 0; _d < dkList.length; _d++) {
+            var _dDK = dkList[_d];
+            if (_dDK) {
+              var _refDK = _dDK.fileRef || (_dDK.vaultObjectName ? ('vault_objects/' + _dDK.vaultObjectName) : '');
+              if (_refDK) {
+                var cleanRefDK = _refDK.replace(/\\/g, '/');
+                var zipFileDK = zip.file(cleanRefDK) || zip.file(_refDK);
+                if (!zipFileDK) {
+                  var baseNameDK = cleanRefDK.split('/').pop();
+                  for (var zPathDK in zip.files) {
+                    if (zPathDK.endsWith(baseNameDK) && !zip.files[zPathDK].dir) {
+                      zipFileDK = zip.file(zPathDK);
+                      break;
+                    }
+                  }
+                }
+                if (zipFileDK) {
+                  var _b64DK = await zipFileDK.async("base64");
+                  _dDK.fileData = "data:" + (_dDK.fileType || "application/pdf") + ";base64," + _b64DK;
+                }
+              }
+            }
+          }
+          var dbDK = await openSecureIDB("DokumentationDB", "documents");
           if (dbDK && dbDK.objectStoreNames.contains("documents")) {
             var txDK = dbDK.transaction(["documents"], "readwrite");
             var stDK = txDK.objectStore("documents");
@@ -2527,10 +2607,6 @@ function loadPrefs() {
           switchTool('wiki');
         } else {
           pushToFrame('RELOAD_DATA', { forceRefresh: true });
-          var frameEl = document.getElementById('tool-frame');
-          if (frameEl && frameEl.contentWindow) {
-            try { frameEl.contentWindow.location.reload(); } catch(err){}
-          }
         }
         await refreshBackupCounts();
         showBackupStatus('✓ Vollständige Wiederherstellung abgeschlossen: ' + importedCount + ' Dokumente & reale Dateien erfolgreich importiert!', 'success');
@@ -2688,18 +2764,18 @@ function loadPrefs() {
         }
 
         window._justImportedBackup = true;
-        if (selTB && !selDK && !selOW && appState.tool !== 'bank') {
-          switchTool('bank');
-        } else if (selDK && !selTB && !selOW && appState.tool !== 'docs') {
+        var hasTB = (parsed && parsed.databases && Array.isArray(parsed.databases.TB) && parsed.databases.TB.length > 0);
+        var hasDK = (parsed && parsed.databases && Array.isArray(parsed.databases.DK) && parsed.databases.DK.length > 0);
+        var hasOW = (parsed && parsed.databases && (Array.isArray(parsed.databases.OW) ? parsed.databases.OW.length : (parsed.databases.OW && parsed.databases.OW.entries ? parsed.databases.OW.entries.length : 0)) > 0);
+
+        if (hasDK && !hasTB && !hasOW && appState.tool !== 'docs') {
           switchTool('docs');
-        } else if (selOW && !selTB && !selDK && appState.tool !== 'wiki') {
+        } else if (hasTB && !hasDK && !hasOW && appState.tool !== 'bank') {
+          switchTool('bank');
+        } else if (hasOW && !hasTB && !hasDK && appState.tool !== 'wiki') {
           switchTool('wiki');
         } else {
           pushToFrame('RELOAD_DATA', { forceRefresh: true });
-          var frameEl2 = document.getElementById('tool-frame');
-          if (frameEl2 && frameEl2.contentWindow) {
-            try { frameEl2.contentWindow.location.reload(); } catch(err){}
-          }
         }
         await refreshBackupCounts();
         if (importedCount === 0) {
@@ -2713,6 +2789,40 @@ function loadPrefs() {
       }
     };
     reader.readAsText(file);
+  }
+
+  async function clearIDBStoreDirect(dbName, storeName) {
+    return new Promise(function(resolve, reject) {
+      try {
+        var req = indexedDB.open(dbName);
+        req.onsuccess = function(e) {
+          var db = e.target.result;
+          if (!db.objectStoreNames.contains(storeName)) {
+            try { db.close(); } catch(err) {}
+            resolve();
+            return;
+          }
+          var tx = db.transaction([storeName], "readwrite");
+          var store = tx.objectStore(storeName);
+          var clrReq = store.clear();
+          clrReq.onsuccess = function() {
+            try { db.close(); } catch(err) {}
+            resolve();
+          };
+          clrReq.onerror = function(err) {
+            try { db.close(); } catch(_e) {}
+            reject(err);
+          };
+          tx.onerror = function(err) {
+            try { db.close(); } catch(_e) {}
+            reject(err);
+          };
+        };
+        req.onerror = function(err) { reject(err); };
+      } catch(err) {
+        reject(err);
+      }
+    });
   }
 
   async function handleBackupReset() {
@@ -2741,53 +2851,25 @@ function loadPrefs() {
 
     try {
       if (selTB) {
-        var dbTB = await openSecureIDB("TestBankDB", "documents");
-        if (dbTB && dbTB.objectStoreNames.contains("documents")) {
-          var txTB = dbTB.transaction(["documents"], "readwrite");
-          txTB.objectStore("documents").clear();
-          await new Promise(function(res) {
-            txTB.oncomplete = function() { try { dbTB.close(); } catch(e) {} res(); };
-            txTB.onerror = function() { try { dbTB.close(); } catch(e) {} res(); };
-            txTB.onabort = function() { try { dbTB.close(); } catch(e) {} res(); };
-          });
-        } else if (dbTB) {
-          try { dbTB.close(); } catch(e) {}
-        }
+        await clearIDBStoreDirect("TestBankDB", "documents");
       }
 
       if (selDK) {
-        var dbDK = await openSecureIDB("DokumentationDB", "documents");
-        if (dbDK && dbDK.objectStoreNames.contains("documents")) {
-          var txDK = dbDK.transaction(["documents"], "readwrite");
-          txDK.objectStore("documents").clear();
-          await new Promise(function(res) {
-            txDK.oncomplete = function() { try { dbDK.close(); } catch(e) {} res(); };
-            txDK.onerror = function() { try { dbDK.close(); } catch(e) {} res(); };
-            txDK.onabort = function() { try { dbDK.close(); } catch(e) {} res(); };
-          });
-        } else if (dbDK) {
-          try { dbDK.close(); } catch(e) {}
-        }
+        await clearIDBStoreDirect("DokumentationDB", "documents");
       }
 
       if (selOW) {
         localStorage.removeItem('offline_wiki_db');
         localStorage.removeItem('wiki_links');
         try {
-          var dbOW = await openSecureIDB("OfflineWikiIDB", "entries");
-          if (dbOW && dbOW.objectStoreNames.contains("entries")) {
-            var txOW = dbOW.transaction(["entries"], "readwrite");
-            txOW.objectStore("entries").clear();
-            await new Promise(function(res) {
-              txOW.oncomplete = function() { try { dbOW.close(); } catch(e) {} res(); };
-              txOW.onerror = function() { try { dbOW.close(); } catch(e) {} res(); };
-              txOW.onabort = function() { try { dbOW.close(); } catch(e) {} res(); };
-            });
-          } else if (dbOW) {
-            try { dbOW.close(); } catch(e) {}
-          }
+          await clearIDBStoreDirect("OfflineWikiIDB", "entries");
         } catch(e) {}
       }
+
+      try {
+        localStorage.removeItem('p2p_shared_docs');
+        localStorage.removeItem('p2p_updated_docs');
+      } catch(e) {}
 
       window._justResetBackup = true;
       pushToFrame('RELOAD_DATA', { reset: true, forceRefresh: true });
@@ -2839,18 +2921,29 @@ function loadPrefs() {
     }
   });
 
-  // Initialize Swarm directly in Hub for instant cross-device discovery
-  if (window.EduHybridShare) {
-    EduHybridShare.init({
-      dbName: 'DokumentationDB',
-      storeName: 'documents',
-      docTypeLabel: 'Doktyp',
-      onDocImported: function (savedDoc) {
-        pushToFrame('RELOAD_DATA', { updatedDoc: savedDoc });
-        if (typeof refreshBackupCounts === 'function') refreshBackupCounts();
-      }
+  var toolFrameEl = document.getElementById('tool-frame');
+  if (toolFrameEl) {
+    toolFrameEl.addEventListener('load', function() {
+      pushToFrame('SET_FONT', { font: appState.font });
+      pushToFrame('SET_THEME', { theme: appState.theme });
     });
   }
+
+  // Initialize Hub Databases and Swarm cleanly
+  ensureHubDatabasesReady().then(function() {
+    if (typeof refreshBackupCounts === 'function') refreshBackupCounts();
+    if (window.EduHybridShare) {
+      EduHybridShare.init({
+        dbName: 'DokumentationDB',
+        storeName: 'documents',
+        docTypeLabel: 'Doktyp',
+        onDocImported: function (savedDoc) {
+          pushToFrame('RELOAD_DATA', { updatedDoc: savedDoc });
+          if (typeof refreshBackupCounts === 'function') refreshBackupCounts();
+        }
+      });
+    }
+  });
   // PWA Install prompt handling
   var deferredInstallPrompt = null;
   var pwaInstallBtn = document.getElementById('pwaInstallBtn');
@@ -2885,8 +2978,9 @@ function loadPrefs() {
   // Service Worker Registration for 100% PWA Offline Capability
   if ('serviceWorker' in navigator && (window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
     window.addEventListener('load', function () {
-      navigator.serviceWorker.register('./sw.js?v=3.6', { scope: './' })
+      navigator.serviceWorker.register('./sw.js?v=4.0', { scope: './' })
         .then(function (reg) {
+          try { reg.update(); } catch(e) {}
           console.log('[PWA] Service Worker registered with scope:', reg.scope);
         })
         .catch(function (err) {
