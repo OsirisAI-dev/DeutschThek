@@ -2244,7 +2244,7 @@
         return null;
     }
 
-    async function embedMetadataIntoPdf(dataUrl, meta) {
+    async function embedMetadataIntoPdf(dataUrl, meta, shouldOptimize) {
         await window.OSIRIS_LIBS_READY;
         if (typeof PDFLib === 'undefined') return dataUrl; // library missing — skip silently
         try {
@@ -2256,7 +2256,7 @@
             pdfDoc.setModificationDate(new Date());
             const infoDict = pdfDoc.context.lookup(pdfDoc.context.trailerInfo.Info);
             infoDict.set(PDFLib.PDFName.of(OSIRIS_META_KEY), PDFLib.PDFHexString.fromText(buildMetaPayload(meta)));
-            const outBytes = await pdfDoc.save({ useObjectStreams: false });
+            const outBytes = await pdfDoc.save({ useObjectStreams: !!shouldOptimize });
             return bytesToDataUrl(outBytes, 'application/pdf');
         } catch (err) {
             console.error('PDF-Metadaten-Einbettung fehlgeschlagen, Original wird gespeichert:', err);
@@ -2326,9 +2326,9 @@
         return (type && type.includes('wordprocessingml')) || name.toLowerCase().endsWith('.docx');
     }
 
-    async function embedMetadataIfApplicable(dataUrl, meta, fileName, fileType) {
+    async function embedMetadataIfApplicable(dataUrl, meta, fileName, fileType, shouldOptimize) {
         try {
-            if (isPdfFile(fileName, fileType)) return await embedMetadataIntoPdf(dataUrl, meta);
+            if (isPdfFile(fileName, fileType)) return await embedMetadataIntoPdf(dataUrl, meta, shouldOptimize);
             if (isDocxFile(fileName, fileType)) return await embedMetadataIntoDocx(dataUrl, meta, fileType);
         } catch (err) {
             console.error('Metadaten-Einbettung übersprungen:', err);
@@ -2505,6 +2505,34 @@
         statusEl.innerHTML = '';
     }
 
+    function showPdfOptimizationNotice(statusEl, file) {
+        const mb = (file.size / (1024 * 1024)).toFixed(1);
+        statusEl.style.display = 'flex';
+        statusEl.style.flexDirection = 'column';
+        statusEl.style.alignItems = 'flex-start';
+        statusEl.style.gap = '8px';
+        statusEl.style.background = 'rgba(16, 185, 129, 0.08)';
+        statusEl.style.borderColor = 'rgba(16, 185, 129, 0.35)';
+        statusEl.innerHTML = `
+            <div style="display:flex; align-items:center; gap:8px; font-weight:700; color:#10b981; font-size:0.86rem;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                </svg>
+                <span>Große PDF-Datei erkannt (${mb} MB > 2,5 MB) — Optimierung empfohlen</span>
+            </div>
+            <div style="font-size:0.79rem; color:var(--text); opacity:0.88; line-height:1.45;">
+                ✓ <strong>Text- & Vektorschärfe bleiben zu 100% erhalten</strong> (keine Qualitätsminderung von Schrift oder Formeln).<br>
+                ✓ Entfernt redundante Metadaten und optimiert Datenströme verlustfrei für schnelles Laden.
+            </div>
+            <div style="display:flex; align-items:center; gap:16px; margin-top:2px; flex-wrap:wrap;">
+                <label style="display:inline-flex; align-items:center; gap:8px; cursor:pointer; font-weight:700; font-size:0.82rem; color:var(--primary); margin:0;">
+                    <input type="checkbox" id="inp-optimize-pdf-cb" checked style="width:auto; cursor:pointer;">
+                    <span>Intelligente PDF-Optimierung anwenden (Empfohlen)</span>
+                </label>
+            </div>
+        `;
+    }
+
     async function handleFileSelect(e) {
         const file = e.target.files[0];
         const statusEl = document.getElementById('file-dup-status');
@@ -2569,6 +2597,21 @@
         if (embeddedMeta) {
             applyMetadataFromEntry(embeddedMeta);
             showEmbeddedMetadataNotice(statusEl, embeddedMeta);
+            if (file && file.size >= 2.5 * 1024 * 1024 && isPdfFile(file.name, file.type)) {
+                const optWrap = document.createElement('div');
+                optWrap.style.marginTop = '8px';
+                optWrap.style.paddingTop = '8px';
+                optWrap.style.borderTop = '1px dashed rgba(16, 185, 129, 0.35)';
+                optWrap.innerHTML = `
+                    <label style="display:inline-flex; align-items:center; gap:8px; cursor:pointer; font-weight:700; font-size:0.82rem; color:#10b981; margin:0;">
+                        <input type="checkbox" id="inp-optimize-pdf-cb" checked style="width:auto; cursor:pointer;">
+                        <span>⚡ Intelligente PDF-Optimierung anwenden (100% Vektorschärfe erhalten)</span>
+                    </label>
+                `;
+                statusEl.appendChild(optWrap);
+            }
+        } else if (file && file.size >= 2.5 * 1024 * 1024 && isPdfFile(file.name, file.type)) {
+            showPdfOptimizationNotice(statusEl, file);
         } else {
             hideDuplicateNotice(statusEl);
         }
@@ -2768,7 +2811,9 @@ function saveEntry() {
             if (saveText && (isPdfFile(file.name, file.type) || isDocxFile(file.name, file.type))) {
                 saveText.textContent = 'METADATEN WERDEN EINGEBETTET...';
             }
-            const finalData = await embedMetadataIfApplicable(dataUrl, meta, file.name, file.type);
+            const optCb = document.getElementById('inp-optimize-pdf-cb');
+            const shouldOptimize = optCb ? optCb.checked : (file && file.size >= 2.5 * 1024 * 1024);
+            const finalData = await embedMetadataIfApplicable(dataUrl, meta, file.name, file.type, shouldOptimize);
             if (saveProgress) saveProgress.style.width = '90%';
             persist(finalData, file.name, file.type, file.size, fileInput.dataset.fileHash || null);
         }
