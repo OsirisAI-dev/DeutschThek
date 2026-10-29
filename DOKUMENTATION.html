@@ -665,7 +665,7 @@
             <input type="checkbox" id="toggle-filters-cb" autocomplete="off" onchange="document.getElementById('filters-bar').style.display = this.checked ? 'flex' : 'none';" style="width: auto; margin: 0; cursor: pointer;">
             <label for="toggle-filters-cb" style="margin: 0; cursor: pointer; color: var(--primary); font-weight: bold; font-size: 0.9rem;" data-i18n="showFilters">FILTER ANZEIGEN</label>
             <button id="reset-filters-btn" onclick="resetFilters()" title="Filter zurücksetzen">↺</button>
-            <div id="filter-updates-wrap" style="display: none; align-items: center; gap: 6px; margin-left: auto; background: rgba(22, 163, 74, 0.12); border: 1px solid rgba(22, 163, 74, 0.35); border-radius: 20px; padding: 3px 11px;">
+            <div id="filter-updates-wrap" style="display: none; align-items: center; gap: 6px; margin-left: auto; background: rgba(22, 163, 74, 0.12); border: 1px solid rgba(22, 163, 74, 0.35); border-radius: 20px; padding: 3px 11px; flex-shrink: 0; max-width: 100%; box-sizing: border-box;">
                 <input type="checkbox" id="filter-updates-cb" autocomplete="off" onchange="renderResults()" style="width: auto; margin: 0; cursor: pointer;">
                 <label for="filter-updates-cb" style="margin: 0; cursor: pointer; color: #16a34a; font-weight: bold; font-size: 0.82rem; user-select: none; display: flex; align-items: center; gap: 4px;">⚡ NUR UPDATES (<span id="updates-count-badge">0</span>)</label>
             </div>

@@ -798,7 +798,7 @@
             return 0;
         }
 
-        if (isSwarmEnabled()) await refreshLocalCatalog();
+        await refreshLocalCatalog();
         let newCount = 0;
 
         for (const doc of catalog.documents) {
@@ -845,38 +845,26 @@
                 sourceDb: primaryDb
             });
 
-            if (isAutoSaveToDbEnabled()) {
-                const storeName = currentConfig.storeName || 'documents';
-                try {
-                    const db = await openDatabaseWithStore(primaryDb, storeName);
-                    await new Promise((resolve) => {
-                        const tx = db.transaction([storeName], 'readwrite');
-                        const store = tx.objectStore(storeName);
-                        const countReq = store.count();
-                        countReq.onsuccess = (ev) => {
-                            if (ev.target.result >= 10) {
-                                stageDocumentInInbox(docRecord);
-                                resolve(false);
-                            } else {
-                                store.put(docRecord);
-                                tx.oncomplete = () => {
-                                    db.close();
-                                    if (docHash && window.knownLocalHashes) window.knownLocalHashes.add(docHash);
-                                    trackUpdatedDoc(docRecord.id, docHash);
-                                    broadcastDataReload(docRecord);
-                                    resolve(true);
-                                };
-                                tx.onerror = () => { db.close(); resolve(false); };
-                            }
-                        };
-                        countReq.onerror = () => { db.close(); resolve(false); };
-                    });
-                    newCount++;
-                } catch (e) {
-                    stageDocumentInInbox(docRecord);
-                    newCount++;
-                }
-            } else {
+            // Official repository docs are saved directly into IndexedDB (bypassing inbox & P2P throttle)
+            const storeName = currentConfig.storeName || 'documents';
+            try {
+                const db = await openDatabaseWithStore(primaryDb, storeName);
+                await new Promise((resolve) => {
+                    const tx = db.transaction([storeName], 'readwrite');
+                    const store = tx.objectStore(storeName);
+                    store.put(docRecord);
+                    tx.oncomplete = () => {
+                        db.close();
+                        if (docHash && window.knownLocalHashes) window.knownLocalHashes.add(docHash);
+                        trackUpdatedDoc(docRecord.id, docHash);
+                        broadcastDataReload(docRecord);
+                        resolve(true);
+                    };
+                    tx.onerror = () => { db.close(); resolve(false); };
+                });
+                newCount++;
+            } catch (e) {
+                console.warn('[Osiris Hybrid] Direct save error for official doc:', e);
                 stageDocumentInInbox(docRecord);
                 newCount++;
             }
@@ -2050,19 +2038,26 @@
             }
         }
 
-        if (!isSwarmEnabled()) { webrtcStatus = 'offline'; updateSwarmBadge(); return; } // 2. Init WebRTC PeerJS Mesh (Global cross-device mesh)
-        initWebRtcSwarm();
-
-        // 3. Initial & periodic sync of official Git catalog (fresh updates on startup)
+        // 2. Official Git catalog sync (Fresh updates on startup & every minute, ALWAYS independent of P2P swarm)
         syncOfficialCatalog(true).catch(e => console.warn('[Osiris Hybrid] Initial catalog sync error:', e));
 
         setInterval(() => {
-            if (isSwarmEnabled()) syncOfficialCatalog(true).catch(e => {});
+            syncOfficialCatalog(true).catch(e => {});
         }, 60000);
+
+        if (!isSwarmEnabled()) { 
+            webrtcStatus = 'offline'; 
+            updateSwarmBadge(); 
+            return; 
+        } 
+
+        // 3. Init WebRTC PeerJS Mesh (Global cross-device mesh only if P2P swarm is explicitly enabled)
+        initWebRtcSwarm();
 
         // Periodic presence broadcast & mesh reconnection every 15s
         setInterval(() => {
-            if (!isSwarmEnabled()) return; broadcastPresence();
+            if (!isSwarmEnabled()) return; 
+            broadcastPresence();
             connectToLobbyMesh();
             pruneStalePeers();
         }, 15000);
@@ -3003,9 +2998,12 @@
                         max-height: 96vh !important;
                         border-radius: 12px !important;
                         width: 100% !important;
+                        margin: 0 !important;
                     }
                     #swarm-modal-header {
                         padding: 12px 14px !important;
+                        flex-wrap: wrap !important;
+                        gap: 8px !important;
                     }
                     #swarm-ui-title {
                         font-size: 1.05rem !important;

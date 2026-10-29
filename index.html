@@ -412,23 +412,34 @@
     display: flex; flex-direction: column; overflow: hidden;
     box-shadow: 0 20px 50px rgba(0,0,0,0.35);
     color: var(--hub-text);
+    box-sizing: border-box;
+    min-width: 0;
   }
   .hub-modal-header {
     display: flex; justify-content: space-between; align-items: center;
     padding: 16px 22px; border-bottom: 1px solid var(--hub-border);
     background: var(--hub-bg);
+    gap: 12px;
+    min-width: 0;
+    box-sizing: border-box;
   }
   .hub-modal-title {
     margin: 0; color: var(--hub-text); font-size: 1.15rem; font-weight: 700;
+    word-break: break-word;
+    overflow-wrap: anywhere;
   }
   .hub-modal-sub {
     font-size: 0.76rem; color: var(--hub-text-dim); margin-top: 2px;
+    word-break: break-word;
+    overflow-wrap: anywhere;
   }
   .hub-modal-close {
     background: transparent; border: none; cursor: pointer;
     color: var(--hub-text-dim); padding: 6px; border-radius: 6px;
     display: flex; align-items: center; justify-content: center;
     transition: all 0.15s ease;
+    flex-shrink: 0;
+    margin-left: auto;
   }
   .hub-modal-close:hover {
     color: var(--hub-text);
@@ -542,12 +553,61 @@
       padding: 8px;
     }
     .hub-modal-container {
+      width: 100% !important;
+      max-width: 100% !important;
       max-height: 96vh;
       border-radius: 12px;
+      margin: 0 !important;
     }
     .hub-modal-header, .hub-modal-footer, .hub-security-banner, .hub-faq-toolbar {
-      padding-left: 14px;
-      padding-right: 14px;
+      padding-left: 12px;
+      padding-right: 12px;
+    }
+    .hub-modal-header {
+      padding: 12px 14px;
+    }
+    .hub-modal-footer {
+      padding: 10px 14px;
+      flex-direction: row;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+    .hub-modal-footer > button, .hub-modal-footer > .hub-btn {
+      width: auto;
+      margin-left: auto;
+    }
+    .hub-backup-section {
+      padding: 12px 14px 8px;
+    }
+    .backup-actions-grid {
+      padding: 10px 14px 14px;
+    }
+    .backup-action-btn {
+      padding: 10px 12px;
+      gap: 10px;
+    }
+    .hub-modal-title {
+      font-size: 1.02rem !important;
+    }
+    .hub-modal-sub {
+      font-size: 0.72rem !important;
+    }
+    .db-checkbox-item {
+      padding: 8px 10px;
+      gap: 8px;
+    }
+    .db-title-text {
+      font-size: 0.82rem;
+    }
+    .db-desc-text {
+      font-size: 0.7rem;
+    }
+    .btn-text-col strong {
+      font-size: 0.82rem;
+    }
+    .btn-text-col small {
+      font-size: 0.7rem;
     }
     .hub-faq-list {
       padding-left: 14px;
@@ -698,7 +758,21 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
     background: var(--hub-bg);
+    box-sizing: border-box;
+    width: 100%;
+  }
+  .hub-modal-footer > span {
+    min-width: 0;
+    flex: 1 1 auto;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+  .hub-modal-footer > button, .hub-modal-footer > .hub-btn {
+    flex-shrink: 0;
+    margin-left: auto;
   }
 
   /* Backup & Restore Modal */
@@ -726,6 +800,8 @@
     border: 1px solid var(--hub-border);
     border-radius: 8px;
     overflow: hidden;
+    box-sizing: border-box;
+    width: 100%;
   }
   .db-checkbox-item {
     display: flex;
@@ -735,6 +811,8 @@
     cursor: pointer;
     user-select: none;
     transition: background 0.15s ease;
+    min-width: 0;
+    box-sizing: border-box;
   }
   .db-checkbox-item:hover {
     background: var(--hub-surface);
@@ -798,15 +876,21 @@
     flex-direction: column;
     gap: 10px;
     padding: 12px 22px 18px;
+    box-sizing: border-box;
+    width: 100%;
   }
   .hub-backup-scroll-body {
     overflow-y: auto;
+    overflow-x: hidden;
     flex: 1;
     min-height: 0;
+    min-width: 0;
     -webkit-overflow-scrolling: touch;
     scroll-behavior: smooth;
     display: flex;
     flex-direction: column;
+    box-sizing: border-box;
+    width: 100%;
   }
   .backup-action-btn {
     display: flex;
@@ -821,6 +905,8 @@
     transition: all 0.2s ease;
     text-align: left;
     width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
     font-family: inherit;
   }
   .backup-action-btn:hover {
@@ -848,13 +934,21 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
+    min-width: 0;
+    flex: 1;
+    word-break: break-word;
+    overflow-wrap: anywhere;
   }
   .btn-text-col strong {
     font-size: 0.88rem;
+    word-break: break-word;
+    overflow-wrap: anywhere;
   }
   .btn-text-col small {
     font-size: 0.74rem;
     color: var(--hub-text-dim);
+    word-break: break-word;
+    overflow-wrap: anywhere;
   }
 
 </style>
@@ -1135,10 +1229,10 @@
 
 <!-- Modern Centralized Backup & Restore Modal -->
 <div id="backup-modal" class="hub-modal-overlay" style="display:none;">
-  <div class="hub-modal-container" style="max-width: 620px;">
+  <div class="hub-modal-container" style="max-width: 620px; width: 100%; box-sizing: border-box; min-width: 0;">
     <!-- Modal Header -->
     <div class="hub-modal-header">
-      <div style="display:flex; align-items:center; gap:10px;">
+      <div style="display:flex; align-items:center; gap:10px; min-width: 0; flex: 1;">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--hub-accent); flex-shrink:0;">
           <rect width="20" height="5" x="2" y="3" rx="1"></rect>
           <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"></path>
@@ -1320,7 +1414,7 @@
         <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#28a745;"></span>
         100% Offline &amp; Lokal im Browser
       </span>
-      <button class="hub-btn" id="backupModalCloseBtn" style="background:var(--hub-surface); color:var(--hub-text); border-color:var(--hub-border); cursor:pointer;">
+      <button class="hub-btn" id="backupModalCloseBtn" style="background:var(--hub-surface); color:var(--hub-text); border-color:var(--hub-border); cursor:pointer; flex-shrink: 0; margin-left: auto;">
         Schließen
       </button>
     </div>
