@@ -873,6 +873,15 @@
         if (newCount > 0) {
             updateSwarmBadge();
             renderSwarmModalContent();
+
+            // Notify user directly that official admin files have been added to their local library
+            const updateMsg = newCount === 1
+                ? '⚡ 1 neues offizielles Dokument wurde in Ihre Bibliothek geladen!'
+                : `⚡ ${newCount} neue offizielle Dokumente wurden in Ihre Bibliothek geladen!`;
+            showSwarmToast(updateMsg, 'success');
+
+            // Global reload of search lists and update counters across all open windows & tabs
+            broadcastDataReload();
         }
         return newCount;
     }
