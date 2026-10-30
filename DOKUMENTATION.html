@@ -808,7 +808,7 @@
     // separate offline-wiki app also uses. Sharing that key meant links
     // added here could leak into (or get overwritten by) the wiki app's
     // list on the same origin. Renamed so each app has its own list.
-    let links = JSON.parse(localStorage.getItem('docu_links')) || [];
+    let links = []; try { links = JSON.parse(localStorage.getItem('docu_links') || '[]') || []; } catch(e) { links = []; }
     let idb;
 
     // ── FR/DE translation, reactive to the hub's language toggle ───────
@@ -992,7 +992,7 @@
     function saveToDictionary(field, value) {
         if (!value || !value.trim()) return;
         const key = 'docu_dict_' + field;
-        const dict = JSON.parse(localStorage.getItem(key)) || [];
+        let dict = []; try { dict = JSON.parse(localStorage.getItem(key) || '[]') || []; } catch(e) { dict = []; }
         const normalized = value.trim();
         if (!dict.some(d => d.toLowerCase() === normalized.toLowerCase())) {
             dict.push(normalized);
@@ -1005,7 +1005,7 @@
     function refreshDatalist(field) {
         const dl = document.getElementById('dict-' + field);
         if (!dl) return;
-        const dict = JSON.parse(localStorage.getItem('docu_dict_' + field)) || [];
+        let dict = []; try { dict = JSON.parse(localStorage.getItem('docu_dict_' + field) || '[]') || []; } catch(e) { dict = []; }
         dl.innerHTML = dict.map(term => `<option value="${term.replace(/"/g, '&quot;')}"></option>`).join('');
     }
 
