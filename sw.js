@@ -1,10 +1,10 @@
 /**
  * DeutschThek — Service Worker (PWA Offline Engine)
- * Version: 3.7
+ * Version: 4.1
  * Architecture: Stale-While-Revalidate with Instant Local Offline Fallback
  */
 
-const CACHE_NAME = 'deutschthek-pwa-v4.0';
+const CACHE_NAME = 'deutschthek-pwa-v4.1';
 
 // Core shell assets required for 100% offline startup
 const PRECACHE_ASSETS = [
@@ -24,6 +24,8 @@ const PRECACHE_ASSETS = [
   './assets/icon-512.png',
   './assets/icon-maskable-192.png',
   './assets/icon-maskable-512.png',
+  './assets/favicon-32x32.png',
+  './assets/favicon-16x16.png',
   './assets/icon.svg',
   './lib/htmldocx/v1/html-docx.js',
   './lib/jszip/v1/jszip.min.js',
