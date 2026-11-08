@@ -793,21 +793,123 @@
     }
 
     async function syncOfficialCatalog(isAuto) {
+        // PROTECTION GUARANTEE: Official catalog sync is strictly additive / metadata-updating.
+        // Removing a file from official-catalog.json NEVER deletes any document already stored
+        // in the main app's IndexedDB (TestBankDB, DokumentationDB, OfflineWikiIDB) or localStorage.
         const catalog = await fetchOfficialCatalog(true);
         if (!catalog || !Array.isArray(catalog.documents) || catalog.documents.length === 0) {
             return 0;
         }
 
         await refreshLocalCatalog();
+        await refreshLocalDbHashes();
         let newCount = 0;
+        let updatedMetaCount = 0;
 
         for (const doc of catalog.documents) {
             if (!doc) continue;
             const docHash = doc.fileHash ? String(doc.fileHash).toLowerCase().trim() : '';
             const docKey = `${(doc.fileName || '').toLowerCase().trim()}_${doc.fileSize || 0}`;
+            const isWikiArticle = (doc.sourceDb === 'OfflineWikiDB' || doc.sourceDb === 'OfflineWikiIDB' || doc.categoryKey === 'OW');
+
+            if (isWikiArticle) {
+                try {
+                    const rawWiki = localStorage.getItem('offline_wiki_db');
+                    const wikiList = rawWiki ? safeJsonParse(rawWiki) : [];
+                    if (Array.isArray(wikiList)) {
+                        const docIdNum = Number(doc.id) || 0;
+                        const existingIdx = wikiList.findIndex(w => w && (Number(w.id) === docIdNum || (w.title && doc.thema && w.title === doc.thema)));
+                        const wikiEntry = {
+                            id: docIdNum || Date.now(),
+                            title: doc.title || doc.thema || 'Wiki-Artikel',
+                            url: doc.url || doc.sourceLink || 'https://deutschthek.local/wiki',
+                            klasse: doc.klasse || doc.klassen || 'Alle Klassen',
+                            text: doc.text || '',
+                            lang: doc.lang || 'de',
+                            length: doc.length || 'Medium',
+                            keywords: Array.isArray(doc.keywords) ? doc.keywords : [],
+                            date: doc.date || new Date().toLocaleDateString('de-DE'),
+                            updatedAt: doc.updatedAt || '',
+                            isOfficial: true
+                        };
+                        if (existingIdx === -1) {
+                            wikiList.unshift(wikiEntry);
+                            localStorage.setItem('offline_wiki_db', JSON.stringify(wikiList));
+                            newCount++;
+                        } else if (doc.updatedAt && wikiList[existingIdx].updatedAt !== doc.updatedAt) {
+                            wikiList[existingIdx] = Object.assign({}, wikiList[existingIdx], wikiEntry);
+                            localStorage.setItem('offline_wiki_db', JSON.stringify(wikiList));
+                            updatedMetaCount++;
+                        }
+                    }
+                } catch (wErr) {
+                    console.warn('[Osiris Hybrid] Wiki catalog sync warning:', wErr);
+                }
+                continue;
+            }
 
             const exists = await checkDocExistsInDatabases(doc);
-            if (exists) continue;
+            if (exists) {
+                // Check if this official catalog document was edited by Admin (newer updatedAt timestamp)
+                const docIdNum = Number(doc.id) || 0;
+                const knownUpdated = (docIdNum > 0 && window.knownLocalDocUpdatedMap) ? window.knownLocalDocUpdatedMap.get(docIdNum) : null;
+                if (docIdNum > 0 && doc.updatedAt && knownUpdated !== doc.updatedAt) {
+                    const targetDb = doc.sourceDb || currentConfig.dbName || 'DokumentationDB';
+                    const storeName = currentConfig.storeName || 'documents';
+                    try {
+                        const db = await openDatabaseWithStore(targetDb, storeName);
+                        const didUpdate = await new Promise((resolve) => {
+                            const tx = db.transaction([storeName], 'readwrite');
+                            const store = tx.objectStore(storeName);
+                            const getReq = store.get(docIdNum);
+                            getReq.onsuccess = (ev) => {
+                                const existingRec = ev.target.result;
+                                if (!existingRec) {
+                                    resolve(false);
+                                    return;
+                                }
+                                if (existingRec.updatedAt === doc.updatedAt) {
+                                    if (window.knownLocalDocUpdatedMap) window.knownLocalDocUpdatedMap.set(docIdNum, doc.updatedAt);
+                                    resolve(false);
+                                    return;
+                                }
+                                const updatedRec = Object.assign({}, existingRec, {
+                                    thema: doc.thema || existingRec.thema,
+                                    typ: doc.typ || existingRec.typ,
+                                    subTyp: Array.isArray(doc.subTyp) ? doc.subTyp : (existingRec.subTyp || []),
+                                    niveau: doc.niveau !== undefined ? doc.niveau : (existingRec.niveau || ''),
+                                    klasse: doc.klasse || doc.klassen || existingRec.klasse || existingRec.klassen || '',
+                                    klassen: doc.klassen || doc.klasse || existingRec.klassen || existingRec.klasse || '',
+                                    schulart: doc.schulart !== undefined ? doc.schulart : (existingRec.schulart || ''),
+                                    jahr: doc.jahr || existingRec.jahr,
+                                    lektion: doc.lektion !== undefined ? doc.lektion : (existingRec.lektion || ''),
+                                    buch: doc.buch || existingRec.buch,
+                                    kommentar: doc.kommentar !== undefined ? doc.kommentar : (existingRec.kommentar || ''),
+                                    updatedAt: doc.updatedAt,
+                                    fileName: doc.fileName || existingRec.fileName,
+                                    fileType: doc.fileType || existingRec.fileType,
+                                    fileSize: Number(doc.fileSize) || existingRec.fileSize,
+                                    fileHash: docHash || existingRec.fileHash,
+                                    fileData: doc.fileData || existingRec.fileData,
+                                    isOfficial: true
+                                });
+                                store.put(updatedRec);
+                                if (window.knownLocalDocUpdatedMap) window.knownLocalDocUpdatedMap.set(docIdNum, doc.updatedAt);
+                                resolve(true);
+                            };
+                            getReq.onerror = () => resolve(false);
+                            tx.oncomplete = () => db.close();
+                            tx.onerror = () => { try { db.close(); } catch (_e) {} resolve(false); };
+                        });
+                        if (didUpdate) {
+                            updatedMetaCount++;
+                            window._docMetaCache = null;
+                            broadcastDataReload();
+                        }
+                    } catch (_uErr) {}
+                }
+                continue;
+            }
 
             const stagedList = getStagedInboxDocuments();
             const alreadyStaged = stagedList.some(d => 
@@ -1374,7 +1476,23 @@
 
     async function refreshLocalDbHashes() {
         window.knownLocalHashes = window.knownLocalHashes || new Set();
-        window.knownLocalFileKeys = window.knownLocalFileKeys || new Set(); if (window._localHashesLoaded && (Date.now() - (window._lastHashRefreshTime || 0) < 30000)) return; window._lastHashRefreshTime = Date.now(); window._localHashesLoaded = true; if (Array.isArray(window._docMetaCache) && window._docMetaCache.length > 0) { window._docMetaCache.forEach(d => { if (!d) return; if (d.fileHash) window.knownLocalHashes.add(String(d.fileHash).toLowerCase().trim()); if (d.fileName && d.fileSize) window.knownLocalFileKeys.add(String(d.fileName).toLowerCase().trim() + '_' + d.fileSize); if (d.id && d.fileName) window.knownLocalFileKeys.add(d.id + '_' + String(d.fileName).toLowerCase().trim()); }); return; }
+        window.knownLocalFileKeys = window.knownLocalFileKeys || new Set();
+        window.knownLocalDocIds = window.knownLocalDocIds || new Set();
+        window.knownLocalDocUpdatedMap = window.knownLocalDocUpdatedMap || new Map();
+
+        if (Array.isArray(window._docMetaCache) && window._docMetaCache.length > 0) {
+            window._docMetaCache.forEach(d => {
+                if (!d) return;
+                if (d.id) window.knownLocalDocIds.add(Number(d.id));
+                if (d.fileHash) window.knownLocalHashes.add(String(d.fileHash).toLowerCase().trim());
+                if (d.fileName && d.fileSize) window.knownLocalFileKeys.add(String(d.fileName).toLowerCase().trim() + '_' + d.fileSize);
+                if (d.id && d.fileName) window.knownLocalFileKeys.add(d.id + '_' + String(d.fileName).toLowerCase().trim());
+            });
+        }
+
+        if (window._localHashesLoaded && (Date.now() - (window._lastHashRefreshTime || 0) < 30000)) return;
+        window._lastHashRefreshTime = Date.now();
+
         const dbsToScan = ['DokumentationDB', 'TestBankDB'];
 
         for (const dbName of dbsToScan) {
@@ -1396,6 +1514,10 @@
                             db.close();
                             allDocs.forEach(d => {
                                 if (!d) return;
+                                if (d.id) {
+                                    window.knownLocalDocIds.add(Number(d.id));
+                                    if (d.updatedAt) window.knownLocalDocUpdatedMap.set(Number(d.id), d.updatedAt);
+                                }
                                 if (d.fileHash) window.knownLocalHashes.add(String(d.fileHash).toLowerCase().trim());
                                 if (d.fileName && d.fileSize) window.knownLocalFileKeys.add(String(d.fileName).toLowerCase().trim() + '_' + d.fileSize);
                                 if (d.id && d.fileName) window.knownLocalFileKeys.add(d.id + '_' + String(d.fileName).toLowerCase().trim());
@@ -1410,6 +1532,7 @@
                 }
             });
         }
+        window._localHashesLoaded = true;
     }
 
     async function checkDocExistsInDatabases(docMeta) {
@@ -1439,8 +1562,11 @@
         if (docId > 0 && name && window.knownLocalFileKeys && window.knownLocalFileKeys.has(docId + '_' + name)) {
             return true;
         }
+        if (docId > 0 && window.knownLocalDocIds && window.knownLocalDocIds.has(docId)) {
+            return true;
+        }
 
-        if (window._localHashesLoaded || Array.isArray(window._docMetaCache)) return false; // 2. Authoritative IndexedDB scan across both databases
+        if (window._localHashesLoaded) return false; // 2. Authoritative IndexedDB scan across both databases
         const dbsToScan = ['DokumentationDB', 'TestBankDB'];
         for (const dbName of dbsToScan) {
             const found = await new Promise(resolve => {

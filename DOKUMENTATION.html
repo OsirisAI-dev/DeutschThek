@@ -902,44 +902,6 @@
     applyBankLang();
     initSwarmAutoShareToggle();
 
-    // --- Zero-Trust DOM & Data Sanitization Helpers ---
-    function escapeHtml(val) {
-        if (window.OsirisSecurity) return window.OsirisSecurity.escapeHtml(val);
-        if (val === null || val === undefined) return '';
-        return String(val)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;')
-            .replace(/`/g, '&#96;');
-    }
-    function sanitizeUrl(url) {
-        if (window.OsirisSecurity) return window.OsirisSecurity.sanitizeUrl(url);
-        if (!url || typeof url !== 'string') return '#';
-        try {
-            const parsed = new URL(url.trim(), window.location.origin);
-            if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-                return parsed.href.replace(/"/g, '%22').replace(/'/g, '%27');
-            }
-        } catch (e) {}
-        return '#';
-    }
-    function sanitizeDataUrl(dataUrl) {
-        if (window.OsirisSecurity) return window.OsirisSecurity.sanitizeDataUrl(dataUrl);
-        if (!dataUrl || typeof dataUrl !== 'string') return '';
-        const t = dataUrl.trim();
-        return /^data:(application\/(pdf|msword|vnd\.openxmlformats|octet-stream)|image\/(png|jpeg|jpg|webp|gif)|text\/plain|video\/|audio\/)[^,]*;base64,/i.test(t) ? t : '';
-    }
-    function sanitizeHtmlFragment(dirtyHtml) {
-        if (window.OsirisSecurity) return window.OsirisSecurity.sanitizeHtmlFragment(dirtyHtml);
-        return escapeHtml(dirtyHtml);
-    }
-    function safeJsonParse(raw) {
-        if (window.OsirisSecurity) return window.OsirisSecurity.safeJsonParse(raw);
-        return JSON.parse(raw, (k, v) => (k === '__proto__' || k === 'constructor' || k === 'prototype') ? undefined : v);
-    }
-
     // Live updates from index.html Edu-Hub (Verified Origin + Sanitized Payloads)
     window.addEventListener('message', function (e) {
         if (window.OsirisSecurity && window.OsirisSecurity.isTrustedOrigin && !window.OsirisSecurity.isTrustedOrigin(e)) return;
@@ -3409,8 +3371,13 @@ function saveEntry() {
                 downloadBtn.style.pointerEvents = 'auto';
                 shareBtn.style.opacity = '1';
                 shareBtn.style.pointerEvents = 'auto';
+                if (pdfToDocxBtn) {
+                    pdfToDocxBtn.style.opacity = '1';
+                    pdfToDocxBtn.style.pointerEvents = 'auto';
+                }
                 if (window.downloadTimeout) clearTimeout(window.downloadTimeout);
                 window.downloadTimeout = setTimeout(() => {
+                    if (window._isConvertingPdfToDocx) return;
                     if (floatingBar) {
                         floatingBar.style.opacity = '0';
                         floatingBar.style.pointerEvents = 'none';
@@ -3419,9 +3386,13 @@ function saveEntry() {
                     downloadBtn.style.pointerEvents = 'none';
                     shareBtn.style.opacity = '0';
                     shareBtn.style.pointerEvents = 'none';
+                    if (pdfToDocxBtn) {
+                        pdfToDocxBtn.style.opacity = '0';
+                        pdfToDocxBtn.style.pointerEvents = 'none';
+                    }
                     const popup = document.getElementById('share-popup');
                     if (popup) popup.classList.remove('visible');
-                }, 5000);
+                }, 6000);
             }
 
             refreshDownloadButton();
@@ -3430,6 +3401,8 @@ function saveEntry() {
                 if(event.target.id === 'fs-close') return;
                 refreshDownloadButton();
             };
+            modal.onmousemove = () => refreshDownloadButton();
+            modal.ontouchstart = () => refreshDownloadButton();
 
             modal.style.display = 'block';
             document.body.style.overflow = 'hidden'; 
@@ -3516,6 +3489,8 @@ function saveEntry() {
         const modal = document.getElementById('fs-modal');
         modal.style.display = 'none';
         modal.onclick = null; // Clean up listener
+        modal.onmousemove = null;
+        modal.ontouchstart = null;
         document.body.style.overflow = 'auto';
         document.getElementById('fs-content').innerHTML = ''; // free memory
         document.getElementById('share-popup').classList.remove('visible');
@@ -3778,7 +3753,284 @@ function saveEntry() {
     });
 
     
-    // --- Offline PDF to Word (DOCX) Converter ---
+    // --- Offline PDF to Word (DOCX) Converter (Universal Desktop & Mobile ECMA-376 OpenXML + Scanned Page Support) ---
+    function escapeXmlForDocx(str) {
+        if (str === null || str === undefined) return '';
+        return String(str)
+            .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&apos;');
+    }
+
+    async function buildUniversalOpenXmlDocx(meta, pagesData) {
+        const zip = new window.JSZip();
+        const isoNow = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+
+        const contentTypesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="jpg" ContentType="image/jpeg"/>
+  <Default Extension="jpeg" ContentType="image/jpeg"/>
+  <Default Extension="png" ContentType="image/png"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+  <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+</Types>`;
+
+        const rootRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+</Relationships>`;
+
+        const coreXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dc:title>${escapeXmlForDocx(meta.thema)}</dc:title>
+  <dc:subject>${escapeXmlForDocx(meta.typ + ' - ' + meta.klassen)}</dc:subject>
+  <dc:creator>DeutschThek · Das Lehrer-Portfolio</dc:creator>
+  <dc:description>${escapeXmlForDocx('Lehrwerk: ' + meta.buch + ' | Lektion: ' + meta.lektion)}</dc:description>
+  <dcterms:created xsi:type="dcterms:W3CDTF">${isoNow}</dcterms:created>
+  <dcterms:modified xsi:type="dcterms:W3CDTF">${isoNow}</dcterms:modified>
+</cp:coreProperties>`;
+
+        const appXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
+  <Application>DeutschThek Office Engine</Application>
+  <AppVersion>4.4000</AppVersion>
+</Properties>`;
+
+        const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:docDefaults>
+    <w:rPrDefault>
+      <w:rPr>
+        <w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="Calibri" w:cs="Arial"/>
+        <w:sz w:val="22"/>
+        <w:szCs w:val="22"/>
+        <w:lang w:val="de-DE" w:eastAsia="de-DE" w:bidi="ar-SA"/>
+      </w:rPr>
+    </w:rPrDefault>
+    <w:pPrDefault>
+      <w:pPr>
+        <w:spacing w:after="100" w:line="276" w:lineRule="auto"/>
+      </w:pPr>
+    </w:pPrDefault>
+  </w:docDefaults>
+  <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
+    <w:name w:val="Normal"/>
+    <w:qFormat/>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Heading1">
+    <w:name w:val="heading 1"/>
+    <w:basedOn w:val="Normal"/>
+    <w:next w:val="Normal"/>
+    <w:qFormat/>
+    <w:pPr><w:keepNext/><w:spacing w:before="240" w:after="120"/></w:pPr>
+    <w:rPr><w:b/><w:color w:val="1F4E79"/><w:sz w:val="34"/><w:szCs w:val="34"/></w:rPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Heading2">
+    <w:name w:val="heading 2"/>
+    <w:basedOn w:val="Normal"/>
+    <w:next w:val="Normal"/>
+    <w:qFormat/>
+    <w:pPr><w:keepNext/><w:spacing w:before="220" w:after="100"/></w:pPr>
+    <w:rPr><w:b/><w:color w:val="1F4E79"/><w:sz w:val="28"/><w:szCs w:val="28"/></w:rPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Heading3">
+    <w:name w:val="heading 3"/>
+    <w:basedOn w:val="Normal"/>
+    <w:next w:val="Normal"/>
+    <w:qFormat/>
+    <w:pPr><w:keepNext/><w:spacing w:before="160" w:after="80"/></w:pPr>
+    <w:rPr><w:b/><w:color w:val="2E75B6"/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr>
+  </w:style>
+</w:styles>`;
+
+        let docRelsItems = `  <Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+`;
+        let bodyXml = '';
+
+        // 1. Metadata Header Table (compatible with Desktop Word, Mobile Word, Google Docs & Mammoth)
+        bodyXml += `
+    <w:tbl>
+      <w:tblPr>
+        <w:tblW w:w="9360" w:type="dxa"/>
+        <w:tblBorders>
+          <w:top w:val="none" w:sz="0" w:space="0" w:color="auto"/>
+          <w:left w:val="none" w:sz="0" w:space="0" w:color="auto"/>
+          <w:bottom w:val="single" w:sz="16" w:space="0" w:color="1F4E79"/>
+          <w:right w:val="none" w:sz="0" w:space="0" w:color="auto"/>
+          <w:insideH w:val="none" w:sz="0" w:space="0" w:color="auto"/>
+          <w:insideV w:val="none" w:sz="0" w:space="0" w:color="auto"/>
+        </w:tblBorders>
+        <w:tblCellMar>
+          <w:top w:w="80" w:type="dxa"/>
+          <w:left w:w="80" w:type="dxa"/>
+          <w:bottom w:w="140" w:type="dxa"/>
+          <w:right w:w="80" w:type="dxa"/>
+        </w:tblCellMar>
+      </w:tblPr>
+      <w:tblGrid>
+        <w:gridCol w:w="5400"/>
+        <w:gridCol w:w="3960"/>
+      </w:tblGrid>
+      <w:tr>
+        <w:tc>
+          <w:tcPr><w:tcW w:w="5400" w:type="dxa"/></w:tcPr>
+          <w:p>
+            <w:pPr><w:spacing w:before="0" w:after="60"/></w:pPr>
+            <w:r>
+              <w:rPr><w:b/><w:color w:val="1F4E79"/><w:sz w:val="34"/><w:szCs w:val="34"/></w:rPr>
+              <w:t xml:space="preserve">${escapeXmlForDocx(meta.thema)}</w:t>
+            </w:r>
+          </w:p>
+          <w:p>
+            <w:pPr><w:spacing w:before="0" w:after="40"/></w:pPr>
+            <w:r><w:rPr><w:color w:val="555555"/><w:sz w:val="20"/></w:rPr><w:t xml:space="preserve">Typ: </w:t></w:r>
+            <w:r><w:rPr><w:b/><w:color w:val="333333"/><w:sz w:val="20"/></w:rPr><w:t xml:space="preserve">${escapeXmlForDocx(meta.typ)}</w:t></w:r>
+            <w:r><w:rPr><w:color w:val="555555"/><w:sz w:val="20"/></w:rPr><w:t xml:space="preserve">  |  Klassenstufe: </w:t></w:r>
+            <w:r><w:rPr><w:b/><w:color w:val="333333"/><w:sz w:val="20"/></w:rPr><w:t xml:space="preserve">${escapeXmlForDocx(meta.klassen)}</w:t></w:r>
+          </w:p>
+        </w:tc>
+        <w:tc>
+          <w:tcPr><w:tcW w:w="3960" w:type="dxa"/></w:tcPr>
+          <w:p>
+            <w:pPr><w:jc w:val="right"/><w:spacing w:before="0" w:after="30"/></w:pPr>
+            <w:r><w:rPr><w:color w:val="666666"/><w:sz w:val="19"/></w:rPr><w:t xml:space="preserve">Lehrwerk: </w:t></w:r>
+            <w:r><w:rPr><w:b/><w:color w:val="333333"/><w:sz w:val="19"/></w:rPr><w:t xml:space="preserve">${escapeXmlForDocx(meta.buch)}</w:t></w:r>
+          </w:p>
+          <w:p>
+            <w:pPr><w:jc w:val="right"/><w:spacing w:before="0" w:after="30"/></w:pPr>
+            <w:r><w:rPr><w:color w:val="666666"/><w:sz w:val="19"/></w:rPr><w:t xml:space="preserve">Lektion/Modul: </w:t></w:r>
+            <w:r><w:rPr><w:b/><w:color w:val="333333"/><w:sz w:val="19"/></w:rPr><w:t xml:space="preserve">${escapeXmlForDocx(meta.lektion)}</w:t></w:r>
+          </w:p>
+          <w:p>
+            <w:pPr><w:jc w:val="right"/><w:spacing w:before="0" w:after="30"/></w:pPr>
+            <w:r><w:rPr><w:color w:val="666666"/><w:sz w:val="19"/></w:rPr><w:t xml:space="preserve">Schuljahr: ${escapeXmlForDocx(meta.jahr)}  |  Datum: ${escapeXmlForDocx(meta.date)}</w:t></w:r>
+          </w:p>
+        </w:tc>
+      </w:tr>
+    </w:tbl>
+    <w:p><w:pPr><w:spacing w:before="60" w:after="120"/></w:pPr></w:p>`;
+
+        // 2. Pages Content (Text Paragraphs + High-Resolution Image Fallback for Scanned PDFs)
+        let docPrId = 1;
+        for (const pData of pagesData) {
+            if (pData.pageNum > 1) {
+                bodyXml += `    <w:p><w:r><w:br w:type="page"/></w:r></w:p>
+`;
+            }
+
+            if (pData.lines && pData.lines.length > 0) {
+                for (const line of pData.lines) {
+                    const safeLine = escapeXmlForDocx(line.text);
+                    if (line.heading === 2) {
+                        bodyXml += `    <w:p><w:pPr><w:pStyle w:val="Heading2"/><w:spacing w:before="220" w:after="100"/></w:pPr><w:r><w:rPr><w:b/><w:color w:val="1F4E79"/><w:sz w:val="28"/><w:szCs w:val="28"/></w:rPr><w:t xml:space="preserve">${safeLine}</w:t></w:r></w:p>
+`;
+                    } else if (line.heading === 3) {
+                        bodyXml += `    <w:p><w:pPr><w:pStyle w:val="Heading3"/><w:spacing w:before="160" w:after="80"/></w:pPr><w:r><w:rPr><w:b/><w:color w:val="2E75B6"/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr><w:t xml:space="preserve">${safeLine}</w:t></w:r></w:p>
+`;
+                    } else {
+                        bodyXml += `    <w:p><w:pPr><w:spacing w:before="0" w:after="100" w:line="276" w:lineRule="auto"/></w:pPr><w:r><w:rPr><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t xml:space="preserve">${safeLine}</w:t></w:r></w:p>
+`;
+                    }
+                }
+            } else if (pData.imageBytes && pData.imageBytes.length > 0) {
+                const relId = `rIdImg${pData.pageNum}`;
+                const mediaName = `page_${pData.pageNum}.jpg`;
+                zip.file(`word/media/${mediaName}`, pData.imageBytes);
+                docRelsItems += `  <Relationship Id="${relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${mediaName}"/>
+`;
+
+                // 5,500,000 EMUs ≈ 15.28 cm width (fits A4 margins cleanly on Mobile & Desktop)
+                const cx = 5500000;
+                const aspect = (pData.height && pData.width) ? (pData.height / pData.width) : 1.4142;
+                const cy = Math.round(cx * aspect);
+                const curId = docPrId++;
+
+                bodyXml += `
+    <w:p>
+      <w:pPr><w:jc w:val="center"/><w:spacing w:before="60" w:after="80"/></w:pPr>
+      <w:r>
+        <w:drawing>
+          <wp:inline distT="0" distB="0" distL="0" distR="0">
+            <wp:extent cx="${cx}" cy="${cy}"/>
+            <wp:effectExtent l="0" t="0" r="0" b="0"/>
+            <wp:docPr id="${curId}" name="ScannedPage_${pData.pageNum}" descr="PDF Seite ${pData.pageNum}"/>
+            <wp:cNvGraphicFramePr>
+              <a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/>
+            </wp:cNvGraphicFramePr>
+            <a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+              <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+                <pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
+                  <pic:nvPicPr>
+                    <pic:cNvPr id="${curId}" name="${mediaName}"/>
+                    <pic:cNvPicPr/>
+                  </pic:nvPicPr>
+                  <pic:blipFill>
+                    <a:blip r:embed="${relId}"/>
+                    <a:stretch><a:fillRect/></a:stretch>
+                  </pic:blipFill>
+                  <pic:spPr>
+                    <a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>
+                    <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
+                  </pic:spPr>
+                </pic:pic>
+              </a:graphicData>
+            </a:graphic>
+          </wp:inline>
+        </w:drawing>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr><w:spacing w:before="40" w:after="100"/></w:pPr>
+      <w:r><w:rPr><w:i/><w:color w:val="64748B"/><w:sz w:val="18"/></w:rPr><w:t xml:space="preserve">[Seite ${pData.pageNum} – Gescannte Buchseite / Bildvorlage. Eigene Notizen hier eingeben:]</w:t></w:r>
+    </w:p>
+    <w:p><w:pPr><w:spacing w:before="0" w:after="100"/></w:pPr><w:r><w:t xml:space="preserve"> </w:t></w:r></w:p>
+`;
+            } else {
+                bodyXml += `    <w:p><w:r><w:rPr><w:i/><w:color w:val="64748B"/></w:rPr><w:t xml:space="preserve">(Seite ${pData.pageNum}: Keine Textinhalte erkannt)</w:t></w:r></w:p>
+`;
+            }
+        }
+
+        const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
+  <w:body>
+${bodyXml}
+    <w:sectPr>
+      <w:pgSz w:w="11906" w:h="16838"/>
+      <w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="708" w:footer="708" w:gutter="0"/>
+    </w:sectPr>
+  </w:body>
+</w:document>`;
+
+        const docRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+${docRelsItems}</Relationships>`;
+
+        zip.file('[Content_Types].xml', contentTypesXml);
+        zip.file('_rels/.rels', rootRelsXml);
+        zip.file('docProps/core.xml', coreXml);
+        zip.file('docProps/app.xml', appXml);
+        zip.file('word/styles.xml', stylesXml);
+        zip.file('word/document.xml', documentXml);
+        zip.file('word/_rels/document.xml.rels', docRelsXml);
+
+        return await zip.generateAsync({
+            type: 'blob',
+            mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            compression: 'DEFLATE',
+            compressionOptions: { level: 6 }
+        });
+    }
+
     async function convertCurrentPdfToDocx(event) {
         if (event) {
             event.preventDefault();
@@ -3792,39 +4044,50 @@ function saveEntry() {
 
         const btn = document.getElementById('btn-pdf-to-docx');
         const btnText = document.getElementById('btn-pdf-to-docx-text');
-        const originalText = btnText ? btnText.textContent : 'WORD (DOCX)';
+        const floatingBar = document.getElementById('fs-floating-actions');
+        const originalText = 'WORD (DOCX)';
 
         const setStatus = (txt) => {
             if (btnText) btnText.textContent = txt;
+            if (floatingBar) {
+                floatingBar.style.opacity = '1';
+                floatingBar.style.pointerEvents = 'auto';
+            }
+            if (btn) {
+                btn.style.opacity = '1';
+                btn.style.pointerEvents = 'auto';
+            }
         };
 
         try {
+            window._isConvertingPdfToDocx = true;
+            if (window.downloadTimeout) clearTimeout(window.downloadTimeout);
             if (btn) btn.disabled = true;
             setStatus('LADE BIBLIOTHEKEN...');
 
-            // Instant non-blocking check (do not await external libs here)
+            await window.OSIRIS_LIBS_READY;
 
             const pdfjsLib = window['pdfjs-dist/build/pdf'] || window.pdfjsLib;
             if (!pdfjsLib) {
                 throw new Error('PDF.js Bibliothek nicht verfügbar.');
             }
-            if (typeof window.htmlDocx === 'undefined') {
-                throw new Error('Word-Konverter (htmlDocx) nicht verfügbar.');
+            if (typeof window.JSZip === 'undefined' && typeof window.htmlDocx === 'undefined') {
+                throw new Error('Word-Konverter (JSZip / htmlDocx) nicht verfügbar.');
             }
 
             setStatus('LESE PDF-DATEN...');
             const base64Str = item.fileData.includes(',') ? item.fileData.split(',')[1] : item.fileData;
-            const binaryStr = atob(base64Str);
+            const binaryStr = atob(base64Str.replace(/\s+/g, ''));
             const bytes = new Uint8Array(binaryStr.length);
             for (let i = 0; i < binaryStr.length; i++) {
                 bytes[i] = binaryStr.charCodeAt(i);
             }
 
-            pdfjsLib.GlobalWorkerOptions.workerSrc = 'lib/pdf/v1/pdf.worker.min.js';
-            const pdf = await pdfjsLib.getDocument({ data: bytes, isEvalSupported: false }).promise;
+            const pdf = await loadPdfDocumentSafe(pdfjsLib, bytes);
             const totalPages = pdf.numPages;
 
             let bodyContentHtml = '';
+            const pagesData = [];
 
             for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
                 setStatus(`SEITE ${pageNum}/${totalPages}...`);
@@ -3835,22 +4098,48 @@ function saveEntry() {
                     bodyContentHtml += `<div style="page-break-before: always; height: 1px; border-top: 1px dashed #cbd5e1; margin: 24pt 0 16pt 0;"></div>`;
                 }
 
-                if (!textContent || !textContent.items || textContent.items.length === 0) {
-                    bodyContentHtml += `<p style="font-style:italic; color:#64748b;">(Seite ${pageNum}: Keine Textinhalte erkannt)</p>`;
-                    continue;
-                }
+                const rawItems = (textContent && Array.isArray(textContent.items))
+                    ? textContent.items
+                        .filter(it => it.str && it.str.trim().length > 0)
+                        .map(it => {
+                            const x = it.transform ? it.transform[4] : 0;
+                            const y = it.transform ? it.transform[5] : 0;
+                            const size = Math.abs(it.transform ? it.transform[3] : 0) || it.height || 11;
+                            return { str: it.str, x, y, size, width: it.width || 0 };
+                        })
+                    : [];
 
-                const rawItems = textContent.items
-                    .filter(it => it.str && it.str.trim().length > 0)
-                    .map(it => {
-                        const x = it.transform ? it.transform[4] : 0;
-                        const y = it.transform ? it.transform[5] : 0;
-                        const size = Math.abs(it.transform ? it.transform[3] : 0) || it.height || 11;
-                        return { str: it.str, x, y, size, width: it.width || 0 };
-                    });
-
+                // Fallback for Scanned / Image-Only PDF Pages: Render high-res page image into DOCX
                 if (rawItems.length === 0) {
-                    bodyContentHtml += `<p style="font-style:italic; color:#64748b;">(Seite ${pageNum}: Keine Textinhalte erkannt)</p>`;
+                    try {
+                        const viewport = page.getViewport({ scale: 1.5 });
+                        const offCanvas = document.createElement('canvas');
+                        offCanvas.width = viewport.width;
+                        offCanvas.height = viewport.height;
+                        const ctx = offCanvas.getContext('2d');
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(0, 0, offCanvas.width, offCanvas.height);
+                        await page.render({ canvasContext: ctx, viewport }).promise;
+
+                        const jpegDataUrl = offCanvas.toDataURL('image/jpeg', 0.88);
+                        const jpgB64 = jpegDataUrl.split(',')[1] || '';
+                        const jpgBin = atob(jpgB64);
+                        const jpgBytes = new Uint8Array(jpgBin.length);
+                        for (let k = 0; k < jpgBin.length; k++) jpgBytes[k] = jpgBin.charCodeAt(k);
+
+                        pagesData.push({
+                            pageNum,
+                            lines: [],
+                            imageBytes: jpgBytes,
+                            width: viewport.width,
+                            height: viewport.height
+                        });
+                        bodyContentHtml += `<p><img src="${jpegDataUrl}" style="max-width:100%; height:auto;" /></p><p style="font-style:italic; color:#64748b;">[Seite ${pageNum} – Gescannte Buchseite / Bildvorlage]</p>`;
+                    } catch (imgErr) {
+                        console.warn('Scanned page fallback error:', imgErr);
+                        pagesData.push({ pageNum, lines: [] });
+                        bodyContentHtml += `<p style="font-style:italic; color:#64748b;">(Seite ${pageNum}: Keine Textinhalte erkannt)</p>`;
+                    }
                     continue;
                 }
 
@@ -3896,85 +4185,92 @@ function saveEntry() {
                     };
                 }).filter(l => l.text.length > 0);
 
+                const docxLines = [];
                 for (let i = 0; i < processedLines.length; i++) {
                     const cur = processedLines[i];
                     const safeText = escapeHtml(cur.text);
 
                     if (cur.size >= avgSize * 1.35 && cur.text.length < 90) {
+                        docxLines.push({ text: cur.text, heading: 2 });
                         bodyContentHtml += `<h2 style="font-size: 14pt; color: #1f4e79; margin-top: 14pt; margin-bottom: 6pt; font-weight: bold;">${safeText}</h2>`;
                     } else if (cur.size >= avgSize * 1.18 && cur.text.length < 110) {
+                        docxLines.push({ text: cur.text, heading: 3 });
                         bodyContentHtml += `<h3 style="font-size: 12pt; color: #2e75b6; margin-top: 10pt; margin-bottom: 4pt; font-weight: bold;">${safeText}</h3>`;
                     } else {
+                        docxLines.push({ text: cur.text, heading: 0 });
                         bodyContentHtml += `<p style="font-size: 11pt; line-height: 1.25; margin-bottom: 5pt; text-align: justify;">${safeText}</p>`;
                     }
                 }
+                pagesData.push({ pageNum, lines: docxLines });
             }
 
             setStatus('ERSTELLE DOCX...');
 
-            const themaTitle = escapeHtml(item.thema || 'Dokument');
-            const typLabel = escapeHtml(item.typ || 'Unterrichtsmaterial');
-            const klassenLabel = escapeHtml(item.klassen || '-');
-            const buchLabel = escapeHtml(item.buch || '-');
-            const lektionLabel = escapeHtml(item.lektion || '-');
-            const jahrLabel = escapeHtml(item.jahr || new Date().getFullYear().toString());
-            const dateLabel = escapeHtml(item.date || new Date().toLocaleDateString('de-DE'));
+            const metaObj = {
+                thema: String(item.thema || 'Dokument'),
+                typ: String(item.typ || item.doktyp || 'Unterrichtsmaterial'),
+                klassen: String(item.klassen || item.klasse || '-'),
+                buch: String(item.buch || '-'),
+                lektion: String(item.lektion || '-'),
+                jahr: String(item.jahr || new Date().getFullYear()),
+                date: String(item.date || new Date().toLocaleDateString('de-DE'))
+            };
 
-            const metaHeaderHtml = `
-                <table style="width: 100%; border-collapse: collapse; margin-bottom: 20pt; font-family: Calibri, Arial, sans-serif; border-bottom: 2pt solid #1f4e79;">
-                    <tr>
-                        <td style="padding: 8pt 0; vertical-align: top;">
-                            <div style="font-size: 18pt; font-weight: bold; color: #1f4e79; margin-bottom: 4pt;">${themaTitle}</div>
-                            <div style="font-size: 11pt; color: #555555;">Typ: <strong>${typLabel}</strong> | Klassenstufe: <strong>${klassenLabel}</strong></div>
-                        </td>
-                        <td style="text-align: right; padding: 8pt 0; vertical-align: top; font-size: 9.5pt; color: #666666;">
-                            <div>Lehrwerk: <strong>${buchLabel}</strong></div>
-                            <div>Lektion/Modul: <strong>${lektionLabel}</strong></div>
-                            <div>Schuljahr: <strong>${jahrLabel}</strong> | Erstellt: ${dateLabel}</div>
-                        </td>
-                    </tr>
-                </table>
-            `;
+            let docxBlob;
+            if (typeof window.JSZip !== 'undefined') {
+                docxBlob = await buildUniversalOpenXmlDocx(metaObj, pagesData);
+            } else {
+                const themaTitle = escapeHtml(metaObj.thema);
+                const typLabel = escapeHtml(metaObj.typ);
+                const klassenLabel = escapeHtml(metaObj.klassen);
+                const buchLabel = escapeHtml(metaObj.buch);
+                const lektionLabel = escapeHtml(metaObj.lektion);
+                const jahrLabel = escapeHtml(metaObj.jahr);
+                const dateLabel = escapeHtml(metaObj.date);
 
-            const fullHtml = `<!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="utf-8">
-                <title>${themaTitle}</title>
-                <style>
-                    body { font-family: Calibri, 'Segoe UI', Arial, sans-serif; font-size: 11pt; line-height: 1.25; color: #1a1a1a; }
-                    h1, h2, h3, h4 { font-family: Calibri, 'Segoe UI', Arial, sans-serif; }
-                    p { margin: 0 0 5pt 0; }
-                    table { border-collapse: collapse; }
-                </style>
-            </head>
-            <body>
-                ${metaHeaderHtml}
-                ${bodyContentHtml}
-            </body>
-            </html>`;
+                const metaHeaderHtml = `
+                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 20pt; font-family: Calibri, Arial, sans-serif; border-bottom: 2pt solid #1f4e79;">
+                        <tr>
+                            <td style="padding: 8pt 0; vertical-align: top;">
+                                <div style="font-size: 18pt; font-weight: bold; color: #1f4e79; margin-bottom: 4pt;">${themaTitle}</div>
+                                <div style="font-size: 11pt; color: #555555;">Typ: <strong>${typLabel}</strong> | Klassenstufe: <strong>${klassenLabel}</strong></div>
+                            </td>
+                            <td style="text-align: right; padding: 8pt 0; vertical-align: top; font-size: 9.5pt; color: #666666;">
+                                <div>Lehrwerk: <strong>${buchLabel}</strong></div>
+                                <div>Lektion/Modul: <strong>${lektionLabel}</strong></div>
+                                <div>Schuljahr: <strong>${jahrLabel}</strong> | Erstellt: ${dateLabel}</div>
+                            </td>
+                        </tr>
+                    </table>
+                `;
+                const fullHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${themaTitle}</title></head><body>${metaHeaderHtml}${bodyContentHtml}</body></html>`;
+                docxBlob = window.htmlDocx.asBlob(fullHtml);
+            }
 
-            const docxBlob = window.htmlDocx.asBlob(fullHtml);
-
-            let baseName = (item.fileName || 'Dokument').replace(/\.pdf$/i, '');
-            if (!baseName.endsWith('.docx')) baseName += '.docx';
+            let baseName = (item.fileName || item.thema || 'Dokument').replace(/\.pdf$/i, '').trim() || 'Dokument';
+            if (!baseName.toLowerCase().endsWith('.docx')) baseName += '.docx';
 
             const blobUrl = URL.createObjectURL(docxBlob);
             const a = document.createElement('a');
+            a.style.display = 'none';
             a.href = blobUrl;
             a.download = baseName;
             document.body.appendChild(a);
             a.click();
-            document.body.removeChild(a);
-            setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+            setTimeout(() => {
+                if (a.parentNode) a.parentNode.removeChild(a);
+            }, 500);
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
 
             setStatus('FERTIG! (HERUNTERGELADEN)');
             setTimeout(() => {
+                window._isConvertingPdfToDocx = false;
                 setStatus(originalText);
                 if (btn) btn.disabled = false;
             }, 2500);
 
         } catch (err) {
+            window._isConvertingPdfToDocx = false;
             console.error('PDF to Word conversion failed:', err);
             alert('Fehler bei der PDF-zu-Word-Konvertierung: ' + (err.message || err));
             setStatus(originalText);

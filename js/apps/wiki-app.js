@@ -45,8 +45,38 @@
         }
     });
 
-﻿    let db = JSON.parse(localStorage.getItem('offline_wiki_db')) || [];
-    let links = JSON.parse(localStorage.getItem('wiki_links')) || [];
+    let db = [];
+    let links = [];
+    try { db = JSON.parse(localStorage.getItem('offline_wiki_db') || '[]') || []; if (!Array.isArray(db)) db = []; } catch (e) { db = []; }
+    try { links = JSON.parse(localStorage.getItem('wiki_links') || '[]') || []; if (!Array.isArray(links)) links = []; } catch (e) { links = []; }
+
+    function escapeWikiHtml(val) {
+        if (window.OsirisSecurity && typeof window.OsirisSecurity.escapeHtml === 'function') {
+            return window.OsirisSecurity.escapeHtml(val);
+        }
+        if (val === null || val === undefined) return '';
+        return String(val)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;')
+            .replace(/`/g, '&#96;');
+    }
+
+    function escapeRegExp(str) {
+        return String(str || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    function highlightSafeHtml(rawText, query) {
+        const text = String(rawText || '');
+        if (!query) return escapeWikiHtml(text);
+        const safePattern = escapeRegExp(query);
+        if (!safePattern) return escapeWikiHtml(text);
+        const regex = new RegExp(`(${safePattern})`, 'gi');
+        const parts = text.split(regex);
+        return parts.map((part, idx) => (idx % 2 === 1) ? `<mark>${escapeWikiHtml(part)}</mark>` : escapeWikiHtml(part)).join('');
+    }
 
     // --- TRANSLATION DICTIONARY ---
     const svgImportBtn = `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
@@ -257,8 +287,10 @@
 
     function renderLinksList() {
         const list = document.getElementById('pop-links-list');
+        if (!list) return;
         list.innerHTML = '';
         links.forEach((l, idx) => {
+            if (!l) return;
             const div = document.createElement('div');
             div.style.display = 'flex';
             div.style.justifyContent = 'space-between';
@@ -266,11 +298,12 @@
             div.style.marginBottom = '5px';
             
             const safeHref = safeWikiUrl(l.url);
+            const safeName = escapeWikiHtml(l.name);
             div.innerHTML = `
                 <a href="${safeHref}" target="_blank" rel="noopener noreferrer" style="color:var(--text); text-decoration:none; font-weight:bold; max-width:85%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                    ${l.name}
+                    ${safeName}
                 </a>
-                <span onclick="removeLink(${idx})" style="cursor:pointer; color:red; font-weight:bold; font-size:1.1rem;">✖</span>
+                <span onclick="removeLink(${Number(idx)})" style="cursor:pointer; color:red; font-weight:bold; font-size:1.1rem;">✖</span>
             `;
             list.appendChild(div);
         });
@@ -279,18 +312,20 @@
 
     function updateTicker() {
         const ticker = document.getElementById('footer-ticker');
+        if (!ticker) return;
         ticker.innerHTML = '';
-        const activeLang = langs[lIdx];
         if (links.length === 0) {
             ticker.innerHTML = `<span>Ajoutez vos liens favoris pour les voir défiler ici !</span>`;
             return;
         }
         const pool = [...links, ...links, ...links];
         pool.forEach(l => {
+            if (!l) return;
             const span = document.createElement('span');
             span.style.margin = '0 25px';
             const safeHref = safeWikiUrl(l.url);
-            span.innerHTML = `<a href="${safeHref}" target="_blank" rel="noopener noreferrer" style="color:var(--primary); text-decoration:none; font-weight:bold;">${l.name}</a>`;
+            const safeName = escapeWikiHtml(l.name);
+            span.innerHTML = `<a href="${safeHref}" target="_blank" rel="noopener noreferrer" style="color:var(--primary); text-decoration:none; font-weight:bold;">${safeName}</a>`;
             ticker.appendChild(span);
         });
     }
@@ -448,62 +483,74 @@
     }
 
     function renderResults() {
-        const query = document.getElementById('search-input').value.toLowerCase().trim();
+        const searchEl = document.getElementById('search-input');
+        const query = searchEl ? searchEl.value.toLowerCase().trim() : '';
         const container = document.getElementById('results-container');
         const kwContainer = document.getElementById('recent-keywords');
-        const activeLang = langs[lIdx];
-        const deleteMode = document.getElementById('delete-mode-cb').checked; 
+        if (!container || !kwContainer) return;
+        const activeLang = langs[lIdx] || 'DE';
+        const delCb = document.getElementById('delete-mode-cb');
+        const deleteMode = delCb ? delCb.checked : false;
         container.innerHTML = '';
 
-        const allKws = db.flatMap(i => i.keywords);
-        const uniqueRecent = [...new Set(allKws)].slice(0, 8);
-        kwContainer.innerHTML = uniqueRecent.length ? `<span>${i18n[activeLang].suggestions}</span>` : '';
+        const allKws = db.flatMap(i => (i && Array.isArray(i.keywords)) ? i.keywords : []);
+        const uniqueRecent = [...new Set(allKws.filter(Boolean))].slice(0, 8);
+        kwContainer.innerHTML = uniqueRecent.length ? `<span>${(i18n[activeLang] || i18n.DE).suggestions}</span>` : '';
         uniqueRecent.forEach(kw => {
             const span = document.createElement('span');
             span.className = 'kw-sugg';
             span.textContent = kw;
-            span.onclick = () => { document.getElementById('search-input').value = kw; renderResults(); };
+            span.onclick = () => { if (searchEl) searchEl.value = kw; renderResults(); };
             kwContainer.appendChild(span);
         });
 
-        const filtered = db.filter(item => 
-            item.text.toLowerCase().includes(query) || 
-            item.keywords.some(k => k.toLowerCase().includes(query))
-        );
+        const filtered = db.filter(item => {
+            if (!item) return false;
+            const txt = String(item.text || '').toLowerCase();
+            const title = String(item.title || item.thema || '').toLowerCase();
+            const kws = Array.isArray(item.keywords) ? item.keywords : [];
+            if (!query) return true;
+            return txt.includes(query) || title.includes(query) || kws.some(k => String(k || '').toLowerCase().includes(query));
+        });
 
         filtered.forEach(item => {
             const card = document.createElement('div');
             card.className = 'result-card';
             
-            let highlighted = item.text;
-            let preview = item.text.substring(0, 200) + '...';
-            
-            if (query) {
-                const regex = new RegExp(`(${query})`, 'gi');
-                highlighted = item.text.replace(regex, '<mark>$1</mark>');
-                preview = preview.replace(regex, '<mark>$1</mark>');
-            }
+            const rawText = String(item.text || '');
+            const rawPreview = rawText.length > 200 ? (rawText.substring(0, 200) + '...') : rawText;
+            const highlighted = highlightSafeHtml(rawText, query).replace(/\n/g, '<br>');
+            const preview = highlightSafeHtml(rawPreview, query);
 
-            const translatedLength = lengthMap[activeLang][item.length] || item.length;
-            const deleteBtnHtml = deleteMode ? `<span onclick="deleteEntry('${item.id}', event)" style="position:absolute; top:15px; right:15px; color:#dc3545; font-weight:bold; cursor:pointer; font-size:1.2rem; z-index:5;">✖</span>` : '';
+            const itemLang = String(item.lang || 'de').toUpperCase();
+            const itemLenKey = item.length || 'Medium';
+            const translatedLength = (lengthMap[activeLang] && lengthMap[activeLang][itemLenKey]) || itemLenKey;
+            const safeIdAttr = escapeWikiHtml(String(item.id || ''));
+            const safeDate = escapeWikiHtml(item.date || '');
+            const safeUrlHref = safeWikiUrl(item.url || item.sourceLink || '#');
+            const safeUrlText = escapeWikiHtml(item.url || item.sourceLink || '');
+            const safeTitle = (item.title || item.thema) ? `<h3 style="margin:0 0 6px 0; color:var(--primary);">${escapeWikiHtml(item.title || item.thema)}</h3>` : '';
+            const kws = Array.isArray(item.keywords) ? item.keywords : [];
+            const deleteBtnHtml = deleteMode ? `<span onclick="deleteEntry('${safeIdAttr}', event)" style="position:absolute; top:15px; right:15px; color:#dc3545; font-weight:bold; cursor:pointer; font-size:1.2rem; z-index:5;">✖</span>` : '';
 
             card.innerHTML = `
                 ${deleteBtnHtml}
+                ${safeTitle}
                 <div class="result-meta">
-                    <strong>[${item.lang.toUpperCase()} - ${translatedLength}]</strong> | ${item.date} | 🔗 <a href="${item.url}" target="_blank" onclick="event.stopPropagation()">${item.url}</a>
+                    <strong>[${escapeWikiHtml(itemLang)} - ${escapeWikiHtml(translatedLength)}]</strong> | ${safeDate} | 🔗 <a href="${safeUrlHref}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${safeUrlText}</a>
                 </div>
-                <div class="pill-container">${item.keywords.map(k => `<span class="pill">${k}</span>`).join('')}</div>
+                <div class="pill-container">${kws.map(k => `<span class="pill">${escapeWikiHtml(k)}</span>`).join('')}</div>
                 <div class="result-preview">${preview}</div>
                 <div class="expanded-content">
                     <div>${highlighted}</div>
                     <div class="floating-options" onclick="event.stopPropagation()">
-                        <button class="action-btn" onclick="copyText('${item.id}')">${i18n[activeLang].copy}</button>
+                        <button class="action-btn" onclick="copyText('${safeIdAttr}')">${(i18n[activeLang] || i18n.DE).copy}</button>
                         
                         <div style="position:relative; display:inline-block;">
-                            <button class="word-btn" onclick="toggleExportMenu(event, '${item.id}')">${i18n[activeLang].word} ▾</button>
-                            <div id="export-menu-${item.id}" class="export-menu">
-                                <div onclick="exportDoc('${item.id}', 'doc', event)">.doc</div>
-                                <div onclick="exportDoc('${item.id}', 'docx', event)">.docx</div>
+                            <button class="word-btn" onclick="toggleExportMenu(event, '${safeIdAttr}')">${(i18n[activeLang] || i18n.DE).word} ▾</button>
+                            <div id="export-menu-${safeIdAttr}" class="export-menu">
+                                <div onclick="exportDoc('${safeIdAttr}', 'doc', event)">.doc</div>
+                                <div onclick="exportDoc('${safeIdAttr}', 'docx', event)">.docx</div>
                             </div>
                         </div>
 
@@ -521,43 +568,104 @@
     }
 
     function copyText(id) {
-        const item = db.find(i => i.id == id);
-        navigator.clipboard.writeText(`${item.text}\n\nSource: ${item.url}`).then(() => alert("Copied!"));
+        const item = db.find(i => i && i.id == id);
+        if (!item) return;
+        navigator.clipboard.writeText(`${item.text || ''}\n\nSource: ${item.url || ''}`).then(() => alert("Copied!"));
     }
 
-function exportDoc(id, format, event) {
-    if(event) event.stopPropagation();
-    document.getElementById('export-menu-'+id).style.display = 'none';
+    function escapeXmlWiki(str) {
+        return String(str || '')
+            .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&apos;');
+    }
 
-    const item = db.find(i => i.id == id);
+    async function buildWikiOpenXmlDocx(item) {
+        const zip = new window.JSZip();
+        const title = item.title || item.thema || 'Wiki Export';
+        const url = item.url || item.sourceLink || '';
+        const paragraphs = String(item.text || '').split(/\r?\n/);
+
+        zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`);
+
+        zip.file('_rels/.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`);
+
+        let bodyXml = `<w:p><w:r><w:rPr><w:b/><w:color w:val="1F4E79"/><w:sz w:val="32"/></w:rPr><w:t xml:space="preserve">${escapeXmlWiki(title)}</w:t></w:r></w:p>`;
+        for (const p of paragraphs) {
+            bodyXml += `<w:p><w:r><w:rPr><w:sz w:val="22"/></w:rPr><w:t xml:space="preserve">${escapeXmlWiki(p)}</w:t></w:r></w:p>`;
+        }
+        if (url) {
+            bodyXml += `<w:p><w:r><w:rPr><w:i/><w:color w:val="555555"/><w:sz w:val="19"/></w:rPr><w:t xml:space="preserve">Quelle / Source: ${escapeXmlWiki(url)}</w:t></w:r></w:p>`;
+        }
+
+        zip.file('word/document.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>${bodyXml}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/></w:sectPr></w:body>
+</w:document>`);
+
+        return await zip.generateAsync({
+            type: 'blob',
+            mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            compression: 'DEFLATE'
+        });
+    }
+
+async function exportDoc(id, format, event) {
+    if(event) event.stopPropagation();
+    const menuEl = document.getElementById('export-menu-'+id);
+    if (menuEl) menuEl.style.display = 'none';
+
+    const item = db.find(i => i && i.id == id);
+    if (!item) return;
     
-    // Create a short name from the first 15 characters of the text
-    // We remove special characters to ensure the filename is valid
-    const shortName = item.text.substring(0, 15).replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    const rawTitle = String(item.title || item.thema || item.text || 'wiki_export');
+    const shortName = rawTitle.substring(0, 20).replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'wiki_export';
     const fileName = `${shortName}.${format}`;
 
+    const safeTitle = escapeWikiHtml(item.title || item.thema || 'Wiki Export');
+    const safeBody = escapeWikiHtml(item.text || '').replace(/\n/g, '<br>');
+    const safeHref = safeWikiUrl(item.url || '');
+    const safeUrlText = escapeWikiHtml(item.url || '');
+
     const header = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Wiki Export</title></head><body>";
-    const content = `<h2>Wiki Export</h2><p>${item.text.replace(/\n/g, '<br>')}</p><br><p>Source: <a href="${item.url}">${item.url}</a></p></body></html>`;
+    const content = `<h2>${safeTitle}</h2><p>${safeBody}</p><br><p>Source: <a href="${safeHref}">${safeUrlText}</a></p></body></html>`;
     const fullHtml = header + content;
 
+    let blob = null;
     if (format === 'doc') {
-        const blob = new Blob(['\ufeff', fullHtml], { type: 'application/msword' });
+        blob = new Blob(['\ufeff', fullHtml], { type: 'application/msword' });
+    } else if (format === 'docx') {
+        if (typeof window.JSZip !== 'undefined') {
+            blob = await buildWikiOpenXmlDocx(item);
+        } else if (typeof htmlDocx !== 'undefined') {
+            blob = htmlDocx.asBlob(fullHtml);
+        } else {
+            alert("Erreur: La librairie de conversion Word n'a pas pu être chargée.");
+            return;
+        }
+    }
+
+    if (blob) {
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
+        link.style.display = "none";
         link.href = url; 
-        link.download = fileName; // Uses the shortened name
+        link.download = fileName;
+        document.body.appendChild(link);
         link.click();
-    } else if (format === 'docx') {
-        if (typeof htmlDocx !== 'undefined') {
-            const converted = htmlDocx.asBlob(fullHtml);
-            const url = URL.createObjectURL(converted);
-            const link = document.createElement("a");
-            link.href = url; 
-            link.download = fileName; // Uses the shortened name
-            link.click();
-        } else {
-            alert("Erreur: La librairie html-docx.js n'a pas pu être chargée.");
-        }
+        setTimeout(() => { if (link.parentNode) link.parentNode.removeChild(link); }, 500);
+        setTimeout(() => URL.revokeObjectURL(url), 30000);
     }
 }
 
