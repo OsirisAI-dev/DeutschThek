@@ -1054,12 +1054,36 @@
             return null;
         }
 
+        // Aktive Anti-Duplikat-Prüfung (Hash & ID Guard)
+        const seenHashes = new Set();
+        const seenIds = new Set();
+        const seenFiles = new Set();
+        const uniqueDocs = [];
+
+        for (const doc of exportDocs) {
+            const fileHash = (doc.fileHash || '').trim().toLowerCase();
+            const docId = String(doc.id || '');
+            const fileName = (doc.fileName || '').trim().toLowerCase();
+            const fileSize = Number(doc.fileSize) || 0;
+            const fileKey = (fileName && fileSize > 0) ? `${fileName}__${fileSize}` : '';
+
+            if (fileHash && seenHashes.has(fileHash)) continue;
+            if (docId && seenIds.has(docId)) continue;
+            if (fileKey && seenFiles.has(fileKey)) continue;
+
+            if (fileHash) seenHashes.add(fileHash);
+            if (docId) seenIds.add(docId);
+            if (fileKey) seenFiles.add(fileKey);
+
+            uniqueDocs.push(doc);
+        }
+
         const catalogPayload = {
             version: 1,
             updatedAt: new Date().toISOString(),
-            totalDocuments: exportDocs.length,
-            generator: 'Osiris Hybrid Swarm Admin v2.0',
-            documents: exportDocs
+            totalDocuments: uniqueDocs.length,
+            generator: 'Osiris Hybrid Swarm Admin v3.4 (Anti-Duplicate Guard)',
+            documents: uniqueDocs
         };
 
         const jsonString = JSON.stringify(catalogPayload, null, 2);
