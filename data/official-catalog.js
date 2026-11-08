@@ -1,7 +1,7 @@
 // Osiris Hybrid Swarm - Offizieller Dokumentenkatalog (Fallback für lokale Ausführung)
 window.OFFICIAL_CATALOG_DATA = {
   "version": 1,
-  "updatedAt": "2026-11-08T09:32:20Z",
+  "updatedAt": "2026-11-08T09:32:39Z",
   "totalDocuments": 13,
   "generator": "Osiris Hybrid Swarm Official Catalog Publisher v3.3",
   "documents": [
