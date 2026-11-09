@@ -314,18 +314,46 @@
         const ticker = document.getElementById('footer-ticker');
         if (!ticker) return;
         ticker.innerHTML = '';
-        if (links.length === 0) {
-            ticker.innerHTML = `<span>Ajoutez vos liens favoris pour les voir défiler ici !</span>`;
+
+        // Combine user personal links with admin-suggested links
+        let adminLinks = [];
+        try { adminLinks = JSON.parse(localStorage.getItem('admin_suggested_links') || '[]'); } catch(e){}
+        if (!Array.isArray(adminLinks) || adminLinks.length === 0) {
+            if (window.OFFICIAL_CATALOG_DATA && Array.isArray(window.OFFICIAL_CATALOG_DATA.suggestedLinks)) {
+                adminLinks = window.OFFICIAL_CATALOG_DATA.suggestedLinks;
+            } else if (window.OFFICIAL_CATALOG && Array.isArray(window.OFFICIAL_CATALOG.suggestedLinks)) {
+                adminLinks = window.OFFICIAL_CATALOG.suggestedLinks;
+            }
+        }
+
+        const combined = Array.isArray(links) ? [...links] : [];
+        const seenUrls = new Set(combined.map(l => (l && l.url ? l.url.trim().toLowerCase() : '')));
+        if (Array.isArray(adminLinks)) {
+            adminLinks.forEach(al => {
+                if (al && al.url) {
+                    const u = al.url.trim().toLowerCase();
+                    if (!seenUrls.has(u)) {
+                        combined.push({ name: al.name, url: al.url, category: al.category, isSuggested: true });
+                        seenUrls.add(u);
+                    }
+                }
+            });
+        }
+
+        if (combined.length === 0) {
+            ticker.innerHTML = `<span>Fügen Sie Ihre Lieblingslinks hinzu, um sie hier durchlaufen zu sehen!</span>`;
             return;
         }
-        const pool = [...links, ...links, ...links];
+
+        const pool = [...combined, ...combined, ...combined];
         pool.forEach(l => {
-            if (!l) return;
+            if (!l || !l.url) return;
             const span = document.createElement('span');
-            span.style.margin = '0 25px';
+            span.style.margin = '0 20px';
             const safeHref = safeWikiUrl(l.url);
             const safeName = escapeWikiHtml(l.name);
-            span.innerHTML = `<a href="${safeHref}" target="_blank" rel="noopener noreferrer" style="color:var(--primary); text-decoration:none; font-weight:bold;">${safeName}</a>`;
+            const catBadge = l.category ? `<span style="font-size:0.7em; background:rgba(37,99,235,0.12); color:#2563eb; padding:1px 5px; border-radius:3px; margin-right:5px; font-weight:700;">${escapeWikiHtml(l.category)}</span>` : '';
+            span.innerHTML = `${catBadge}<a href="${safeHref}" target="_blank" rel="noopener noreferrer" style="color:var(--primary); text-decoration:none; font-weight:bold;">${safeName} ↗</a>`;
             ticker.appendChild(span);
         });
     }
