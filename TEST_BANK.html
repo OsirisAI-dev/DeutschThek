@@ -638,11 +638,11 @@
      <div id="mode-checkboxes" style="margin-top:15px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
         <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
             <label style="display:inline-flex; align-items:center; gap:6px; margin:0; cursor:pointer;">
-                <input type="checkbox" id="delete-mode-cb" autocomplete="off" style="width:auto; margin:0; cursor:pointer;" onchange="renderResults()">
+                <input type="checkbox" id="delete-mode-cb" autocomplete="off" style="width:auto; margin:0; cursor:pointer;" onchange="filterResults()">
                 <span id="delete-mode-label" data-i18n="deleteMode">Löschmodus aktivieren</span>
             </label>
             <label style="display:inline-flex; align-items:center; gap:6px; margin:0; cursor:pointer;">
-                <input type="checkbox" id="edit-mode-cb" autocomplete="off" style="width:auto; margin:0; cursor:pointer;" onchange="renderResults()">
+                <input type="checkbox" id="edit-mode-cb" autocomplete="off" style="width:auto; margin:0; cursor:pointer;" onchange="filterResults()">
                 <span id="edit-mode-label" data-i18n="editMode">Modifikationen aktivieren</span>
             </label>
         </div>
@@ -673,14 +673,14 @@
             <span data-i18n="searchTitle">Suche in Datenbank</span>
         </h2>
         
-        <input type="text" id="search-input" autocomplete="off" data-i18n-ph="searchPh" placeholder="Schlüsselwörter suchen..." oninput="renderResults()">
+        <input type="text" id="search-input" autocomplete="off" data-i18n-ph="searchPh" placeholder="Schlüsselwörter suchen..." oninput="filterResults()">
         
         <div style="margin-top: 15px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <input type="checkbox" id="toggle-filters-cb" autocomplete="off" onchange="document.getElementById('filters-bar').style.display = this.checked ? 'flex' : 'none';" style="width: auto; margin: 0; cursor: pointer;">
             <label for="toggle-filters-cb" style="margin: 0; cursor: pointer; color: var(--primary); font-weight: bold; font-size: 0.9rem;" data-i18n="showFilters">FILTER ANZEIGEN</label>
             <button id="reset-filters-btn" onclick="resetFilters()" title="Filter zurücksetzen">↺</button>
             <div id="filter-updates-wrap" style="display: none; align-items: center; gap: 6px; margin-left: auto; background: rgba(22, 163, 74, 0.12); border: 1px solid rgba(22, 163, 74, 0.35); border-radius: 20px; padding: 3px 11px; flex-shrink: 0; max-width: 100%; box-sizing: border-box;">
-                <input type="checkbox" id="filter-updates-cb" autocomplete="off" onchange="renderResults()" style="width: auto; margin: 0; cursor: pointer;">
+                <input type="checkbox" id="filter-updates-cb" autocomplete="off" onchange="filterResults()" style="width: auto; margin: 0; cursor: pointer;">
                 <label for="filter-updates-cb" style="margin: 0; cursor: pointer; color: #16a34a; font-weight: bold; font-size: 0.82rem; user-select: none; display: flex; align-items: center; gap: 4px;">⚡ NUR UPDATES (<span id="updates-count-badge">0</span>)</label>
             </div>
         </div>
@@ -695,8 +695,8 @@
                 <option value="IHR UND WIR PLUS (Textbuch 3)">IHR UND WIR PLUS (Textbuch 3)</option>
                 <option value="UND JETZT WIR">UND JETZT WIR</option>
             </select>
-            <input type="number" id="filter-jahr" autocomplete="off" min="2000" placeholder="Filter: JAHR" oninput="renderResults()">
-            <select id="filter-klassen" autocomplete="off" onchange="renderResults()">
+            <input type="number" id="filter-jahr" autocomplete="off" min="2000" placeholder="Filter: JAHR" oninput="filterResults()">
+            <select id="filter-klassen" autocomplete="off" onchange="filterResults()">
                 <option value="">Filter: ALLE KLASSEN</option>
                 <option value="12. Klasse">12. KLASSE (TERMINALE)</option>
                 <option value="11. Klasse">11. KLASSE (PREMIÈRE)</option>
@@ -708,10 +708,10 @@
             <select id="filter-thema" autocomplete="off" onchange="onFilterThemaChange()" style="padding: 8px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface); color: var(--text);">
                 <option value="">Filter: ALLE THEMEN</option>
             </select>
-            <select id="filter-lektion" autocomplete="off" onchange="renderResults()" style="padding: 8px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface); color: var(--text);">
+            <select id="filter-lektion" autocomplete="off" onchange="filterResults()" style="padding: 8px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface); color: var(--text);">
                 <option value="">Filter: ALLE LEKTIONEN</option>
             </select>
-            <select id="filter-typ" autocomplete="off" onchange="renderResults()">
+            <select id="filter-typ" autocomplete="off" onchange="filterResults()">
                 <option value="">Filter: ALLE TYPEN</option>
                 <option value="KONTROLLE">LEISTUNGSKONTROLLE</option>
                 <option value="TEST">KURZTEST</option>
@@ -3026,19 +3026,19 @@ function saveEntry() {
 
     function onFilterBuchChange() {
         updateFilterThemenUndLektionen();
-        renderResults();
+        filterResults();
     }
 
     function onFilterThemaChange() {
         updateFilterLektionen();
-        renderResults();
+        filterResults();
     }
 
     function isDocAnUpdate(doc) {
         if (!doc) return false;
         if (doc.isSwarmImport || doc.isUpdated) return true;
         try {
-            const stored = JSON.parse(localStorage.getItem('p2p_updated_docs') || '[]');
+            const nowTs = Date.now(); if (!window._p2pUpdCache || nowTs - window._p2pUpdCache.t > 1000) { window._p2pUpdCache = { t: nowTs, list: JSON.parse(localStorage.getItem('p2p_updated_docs') || '[]') }; } const stored = window._p2pUpdCache.list;
             const docHash = (doc.fileHash || '').toLowerCase().trim();
             const docId = Number(doc.id) || 0;
             return stored.some(s => (docId > 0 && Number(s.id) === docId) || (docHash && s.hash && s.hash.toLowerCase() === docHash));
@@ -3060,17 +3060,6 @@ function saveEntry() {
             return;
         }
 
-        const q = document.getElementById('search-input') ? document.getElementById('search-input').value.toLowerCase().trim() : '';
-        const fBuch = document.getElementById('filter-buch') ? document.getElementById('filter-buch').value.trim() : '';
-        const fJahr = document.getElementById('filter-jahr') ? document.getElementById('filter-jahr').value.trim() : '';
-        const fKlass = document.getElementById('filter-klassen') ? document.getElementById('filter-klassen').value.toLowerCase().trim() : '';
-        const fThema = document.getElementById('filter-thema') ? document.getElementById('filter-thema').value.toLowerCase().trim() : '';
-        const fLektion = document.getElementById('filter-lektion') ? document.getElementById('filter-lektion').value.toLowerCase().trim() : '';
-        const fTyp = document.getElementById('filter-typ') ? document.getElementById('filter-typ').value : '';
-        const deleteMode = document.getElementById('delete-mode-cb') ? document.getElementById('delete-mode-cb').checked : false;
-        const editMode = document.getElementById('edit-mode-cb') ? document.getElementById('edit-mode-cb').checked : false;
-        const filterOnlyUpdates = document.getElementById('filter-updates-cb') && document.getElementById('filter-updates-cb').checked;
-
         let tx;
         try {
             tx = idb.transaction(["documents"], "readonly");
@@ -3086,54 +3075,100 @@ function saveEntry() {
             return;
         }
         const store = tx.objectStore("documents");
-        const req = store.getAll();
-
-        req.onsuccess = (e) => {
-            const db = e.target.result.reverse(); // newest first
-
+        // PERF: stream records one by one via cursor and keep ONLY lightweight metadata in memory.
+        // Heavy fileData blobs are discarded here and loaded lazily (store.get) in openModal().
+        const lightDocs = [];
+        let cursorReq;
+        try { cursorReq = store.openCursor(); } catch (err) { setTimeout(renderResults, 200); return; }
+        cursorReq.onsuccess = (e) => {
+            const cursor = e.target.result;
+            if (cursor) {
+                if (cursor.value) lightDocs.push(toLightDoc(cursor.value));
+                cursor.continue();
+                return;
+            }
+            window._lightDocs = lightDocs.reverse(); // newest first
             // Cache lightweight document metadata for ultra-fast duplicate checks
-            window._docMetaCache = db.map(item => ({
-                id: item.id,
-                fileHash: item.fileHash,
-                fileName: item.fileName,
-                fileSize: item.fileSize,
-                thema: item.thema,
-                lektion: item.lektion,
-                buch: item.buch,
-                klassen: item.klassen,
-                jahr: item.jahr,
-                typ: item.typ
+            window._docMetaCache = window._lightDocs.map(item => ({
+                id: item.id, fileHash: item.fileHash, fileName: item.fileName, fileSize: item.fileSize,
+                thema: item.thema, lektion: item.lektion, buch: item.buch, klassen: item.klassen,
+                jahr: item.jahr, typ: item.typ
             }));
+            refreshFilterMeta(window._lightDocs);
+            paintResults();
+        };
+        cursorReq.onerror = () => { setTimeout(renderResults, 300); };
+    }
 
+    function toLightDoc(v) {
+        const m = {};
+        for (const k in v) {
+            if (!Object.prototype.hasOwnProperty.call(v, k) || k === 'fileData') continue;
+            const val = v[k];
+            if (typeof val === 'string' && val.length > 4000) continue; // skip heavy text payloads
+            m[k] = val;
+        }
+        m.hasFile = !!v.fileData;
+        return m;
+    }
 
+    function refreshFilterMeta(db) {
+        // Dynamically refresh unique themes and lessons so updated files show in filters
+        const dbThemes = new Set();
+        const dbLessons = new Set();
+        let updatesCount = 0;
+        db.forEach(item => {
+            if (item.thema && String(item.thema).trim()) dbThemes.add(String(item.thema).trim());
+            if (item.lektion && String(item.lektion).trim()) dbLessons.add(String(item.lektion).trim());
+            if (isDocAnUpdate(item)) updatesCount++;
+        });
+        window._dbUniqueThemes = Array.from(dbThemes);
+        window._dbUniqueLessons = Array.from(dbLessons);
+        if (typeof updateFilterThemenUndLektionen === 'function') {
+            updateFilterThemenUndLektionen();
+        }
+        // Update badge & visibility for update filter
+        const updatesWrap = document.getElementById('filter-updates-wrap');
+        const updatesBadge = document.getElementById('updates-count-badge');
+        if (updatesWrap && updatesBadge) {
+            updatesBadge.textContent = updatesCount;
+            updatesWrap.style.display = updatesCount > 0 ? 'inline-flex' : 'none';
+        }
+    }
 
-            // Dynamically refresh unique themes and lessons so updated files show in filters
-            const dbThemes = new Set();
-            const dbLessons = new Set();
-            let updatesCount = 0;
-            db.forEach(item => {
-                if (item.thema && item.thema.trim()) dbThemes.add(item.thema.trim());
-                if (item.lektion && item.lektion.trim()) dbLessons.add(item.lektion.trim());
-                if (isDocAnUpdate(item)) updatesCount++;
-            });
-            window._dbUniqueThemes = Array.from(dbThemes);
-            window._dbUniqueLessons = Array.from(dbLessons);
-            if (typeof updateFilterThemenUndLektionen === 'function') {
-                updateFilterThemenUndLektionen();
-            }
+    // PERF: in-memory filtering + pagination state
+    var RESULTS_PAGE_SIZE = 30;
+    var _resultsFiltered = [];
+    var _resultsShown = 0;
+    var _resultsObserver = null;
+    var _filterTimer = null;
 
-            // Update badge & visibility for update filter
-            const updatesWrap = document.getElementById('filter-updates-wrap');
-            const updatesBadge = document.getElementById('updates-count-badge');
-            if (updatesWrap && updatesBadge) {
-                updatesBadge.textContent = updatesCount;
-                updatesWrap.style.display = updatesCount > 0 ? 'inline-flex' : 'none';
-            }
+    // Called by search / filter controls: debounced, never re-reads IndexedDB
+    function filterResults() {
+        clearTimeout(_filterTimer);
+        _filterTimer = setTimeout(paintResults, 160);
+    }
 
-            const container = document.getElementById('results-container');
-            container.innerHTML = '';
+    function paintResults() {
+        if (!Array.isArray(window._lightDocs)) { renderResults(); return; }
+        const q = document.getElementById('search-input') ? document.getElementById('search-input').value.toLowerCase().trim() : '';
+        const fBuch = document.getElementById('filter-buch') ? document.getElementById('filter-buch').value.trim() : '';
+        const fJahr = document.getElementById('filter-jahr') ? document.getElementById('filter-jahr').value.trim() : '';
+        const fKlass = document.getElementById('filter-klassen') ? document.getElementById('filter-klassen').value.toLowerCase().trim() : '';
+        const fThema = document.getElementById('filter-thema') ? document.getElementById('filter-thema').value.toLowerCase().trim() : '';
+        const fLektion = document.getElementById('filter-lektion') ? document.getElementById('filter-lektion').value.toLowerCase().trim() : '';
+        const fTyp = document.getElementById('filter-typ') ? document.getElementById('filter-typ').value : '';
+        const deleteMode = document.getElementById('delete-mode-cb') ? document.getElementById('delete-mode-cb').checked : false;
+        const editMode = document.getElementById('edit-mode-cb') ? document.getElementById('edit-mode-cb').checked : false;
+        const filterOnlyUpdates = document.getElementById('filter-updates-cb') && document.getElementById('filter-updates-cb').checked;
 
-            const filtered = db.filter(item => {
+        const db = window._lightDocs;
+        const container = document.getElementById('results-container');
+        if (!container) return;
+        if (_resultsObserver) { _resultsObserver.disconnect(); _resultsObserver = null; }
+        container.innerHTML = '';
+
+            _resultsFiltered = db.filter(item => {
                 if (!item) return false;
                 if (filterOnlyUpdates && !isDocAnUpdate(item)) return false;
                 const themaStr = String(item.thema || '').toLowerCase();
@@ -3153,12 +3188,24 @@ function saveEntry() {
                 return true;
             });
 
-            if (filtered.length === 0) {
+            _resultsShown = 0;
+            if (_resultsFiltered.length === 0) {
                 container.innerHTML = `<div style="padding:20px; color:gray;">Keine Dokumente gefunden.</div>`;
                 return;
             }
+            appendResultsPage();
+    }
 
-            filtered.forEach(item => {
+    function appendResultsPage() {
+        const container = document.getElementById('results-container');
+        if (!container) return;
+        const oldBtn = document.getElementById('results-load-more');
+        if (oldBtn) oldBtn.remove();
+        const deleteMode = document.getElementById('delete-mode-cb') ? document.getElementById('delete-mode-cb').checked : false;
+        const editMode = document.getElementById('edit-mode-cb') ? document.getElementById('edit-mode-cb').checked : false;
+        const frag = document.createDocumentFragment();
+        const slice = _resultsFiltered.slice(_resultsShown, _resultsShown + RESULTS_PAGE_SIZE);
+            slice.forEach(item => {
                 const card = document.createElement('div');
                 card.className = 'result-card';
                 
@@ -3194,9 +3241,32 @@ function saveEntry() {
                     </div>
                 `;
                 card.onclick = () => openModal(item.id);
-                container.appendChild(card);
+                frag.appendChild(card);
             });
-        };
+        container.appendChild(frag);
+        _resultsShown += slice.length;
+
+        const remaining = _resultsFiltered.length - _resultsShown;
+        if (remaining > 0) {
+            const btn = document.createElement('button');
+            btn.id = 'results-load-more';
+            btn.type = 'button';
+            btn.textContent = `Weitere anzeigen (${remaining} verbleibend)`;
+            btn.style.cssText = 'display:block; width:100%; margin:14px 0; padding:12px; border:1px dashed var(--border); border-radius:8px; background:var(--surface); color:var(--primary); font-weight:700; cursor:pointer;';
+            btn.onclick = appendResultsPage;
+            container.appendChild(btn);
+            if ('IntersectionObserver' in window) {
+                if (_resultsObserver) _resultsObserver.disconnect();
+                _resultsObserver = new IntersectionObserver((entries) => {
+                    if (entries.some(en => en.isIntersecting)) {
+                        _resultsObserver.disconnect();
+                        _resultsObserver = null;
+                        appendResultsPage();
+                    }
+                }, { rootMargin: '400px' });
+                _resultsObserver.observe(btn);
+            }
+        }
     }
 
     function toggleOtherInput(checkbox, inputId) {
