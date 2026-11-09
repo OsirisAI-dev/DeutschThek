@@ -1063,6 +1063,23 @@
       </button>
     </div>
   </header>
+  <!-- Community Feedback & Fehlerhinweis Banner -->
+  <div id="community-banner" class="hub-community-banner" style="background: linear-gradient(90deg, rgba(245, 158, 11, 0.12) 0%, rgba(37, 99, 235, 0.08) 100%); border-top: 1px solid rgba(245, 158, 11, 0.25); border-bottom: 1px solid rgba(245, 158, 11, 0.35); padding: 7px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 0.81rem; color: var(--hub-text); z-index: 999; transition: all 0.25s ease;">
+    <div style="display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0;">
+      <span style="font-size: 1.05rem; flex-shrink: 0;">💡</span>
+      <div style="line-height: 1.38; overflow: hidden; text-overflow: ellipsis;">
+        <strong style="color: var(--hub-accent); font-weight: 700;">Mitmach-Aufruf &amp; Fehlerhinweis:</strong>
+        <span style="opacity: 0.92;"> Alle Dokumente stammen von menschlichen Lehrkräften und können vereinzelt kleine Fehler enthalten. Bitte melden Sie gefundene Fehler per WhatsApp oder senden Sie eigene Materialien ein, um unsere Community zu stärken!</span>
+      </div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+      <a href="https://wa.me/2250555133744?text=Hallo%20DeutschThek!%20Ich%20m%C3%B6chte%20gerne%20einen%20Fehler%20melden%20oder%20Unterrichtsmaterialien%20teilen." target="_blank" rel="noopener noreferrer" style="display: inline-flex; align-items: center; gap: 6px; background: #10b981; color: #ffffff; padding: 5px 12px; border-radius: 6px; font-weight: 700; font-size: 0.77rem; text-decoration: none; box-shadow: 0 1px 3px rgba(0,0,0,0.15); white-space: nowrap; transition: transform 0.15s ease;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.312.045-.698.077-1.116-.062-.258-.087-.59-.204-1.025-.395-1.849-.809-3.048-2.673-3.14-2.798-.093-.125-.754-.997-.754-1.902 0-.904.475-1.349.645-1.533.171-.183.375-.229.5-.229.124 0 .25.002.359.007.115.006.269-.044.421.32.158.375.541 1.32.588 1.417.047.097.078.212.016.337-.062.124-.094.202-.187.312-.093.109-.196.244-.28.328-.093.093-.19.195-.082.38.109.187.483.797 1.036 1.29.712.635 1.312.831 1.499.924.187.094.296.079.405-.047.109-.125.468-.544.593-.732.125-.187.25-.156.421-.093.171.062 1.092.515 1.279.608.187.093.312.14.359.218.047.078.047.452-.097.857z"/></svg>
+        <span>WhatsApp: 05 55 13 37 44</span>
+      </a>
+      <button onclick="dismissCommunityBanner()" title="Hinweis schließen" style="background: transparent; border: none; color: var(--hub-text-muted); cursor: pointer; padding: 4px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.95rem; line-height: 1;">✕</button>
+    </div>
+  </div>
 </div>
 
 <div id="tool-frame-wrap">
@@ -1104,6 +1121,26 @@
 
       <!-- FAQ Accordion List -->
       <div class="hub-faq-list" id="hubFaqList">
+      <!-- Community & Exchange Section -->
+      <section class="faq-community-section" style="margin-bottom: 14px;">
+        <div class="faq-slug" style="color: #10b981;">
+          <span>🤝 Community-Austausch &amp; Fehler melden</span>
+        </div>
+        <div class="security-box" style="border-left: 4px solid #10b981; background: var(--hub-surface);">
+          <div class="security-box-header" style="color: #10b981; display: flex; align-items: center; gap: 8px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+            <h3 style="margin: 0; font-size: 0.95rem; font-weight: 700;">Gemeinsam für einen starken Deutschunterricht</h3>
+          </div>
+          <p style="margin: 8px 0 0; font-size: 0.85rem; line-height: 1.5; color: var(--hub-text);">
+            Alle in DeutschThek hinterlegten Prüfungen, Tests und Lehrskizzen wurden von menschlichen Kolleginnen und Kollegen ausgearbeitet. Fehler sind menschlich und lassen sich nie ganz ausschließen. Wenn Sie einen Fehler oder Tippfehler bemerken, bitten wir Sie herzlich, diesen kurz per WhatsApp an <strong>05 55 13 37 44</strong> (+225) zu melden. Sie besitzen eigene erprobte Unterrichtsblätter? Senden Sie sie uns gerne zu, um die Fachschaft weiter zu bereichern!
+          </p>
+        </div>
+      </section>
       <!-- Security & Zero-Trust Architecture Callout -->
       <section class="faq-security-section">
         <div class="faq-slug">
@@ -3084,6 +3121,19 @@ function loadPrefs() {
     });
   }
 
+  window.dismissCommunityBanner = function() {
+    var b = document.getElementById('community-banner');
+    if (b) {
+      b.style.display = 'none';
+      try { sessionStorage.setItem('dtk_community_banner_dismissed', '1'); } catch(e) {}
+    }
+  };
+  try {
+    if (sessionStorage.getItem('dtk_community_banner_dismissed') === '1') {
+      var b = document.getElementById('community-banner');
+      if (b) b.style.display = 'none';
+    }
+  } catch(e) {}
   applyTheme(appState.theme, false);
   applyLang();
   initSwarmAutoShareToggle();

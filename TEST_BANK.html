@@ -3315,6 +3315,10 @@ function saveEntry() {
                 previewHtml = `<div style="text-align:center; padding:50px; color:var(--text);">Offline-Vorschau für dieses Format nicht nativ verfügbar.<br><br>Bitte verwenden Sie den <strong>DOWNLOAD</strong> Button unten.</div>`;
             }
 
+            // Contextual WhatsApp mistake & contribution reporting (+225 05 55 13 37 44)
+            const waDocName = item.thema ? `${item.typ || 'Dokument'} - ${item.thema}` : (item.fileName || 'Dokument');
+            const waPrefilledText = `Hallo DeutschThek! Ich habe im Dokument „${waDocName}“ folgenden Fehler/Hinweis bemerkt: `;
+            const waUrl = `https://wa.me/2250555133744?text=${encodeURIComponent(waPrefilledText)}`;
             content.innerHTML = `
                 <h1 style="color:var(--primary); margin-top:0;">${escapeHtml(item.typ)} - ${escapeHtml(item.thema)}</h1>
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; background:var(--bg); padding:20px; border-radius:8px; border:1px solid var(--border);">
@@ -3331,6 +3335,23 @@ function saveEntry() {
                 </div>
                 <div id="fs-iframe-container">
                     ${previewHtml}
+                </div>
+                <div class="community-feedback-callout" style="margin-top:16px; padding:12px 16px; border-radius:10px; background:linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(37, 99, 235, 0.06) 100%); border:1px solid rgba(245, 158, 11, 0.35); display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; text-align:left;">
+                    <div style="flex:1; min-width:240px;">
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+                            <span style="font-size:1.1rem;">💡</span>
+                            <strong style="color:var(--accent); font-size:0.9rem;">Fehler entdeckt oder eigenes Material teilen?</strong>
+                        </div>
+                        <p style="margin:0; font-size:0.82rem; color:var(--text); opacity:0.9; line-height:1.45;">
+                            Alle Dokumente sind menschliche Arbeiten von Lehrkräften und können kleine Fehler enthalten. Bitte melden Sie gefundene Tippfehler oder senden Sie Ihre Materialien ein, um unsere Austausch-Community zu stärken.
+                        </p>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+                        <a href="${waUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-flex; align-items:center; gap:7px; background:#10b981; color:#ffffff; font-weight:700; font-size:0.82rem; padding:8px 14px; border-radius:8px; text-decoration:none; box-shadow:0 2px 6px rgba(16,185,129,0.3); transition:transform 0.15s ease;">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.312.045-.698.077-1.116-.062-.258-.087-.59-.204-1.025-.395-1.849-.809-3.048-2.673-3.14-2.798-.093-.125-.754-.997-.754-1.902 0-.904.475-1.349.645-1.533.171-.183.375-.229.5-.229.124 0 .25.002.359.007.115.006.269-.044.421.32.158.375.541 1.32.588 1.417.047.097.078.212.016.337-.062.124-.094.202-.187.312-.093.109-.196.244-.28.328-.093.093-.19.195-.082.38.109.187.483.797 1.036 1.29.712.635 1.312.831 1.499.924.187.094.296.079.405-.047.109-.125.468-.544.593-.732.125-.187.25-.156.421-.093.171.062 1.092.515 1.279.608.187.093.312.14.359.218.047.078.047.452-.097.857z"/></svg>
+                            <span>WhatsApp: 05 55 13 37 44</span>
+                        </a>
+                    </div>
                 </div>
             `;
 
